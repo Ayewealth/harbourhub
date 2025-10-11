@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Inquiry: {{ inquiry.subject }} - {{ site_name }}</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: #f5f7fa;
+      line-height: 1.6;
+    "
+  >
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f7fa;">
+      <tr>
+        <td style="padding: 40px 20px;">
+          <table
+            role="presentation"
+            style="
+              max-width: 600px;
+              margin: 0 auto;
+              background-color: #ffffff;
+              border-radius: 16px;
+              box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+              overflow: hidden;
+            "
+          >
+            <!-- Header -->
+            <tr>
+              <td
+                style="
+                  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                  padding: 48px 40px;
+                  text-align: center;
+                  position: relative;
+                "
+              >
+                <div style="
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  bottom: 0;
+                  background-image: url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%23ffffff\" fill-opacity=\"0.03\"%3E%3Cpath d=\"M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');
+                  opacity: 0.4;
+                "></div>
+                <h1
+                  style="
+                    margin: 0;
+                    color: #ffffff;
+                    font-size: 32px;
+                    font-weight: 700;
+                    letter-spacing: -0.5px;
+                    position: relative;
+                    z-index: 1;
+                  "
+                >
+                  {{ site_name }}
+                </h1>
+                <p
+                  style="
+                    margin: 12px 0 0 0;
+                    color: #cbd5e1;
+                    font-size: 15px;
+                    font-weight: 500;
+                    letter-spacing: 0.5px;
+                    position: relative;
+                    z-index: 1;
+                  "
+                >
+                  OIL & GAS MARKETPLACE
+                </p>
+              </td>
+            </tr>
+
+            <!-- Content -->
+            <tr>
+              <td style="padding: 48px 40px;">
+                <div style="text-align: center; margin-bottom: 36px;">
+                  <div
+                    style="
+                      width: 88px;
+                      height: 88px;
+                      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+                      border-radius: 50%;
+                      margin: 0 auto 24px;
+                      display: inline-flex;
+                      align-items: center;
+                      justify-content: center;
+                      box-shadow: 0 8px 16px rgba(139, 92, 246, 0.25);
+                    "
+                  >
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M15 17H20L18.5951 15.5951C18.2141 15.2141 18 14.6973 18 14.1585V11C18 8.38757 16.3304 6.16509 14 5.34142V5C14 3.89543 13.1046 3 12 3C10.8954 3 10 3.89543 10 5V5.34142C7.66962 6.16509 6 8.38757 6 11V14.1585C6 14.6973 5.78595 15.2141 5.40493 15.5951L4 17H9M15 17V18C15 19.6569 13.6569 21 12 21C10.3431 21 9 19.6569 9 18V17M15 17H9" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </div>
+                  <h2
+                    style="
+                      margin: 0 0 12px 0;
+                      color: #0f172a;
+                      font-size: 28px;
+                      font-weight: 700;
+                      letter-spacing: -0.5px;
+                    "
+                  >
+                    New Inquiry About Your Listing
+                  </h2>
+                  <p style="margin: 0; color: #64748b; font-size: 17px; line-height: 1.6;">
+                    Someone is interested in "{{ inquiry.listing.title }}"
+                  </p>
+                </div>
+
+                <div
+                  style="
+                    background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+                    border-left: 4px solid #8b5cf6;
+                    border-radius: 8px;
+                    padding: 20px 24px;
+                    margin-bottom: 32px;
+                  "
+                >
+                  <p
+                    style="
+                      margin: 0 0 4px 0;
+                      color: #581c87;
+                      font-size: 12px;
+                      font-weight: 700;
+                      text-transform: uppercase;
+                      letter-spacing: 0.5px;
+                    "
+                  >
+                    Listing
+                  </p>
+                  <p
+                    style="
+                      margin: 0;
+                      color: #6b21a8;
+                      font-size: 18px;
+                      font-weight: 700;
+                    "
+                  >
+                    {{ inquiry.listing.title }}
+                  </p>
+                </div>
+
+                <div
+                  style="
+                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                    border-radius: 12px;
+                    padding: 28px;
+                    margin-bottom: 32px;
+                    border: 1px solid #e2e8f0;
+                  "
+                >
+                  <div style="margin-bottom: 24px;">
+                    <p
+                      style="
+                        margin: 0 0 8px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      Contact Information
+                    </p>
+                    <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                      <tr>
+                        <td style="padding: 6px 0; color: #475569; font-size: 14px; width: 80px; font-weight: 600;">Name:</td>
+                        <td style="padding: 6px 0; color: #1e293b; font-size: 15px; font-weight: 600;">{{ inquiry.contact_name }}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #475569; font-size: 14px; font-weight: 600;">Email:</td>
+                        <td style="padding: 6px 0;">
+                          <a href="mailto:{{ inquiry.contact_email }}" style="color: #8b5cf6; text-decoration: none; font-size: 15px; font-weight: 600;">{{ inquiry.contact_email }}</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <div style="margin-bottom: 24px;">
+                    <p
+                      style="
+                        margin: 0 0 8px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      Subject
+                    </p>
+                    <p
+                      style="
+                        margin: 0;
+                        color: #1e293b;
+                        font-size: 17px;
+                        font-weight: 700;
+                      "
+                    >
+                      {{ inquiry.subject }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p
+                      style="
+                        margin: 0 0 10px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      Message
+                    </p>
+                    <div
+                      style="
+                        background-color: #ffffff;
+                        border: 1px solid #e2e8f0;
+                        border-radius: 8px;
+                        padding: 20px;
+                      "
+                    >
+                      <p
+                        style="
+                          margin: 0;
+                          color: #1e293b;
+                          font-size: 15px;
+                          line-height: 1.7;
+                          white-space: pre-wrap;
+                        "
+                      >{{ inquiry.message }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="text-align: center; margin-bottom: 32px;">
+                  <a
+                    href="{{ inquiry_url }}"
+                    style="
+                      display: inline-block;
+                      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+                      color: #ffffff;
+                      text-decoration: none;
+                      padding: 16px 40px;
+                      border-radius: 10px;
+                      font-weight: 600;
+                      font-size: 16px;
+                      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+                    "
+                  >
+                    View Inquiry & Reply →
+                  </a>
+                </div>
+
+                <div style="border-top: 1px solid #e2e8f0; padding-top: 24px;">
+                  <p
+                    style="
+                      margin: 0;
+                      color: #64748b;
+                      font-size: 14px;
+                      text-align: center;
+                      line-height: 1.6;
+                    "
+                  >
+                    Respond quickly to increase your chances of closing the deal!<br>
+                    Need help? Contact us at <a href="mailto:{{ support_email }}" style="color: #0f172a; text-decoration: none; font-weight: 600;">{{ support_email }}</a>
+                  </p>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td
+                style="
+                  background-color: #f8fafc;
+                  padding: 32px 40px;
+                  text-align: center;
+                  border-top: 1px solid #e2e8f0;
+                "
+              >
+                <p style="margin: 0 0 12px 0; color: #64748b; font-size: 14px; font-weight: 500;">
+                  © {{ current_year }} {{ site_name }}. All rights reserved.
+                </p>
+                <p style="margin: 0; color: #94a3b8; font-size: 13px; line-height: 1.5;">
+                  You received this email because someone inquired about your listing on {{ site_name }}.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

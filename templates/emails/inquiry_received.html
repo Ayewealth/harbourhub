@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Inquiry: {{ inquiry.subject }} - {{ site_name }}</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: #f5f7fa;
+      line-height: 1.6;
+    "
+  >
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f7fa;">
+      <tr>
+        <td style="padding: 40px 20px;">
+          <table
+            role="presentation"
+            style="
+              max-width: 600px;
+              margin: 0 auto;
+              background-color: #ffffff;
+              border-radius: 16px;
+              box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+              overflow: hidden;
+            "
+          >
+            <!-- Header -->
+            <tr>
+              <td
+                style="
+                  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                  padding: 48px 40px;
+                  text-align: center;
+                  position: relative;
+                "
+              >
+                <div style="
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  bottom: 0;
+                  background-image: url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%23ffffff\" fill-opacity=\"0.03\"%3E%3Cpath d=\"M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');
+                  opacity: 0.4;
+                "></div>
+                <h1
+                  style="
+                    margin: 0;
+                    color: #ffffff;
+                    font-size: 32px;
+                    font-weight: 700;
+                    letter-spacing: -0.5px;
+                    position: relative;
+                    z-index: 1;
+                  "
+                >
+                  {{ site_name }}
+                </h1>
+                <p
+                  style="
+                    margin: 12px 0 0 0;
+                    color: #cbd5e1;
+                    font-size: 15px;
+                    font-weight: 500;
+                    letter-spacing: 0.5px;
+                    position: relative;
+                    z-index: 1;
+                  "
+                >
+                  OIL & GAS MARKETPLACE
+                </p>
+              </td>
+            </tr>
+
+            <!-- Content -->
+            <tr>
+              <td style="padding: 48px 40px;">
+                <div style="text-align: center; margin-bottom: 36px;">
+                  <div
+                    style="
+                      width: 88px;
+                      height: 88px;
+                      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+                      border-radius: 50%;
+                      margin: 0 auto 24px;
+                      display: inline-flex;
+                      align-items: center;
+                      justify-content: center;
+                      box-shadow: 0 8px 16px rgba(99, 102, 241, 0.25);
+                    "
+                  >
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M3 8L10.89 13.26C11.5417 13.6728 12.4583 13.6728 13.11 13.26L21 8M5 19H19C20.1046 19 21 18.1046 21 17V7C21 5.89543 20.1046 5 19 5H5C3.89543 5 3 5.89543 3 7V17C3 18.1046 3.89543 19 5 19Z" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </div>
+                  <h2
+                    style="
+                      margin: 0 0 12px 0;
+                      color: #0f172a;
+                      font-size: 28px;
+                      font-weight: 700;
+                      letter-spacing: -0.5px;
+                    "
+                  >
+                    New Inquiry Received
+                  </h2>
+                  <p style="margin: 0; color: #64748b; font-size: 17px; line-height: 1.6;">
+                    You have received a new inquiry about your listing
+                  </p>
+                </div>
+
+                <div
+                  style="
+                    background-color: #e0f2fe;
+                    border-left: 4px solid #0ea5e9;
+                    border-radius: 8px;
+                    padding: 20px 24px;
+                    margin-bottom: 32px;
+                  "
+                >
+                  <p
+                    style="
+                      margin: 0;
+                      color: #0c4a6e;
+                      font-size: 14px;
+                      font-weight: 700;
+                      text-transform: uppercase;
+                      letter-spacing: 0.5px;
+                      margin-bottom: 4px;
+                    "
+                  >
+                    Listing
+                  </p>
+                  <p
+                    style="
+                      margin: 0;
+                      color: #075985;
+                      font-size: 16px;
+                      font-weight: 600;
+                    "
+                  >
+                    {{ listing.title }}
+                  </p>
+                </div>
+
+                <div
+                  style="
+                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                    border-radius: 12px;
+                    padding: 28px;
+                    margin-bottom: 32px;
+                    border: 1px solid #e2e8f0;
+                  "
+                >
+                  <h3
+                    style="
+                      margin: 0 0 20px 0;
+                      color: #0f172a;
+                      font-size: 18px;
+                      font-weight: 700;
+                      text-transform: uppercase;
+                      letter-spacing: 0.5px;
+                    "
+                  >
+                    Inquiry Details
+                  </h3>
+
+                  <div style="margin-bottom: 20px;">
+                    <p
+                      style="
+                        margin: 0 0 6px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      From
+                    </p>
+                    <p style="margin: 0 0 4px 0; color: #1e293b; font-size: 16px; font-weight: 600;">
+                      {{ inquiry.contact_name }}
+                    </p>
+                    <p style="margin: 0 0 4px 0; color: #475569; font-size: 14px;">
+                      <a href="mailto:{{ inquiry.contact_email }}" style="color: #0ea5e9; text-decoration: none;">{{ inquiry.contact_email }}</a>
+                    </p>
+                    {% if inquiry.contact_phone %}
+                    <p style="margin: 0; color: #475569; font-size: 14px;">
+                      {{ inquiry.contact_phone }}
+                    </p>
+                    {% endif %}
+                  </div>
+
+                  {% if inquiry.contact_company %}
+                  <div style="margin-bottom: 20px;">
+                    <p
+                      style="
+                        margin: 0 0 6px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      Company
+                    </p>
+                    <p style="margin: 0; color: #1e293b; font-size: 16px; font-weight: 600;">
+                      {{ inquiry.contact_company }}
+                    </p>
+                  </div>
+                  {% endif %}
+
+                  <div style="margin-bottom: 20px;">
+                    <p
+                      style="
+                        margin: 0 0 6px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      Subject
+                    </p>
+                    <p
+                      style="
+                        margin: 0;
+                        color: #1e293b;
+                        font-size: 16px;
+                        font-weight: 600;
+                      "
+                    >
+                      {{ inquiry.subject }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p
+                      style="
+                        margin: 0 0 10px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      Message
+                    </p>
+                    <div
+                      style="
+                        background-color: #ffffff;
+                        border: 1px solid #e2e8f0;
+                        border-radius: 8px;
+                        padding: 20px;
+                      "
+                    >
+                      <p
+                        style="
+                          margin: 0;
+                          color: #1e293b;
+                          font-size: 15px;
+                          line-height: 1.7;
+                          white-space: pre-wrap;
+                        "
+                      >
+{{ inquiry.message }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="text-align: center; margin-bottom: 32px;">
+                  <a
+                    href="{{ inquiry_url }}"
+                    style="
+                      display: inline-block;
+                      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+                      color: #ffffff;
+                      text-decoration: none;
+                      padding: 16px 40px;
+                      border-radius: 10px;
+                      font-weight: 600;
+                      font-size: 16px;
+                      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+                    "
+                  >
+                    View and Reply →
+                  </a>
+                </div>
+
+                {% if inquiry.is_urgent %}
+                <div
+                  style="
+                    background-color: #fef2f2;
+                    border-left: 4px solid #ef4444;
+                    border-radius: 8px;
+                    padding: 20px 24px;
+                    margin-bottom: 24px;
+                  "
+                >
+                  <p
+                    style="
+                      margin: 0;
+                      color: #991b1b;
+                      font-size: 14px;
+                      font-weight: 600;
+                      line-height: 1.6;
+                    "
+                  >
+                    <strong>⚠️ Urgent Inquiry:</strong> This inquiry has been marked as urgent by the sender.
+                  </p>
+                </div>
+                {% endif %}
+
+                <div style="border-top: 1px solid #e2e8f0; padding-top: 24px;">
+                  <p
+                    style="
+                      margin: 0;
+                      color: #64748b;
+                      font-size: 14px;
+                      text-align: center;
+                      line-height: 1.6;
+                    "
+                  >
+                    Need help? Contact our support team at<br>
+                    <a
+                      href="mailto:{{ support_email }}"
+                      style="color: #0f172a; text-decoration: none; font-weight: 600;"
+                      >{{ support_email }}</a
+                    >
+                  </p>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td
+                style="
+                  background-color: #f8fafc;
+                  padding: 32px 40px;
+                  text-align: center;
+                  border-top: 1px solid #e2e8f0;
+                "
+              >
+                <p style="margin: 0 0 12px 0; color: #64748b; font-size: 14px; font-weight: 500;">
+                  © {{ current_year }} {{ site_name }}. All rights reserved.
+                </p>
+                <p style="margin: 0; color: #94a3b8; font-size: 13px; line-height: 1.5;">
+                  This email was sent because you received an inquiry on your {{ site_name }} listing.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

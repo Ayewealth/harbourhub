@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reply to Your Inquiry - {{ site_name }}</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: #f5f7fa;
+      line-height: 1.6;
+    "
+  >
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f7fa;">
+      <tr>
+        <td style="padding: 40px 20px;">
+          <table
+            role="presentation"
+            style="
+              max-width: 600px;
+              margin: 0 auto;
+              background-color: #ffffff;
+              border-radius: 16px;
+              box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+              overflow: hidden;
+            "
+          >
+            <!-- Header -->
+            <tr>
+              <td
+                style="
+                  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                  padding: 48px 40px;
+                  text-align: center;
+                  position: relative;
+                "
+              >
+                <div style="
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  bottom: 0;
+                  background-image: url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%23ffffff\" fill-opacity=\"0.03\"%3E%3Cpath d=\"M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');
+                  opacity: 0.4;
+                "></div>
+                <h1
+                  style="
+                    margin: 0;
+                    color: #ffffff;
+                    font-size: 32px;
+                    font-weight: 700;
+                    letter-spacing: -0.5px;
+                    position: relative;
+                    z-index: 1;
+                  "
+                >
+                  {{ site_name }}
+                </h1>
+                <p
+                  style="
+                    margin: 12px 0 0 0;
+                    color: #cbd5e1;
+                    font-size: 15px;
+                    font-weight: 500;
+                    letter-spacing: 0.5px;
+                    position: relative;
+                    z-index: 1;
+                  "
+                >
+                  OIL & GAS MARKETPLACE
+                </p>
+              </td>
+            </tr>
+
+            <!-- Content -->
+            <tr>
+              <td style="padding: 48px 40px;">
+                <div style="text-align: center; margin-bottom: 36px;">
+                  <div
+                    style="
+                      width: 88px;
+                      height: 88px;
+                      background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+                      border-radius: 50%;
+                      margin: 0 auto 24px;
+                      display: inline-flex;
+                      align-items: center;
+                      justify-content: center;
+                      box-shadow: 0 8px 16px rgba(20, 184, 166, 0.25);
+                    "
+                  >
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M3 10H13C14.1046 10 15 10.8954 15 12V20C15 21.1046 14.1046 22 13 22H3C1.89543 22 1 21.1046 1 20V12C1 10.8954 1.89543 10 3 10Z" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M15 7V5C15 3.89543 15.8954 3 17 3H21C22.1046 3 23 3.89543 23 5V13C23 14.1046 22.1046 15 21 15H19" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M5 14H11" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+                      <path d="M5 18H9" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </div>
+                  <h2
+                    style="
+                      margin: 0 0 12px 0;
+                      color: #0f172a;
+                      font-size: 28px;
+                      font-weight: 700;
+                      letter-spacing: -0.5px;
+                    "
+                  >
+                    You Have a New Reply
+                  </h2>
+                  <p style="margin: 0; color: #64748b; font-size: 17px; line-height: 1.6;">
+                    Someone replied to your inquiry
+                  </p>
+                </div>
+
+                <div
+                  style="
+                    background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);
+                    border-left: 4px solid #14b8a6;
+                    border-radius: 8px;
+                    padding: 20px 24px;
+                    margin-bottom: 32px;
+                  "
+                >
+                  <p
+                    style="
+                      margin: 0 0 4px 0;
+                      color: #134e4a;
+                      font-size: 12px;
+                      font-weight: 700;
+                      text-transform: uppercase;
+                      letter-spacing: 0.5px;
+                    "
+                  >
+                    Regarding Your Inquiry About
+                  </p>
+                  <p
+                    style="
+                      margin: 0;
+                      color: #115e59;
+                      font-size: 18px;
+                      font-weight: 700;
+                    "
+                  >
+                    {{ inquiry.listing.title }}
+                  </p>
+                </div>
+
+                <div
+                  style="
+                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                    border-radius: 12px;
+                    padding: 28px;
+                    margin-bottom: 32px;
+                    border: 1px solid #e2e8f0;
+                  "
+                >
+                  <div style="margin-bottom: 24px;">
+                    <p
+                      style="
+                        margin: 0 0 8px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      Reply From
+                    </p>
+                    <p
+                      style="
+                        margin: 0;
+                        color: #1e293b;
+                        font-size: 17px;
+                        font-weight: 700;
+                      "
+                    >
+                      {{ reply.user.get_full_name }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p
+                      style="
+                        margin: 0 0 10px 0;
+                        color: #64748b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                      "
+                    >
+                      Message
+                    </p>
+                    <div
+                      style="
+                        background-color: #ffffff;
+                        border: 1px solid #e2e8f0;
+                        border-radius: 8px;
+                        padding: 20px;
+                      "
+                    >
+                      <p
+                        style="
+                          margin: 0;
+                          color: #1e293b;
+                          font-size: 15px;
+                          line-height: 1.7;
+                          white-space: pre-wrap;
+                        "
+                      >{{ reply.message }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="text-align: center; margin-bottom: 32px;">
+                  <a
+                    href="{{ conversation_url }}"
+                    style="
+                      display: inline-block;
+                      background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+                      color: #ffffff;
+                      text-decoration: none;
+                      padding: 16px 40px;
+                      border-radius: 10px;
+                      font-weight: 600;
+                      font-size: 16px;
+                      box-shadow: 0 4px 12px rgba(20, 184, 166, 0.3);
+                    "
+                  >
+                    Continue Conversation →
+                  </a>
+                </div>
+
+                <div
+                  style="
+                    background-color: #f0f9ff;
+                    border-left: 4px solid #0ea5e9;
+                    border-radius: 8px;
+                    padding: 20px 24px;
+                    margin-bottom: 24px;
+                  "
+                >
+                  <p
+                    style="
+                      margin: 0;
+                      color: #0c4a6e;
+                      font-size: 14px;
+                      font-weight: 600;
+                      line-height: 1.6;
+                    "
+                  >
+                    <strong>💡 Tip:</strong> Quick responses help build trust and increase your chances of a successful transaction.
+                  </p>
+                </div>
+
+                <div style="border-top: 1px solid #e2e8f0; padding-top: 24px;">
+                  <p
+                    style="
+                      margin: 0;
+                      color: #64748b;
+                      font-size: 14px;
+                      text-align: center;
+                      line-height: 1.6;
+                    "
+                  >
+                    Need help? Contact our support team at<br>
+                    <a
+                      href="mailto:{{ support_email }}"
+                      style="color: #0f172a; text-decoration: none; font-weight: 600;"
+                      >{{ support_email }}</a
+                    >
+                  </p>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td
+                style="
+                  background-color: #f8fafc;
+                  padding: 32px 40px;
+                  text-align: center;
+                  border-top: 1px solid #e2e8f0;
+                "
+              >
+                <p style="margin: 0 0 12px 0; color: #64748b; font-size: 14px; font-weight: 500;">
+                  © {{ current_year }} {{ site_name }}. All rights reserved.
+                </p>
+                <p style="margin: 0; color: #94a3b8; font-size: 13px; line-height: 1.5;">
+                  You received this email because someone replied to your inquiry on {{ site_name }}.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
