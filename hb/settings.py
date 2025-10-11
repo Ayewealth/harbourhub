@@ -3,6 +3,7 @@ Harbour Hub - Django Settings (cleaned & production-ready)
 """
 
 import os
+import ssl
 from pathlib import Path
 from datetime import timedelta
 from decouple import config, Csv
@@ -417,8 +418,9 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # Secure Redis SSL (important for Aiven)
-BROKER_USE_SSL = {"ssl_cert_reqs": None}
-CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": None}
+if REDIS_URL.startswith("rediss://"):
+    CELERY_BROKER_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
+    CELERY_RESULT_BACKEND_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
 
 # Retry connection on startup to avoid race conditions
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
