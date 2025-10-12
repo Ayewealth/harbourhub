@@ -27,6 +27,12 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.NOTICE("Creating sample data..."))
 
+        # 🧠 Prevent duplicate data creation
+        if User.objects.filter(email="harbourhub2025@gmail.com").exists() and Listing.objects.exists():
+            self.stdout.write(self.style.WARNING(
+                "⚠️ Sample data already exists. Skipping."))
+            return
+
         self.create_categories()
         users = self.create_users(options["users"])
         listings = self.create_listings(options["listings"], users)
@@ -36,6 +42,7 @@ class Command(BaseCommand):
             "✅ Successfully created sample data!"))
 
     # --------------------------------------------------------------------
+
     def create_categories(self):
         """Create sample categories"""
         categories_structure = {
