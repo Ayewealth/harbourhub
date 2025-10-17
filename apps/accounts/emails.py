@@ -58,6 +58,52 @@ class EmailService:
             return False
 
     @staticmethod
+    def send_otp_email(email, code, purpose="registration", ttl_minutes=30):
+        """Send OTP email for registration or login"""
+        try:
+            if purpose == "registration":
+                subject = f"Your {settings.SITE_NAME} Registration Code"
+                template_name = "emails/otp_registration.html"
+            else:
+                subject = f"Your {settings.SITE_NAME} Login Code"
+                template_name = "emails/otp_login.html"
+
+            context = {
+                "code": code,
+                "purpose": purpose,
+                "site_name": settings.SITE_NAME,
+                "site_url": settings.SITE_URL,
+                "ttl_minutes": ttl_minutes,
+                "support_email": settings.SUPPORT_EMAIL,
+                "current_year": timezone.now().year,
+            }
+
+            html_content = render_to_string(template_name, context)
+            text_content = f"""
+            Your {settings.SITE_NAME} {purpose.capitalize()} Code
+
+            Code: {code}
+            This code expires in {ttl_minutes} minutes.
+            If you did not request this code, please ignore this email.
+            """
+
+            email_msg = EmailMultiAlternatives(
+                subject=subject,
+                body=text_content,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[email],
+            )
+            email_msg.attach_alternative(html_content, "text/html")
+            email_msg.send()
+
+            logger.info(f"OTP email ({purpose}) sent to {email}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to send OTP email to {email}: {str(e)}")
+            return False
+
+    @staticmethod
     def send_password_reset_email(user, reset_token):
         """Send password reset email"""
         try:

@@ -11,6 +11,9 @@ from .views import (
     PasswordResetRequestView,
     PasswordResetConfirmView,
     VerificationViewSet,
+    OTPRequestView,
+    OTPVerifyView,
+    SetPasswordView
 )
 
 router = DefaultRouter()
@@ -22,11 +25,14 @@ urlpatterns = [
     # JWT Authentication
     path("login/", CustomTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("otp/request/", OTPRequestView.as_view(), name="otp-request"),
+    path("otp/verify/", OTPVerifyView.as_view(), name="otp-verify"),
 
     # Registration & profile
     path("", include(router.urls)),
 
     # Password management
+    path("set-password/", SetPasswordView.as_view(), name="set-password"),
     path("password/change/", PasswordChangeView.as_view(), name="password_change"),
     path("password/reset/request/", PasswordResetRequestView.as_view(),
          name="password_reset_request"),

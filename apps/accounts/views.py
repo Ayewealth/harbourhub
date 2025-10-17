@@ -16,12 +16,15 @@ from .serializers import (
     UserRegistrationSerializer, CustomTokenObtainPairSerializer,
     UserProfileSerializer, UserProfileUpdateSerializer,
     PasswordChangeSerializer, PasswordResetRequestSerializer,
-    PasswordResetConfirmSerializer, VerificationRequestSerializer
+    PasswordResetConfirmSerializer, VerificationRequestSerializer,
+    OTPRequestSerializer, OTPVerifySerializer,
+    SetPasswordSerializer
 )
 from .permissions import IsOwnerOrAdmin
-from .models import VerificationRequest
+from .models import VerificationRequest, OneTimePassword
 from .emails import EmailService
 from apps.accounts.tasks import send_welcome_email_task, send_password_reset_email_task, send_password_reset_confirmation_email_task, notify_admins_verification_request
+from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
 
@@ -36,15 +39,89 @@ class UserRegistrationViewSet(CreateModelMixin, GenericViewSet):
     """User registration endpoint"""
 
     serializer_class = UserRegistrationSerializer
+    authentication_classes = []  # disable JWT parsing  
     permission_classes = [permissions.AllowAny]
 
-    @method_decorator(ratelimit(key='ip', rate='5/h', method=['POST']))
+    @method_decorator(ratelimit(key='ip', rate='20/h', method=['POST']))
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         user = serializer.save()
         send_welcome_email_task.delay(user.id)
+
+
+class OTPRequestView(APIView):
+    """Request OTP for registration or login"""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = OTPRequestSerializer()
+
+    def post(self, request):
+        serializer = OTPRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "OTP sent successfully."}, status=status.HTTP_200_OK)
+
+
+class OTPVerifyView(APIView):
+    """Verify OTP for registration or login, auto-login if purpose=login"""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = OTPVerifySerializer()
+
+    def post(self, request):
+        serializer = OTPVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        otp = serializer.save()
+
+        # --- If it's for login, issue JWT immediately ---
+        if otp.purpose == OneTimePassword.Purpose.LOGIN:
+            try:
+                user = User.objects.get(email__iexact=otp.email)
+            except User.DoesNotExist:
+                return Response({"error": "No account found for this email."}, status=status.HTTP_404_NOT_FOUND)
+
+            if not user.is_active:
+                return Response({"error": "User account is inactive."}, status=status.HTTP_403_FORBIDDEN)
+
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "message": "OTP verified successfully. Login complete.",
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "username": user.username,
+                    "full_name": user.get_full_name(),
+                    "role": user.role,
+                    "is_verified": user.is_verified,
+                },
+                "tokens": {
+                    "refresh": str(refresh),
+                    "access": str(refresh.access_token),
+                }
+            }, status=status.HTTP_200_OK)
+
+        # --- For registration, just confirm success (they proceed to final step) ---
+        return Response({
+            "message": "OTP verified successfully. Proceed to complete registration."
+        }, status=status.HTTP_200_OK)
+
+
+class SetPasswordView(APIView):
+    """Allow OTP-only users to set a password after account creation"""
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = SetPasswordSerializer()
+
+    def post(self, request):
+        serializer = SetPasswordSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {"message": "Password has been set successfully."},
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):

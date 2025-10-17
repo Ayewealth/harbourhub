@@ -25,6 +25,12 @@ def send_welcome_email_task(self, user_id):
         raise self.retry(exc=exc)
 
 
+@shared_task
+def send_otp_email_task(email, code, purpose, ttl_minutes=30):
+    """Async task to send OTP email"""
+    return EmailService.send_otp_email(email, code, purpose, ttl_minutes)
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
 def send_password_reset_email_task(self, reset_token_id):
     try:

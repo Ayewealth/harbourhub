@@ -1,7 +1,7 @@
 # accounts/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
-from .models import User
+from .models import User, OneTimePassword
 from django.utils.translation import gettext_lazy as _
 
 
@@ -30,3 +30,9 @@ class UserAdmin(DjangoUserAdmin):
             'fields': ('email', 'username', 'password1', 'password2'),
         }),
     )
+
+
+@admin.register(OneTimePassword)
+class OneTimePasswordAdmin(admin.ModelAdmin):
+    list_display = ('email', 'code', 'purpose',
+                    'expires_at', 'used', 'created_at')

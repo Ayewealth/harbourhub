@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from datetime import timedelta
 import secrets
+import random
 
 
 class UserManager(BaseUserManager):
@@ -15,12 +16,17 @@ class UserManager(BaseUserManager):
 
     use_in_migrations = True
 
-    def _create_user(self, email, password, **extra_fields):
+    def _create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError("The given email must be set")
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
-        user.set_password(password)
+
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
+
         user.save(using=self._db)
         return user
 
@@ -38,6 +44,7 @@ class UserManager(BaseUserManager):
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("Superuser must have is_superuser=True.")
+
         return self._create_user(email, password, **extra_fields)
 
 
@@ -52,6 +59,7 @@ class User(AbstractUser):
         SUPER_ADMIN = 'super_admin', _('Super Admin')
 
     # Keep username if you want a display handle, but we use email for login
+    full_name = models.CharField(max_length=255, blank=True)
     username = models.CharField(max_length=150, blank=True)
     email = models.EmailField(_('email address'), unique=True, db_index=True)
 
@@ -257,3 +265,54 @@ class VerificationRequest(models.Model):
         self.reviewed_at = timezone.now()
         self.admin_notes = notes
         self.save()
+
+
+class OneTimePassword(models.Model):
+    """Stores one-time OTP codes for registration/login verification"""
+
+    class Purpose(models.TextChoices):
+        REGISTRATION = "registration", _("Registration")
+        LOGIN = "login", _("Login")
+
+    email = models.EmailField(db_index=True)
+    code = models.CharField(max_length=6)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices)
+    expires_at = models.DateTimeField(db_index=True)
+    used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "one_time_passwords"
+        indexes = [
+            models.Index(fields=["email", "purpose", "used"]),
+            models.Index(fields=["expires_at"]),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.email} ({self.purpose})"
+
+    @classmethod
+    def generate_code(cls):
+        """Generate a secure 5-digit OTP code"""
+        return str(random.randint(10000, 99999))
+
+    @classmethod
+    def create_otp(cls, email, purpose, ttl_minutes=30):
+        """Create new OTP and return instance"""
+        expires = timezone.now() + timedelta(minutes=ttl_minutes)
+        code = cls.generate_code()
+        otp = cls.objects.create(
+            email=email.lower().strip(),
+            code=code,
+            purpose=purpose,
+            expires_at=expires
+        )
+        return otp
+
+    def is_valid(self):
+        return not self.used and timezone.now() <= self.expires_at
+
+    def mark_used(self):
+        self.used = True
+        self.save(update_fields=["used"])

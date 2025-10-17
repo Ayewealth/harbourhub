@@ -8,19 +8,34 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
-from .models import User, PasswordResetToken, VerificationRequest
+from .models import User, PasswordResetToken, VerificationRequest, OneTimePassword
+
+
+from django.contrib.auth.password_validation import validate_password
+from rest_framework import serializers
+from django.utils import timezone
+from .models import User, OneTimePassword
+
+
+from django.contrib.auth.password_validation import validate_password
+from rest_framework import serializers
+from django.utils import timezone
+from .models import User, OneTimePassword
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for user registration"""
+    """Serializer for user registration (password optional if OTP verified)."""
 
     password = serializers.CharField(
         write_only=True,
-        validators=[validate_password],
+        required=False,
+        allow_blank=True,
         style={'input_type': 'password'}
     )
     password_confirm = serializers.CharField(
         write_only=True,
+        required=False,
+        allow_blank=True,
         style={'input_type': 'password'}
     )
 
@@ -28,48 +43,137 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             'username', 'email', 'password', 'password_confirm',
-            'first_name', 'last_name', 'role', 'company',
-            'phone', 'location'
+            'full_name', 'role', 'company', 'phone', 'location'
         )
         extra_kwargs = {
             'email': {'required': True},
-            'first_name': {'required': True},
-            'last_name': {'required': True},
+            'full_name': {'required': True},
         }
 
-    def validate_email(self, value):
-        """Check if email is unique (case-insensitive)"""
-        value = value.lower().strip()
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError(
-                "A user with this email already exists.")
-        return value
-
-    def validate_role(self, value):
-        """Prevent direct admin role assignment during registration"""
-        if value in [User.Role.ADMIN, User.Role.SUPER_ADMIN]:
-            raise serializers.ValidationError(
-                "Admin roles cannot be assigned during registration.")
-        return value
-
     def validate(self, attrs):
-        """Validate password confirmation"""
-        if attrs.get('password') != attrs.get('password_confirm'):
-            raise serializers.ValidationError({
-                'password_confirm': "Password confirmation doesn't match."
-            })
+        email = attrs.get("email")
+        password = attrs.get("password")
+        password_confirm = attrs.get("password_confirm")
+
+        # ✅ Check OTP verification
+        otp_valid = OneTimePassword.objects.filter(
+            email__iexact=email,
+            purpose=OneTimePassword.Purpose.REGISTRATION,
+            used=True,
+            expires_at__gte=timezone.now()
+        ).exists()
+
+        # ✅ If OTP verified, password can be blank
+        if otp_valid:
+            if password:
+                if password != password_confirm:
+                    raise serializers.ValidationError({
+                        "password_confirm": "Password confirmation doesn't match."
+                    })
+                validate_password(password)
+        else:
+            # ✅ OTP not verified → password is required
+            if not password:
+                raise serializers.ValidationError({
+                    "password": "Password is required if you haven't verified via OTP."
+                })
+            if password != password_confirm:
+                raise serializers.ValidationError({
+                    "password_confirm": "Password confirmation doesn't match."
+                })
+            validate_password(password)
+
         return attrs
 
     def create(self, validated_data):
-        """Create new user using manager helper"""
-        validated_data.pop('password_confirm', None)
-        password = validated_data.pop('password')
+        validated_data.pop("password_confirm", None)
+        password = validated_data.pop("password", None)
+        email = validated_data.get("email").lower().strip()
 
-        # normalize email
-        if 'email' in validated_data:
-            validated_data['email'] = validated_data['email'].lower().strip()
+        user = User.objects.create_user(
+            password=password or None,
+            **validated_data
+        )
+        return user
 
-        user = User.objects.create_user(password=password, **validated_data)
+
+class OTPRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    purpose = serializers.ChoiceField(choices=OneTimePassword.Purpose.choices)
+
+    def validate_email(self, value):
+        return value.lower().strip()
+
+    def create(self, validated_data):
+        email = validated_data["email"]
+        purpose = validated_data["purpose"]
+
+        otp = OneTimePassword.create_otp(email=email, purpose=purpose)
+        from .tasks import send_otp_email_task
+        send_otp_email_task.delay(email, otp.code, purpose, purpose)
+        return otp
+
+
+class OTPVerifySerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.CharField(max_length=6)
+    purpose = serializers.ChoiceField(choices=OneTimePassword.Purpose.choices)
+
+    def validate(self, attrs):
+        email = attrs["email"].lower().strip()
+        code = attrs["code"].strip()
+        purpose = attrs["purpose"]
+
+        try:
+            otp = OneTimePassword.objects.filter(
+                email__iexact=email, code=code, purpose=purpose
+            ).latest("created_at")
+        except OneTimePassword.DoesNotExist:
+            raise serializers.ValidationError("Invalid OTP code.")
+
+        if not otp.is_valid():
+            raise serializers.ValidationError(
+                "OTP has expired or already used.")
+
+        attrs["otp"] = otp
+        return attrs
+
+    def create(self, validated_data):
+        otp = validated_data["otp"]
+        otp.mark_used()
+        return otp
+
+
+class SetPasswordSerializer(serializers.Serializer):
+    """Serializer for setting or updating password for OTP-based accounts."""
+
+    new_password = serializers.CharField(
+        write_only=True,
+        required=True,
+        validators=[validate_password],
+        style={'input_type': 'password'},
+    )
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={'input_type': 'password'},
+    )
+
+    def validate(self, attrs):
+        """Ensure both passwords match"""
+        if attrs.get("new_password") != attrs.get("new_password_confirm"):
+            raise serializers.ValidationError({
+                "new_password_confirm": "Passwords do not match."
+            })
+        return attrs
+
+    def save(self, **kwargs):
+        """Set the new password for the authenticated user"""
+        user = self.context["request"].user
+        new_password = self.validated_data["new_password"]
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
         return user
 
 
@@ -88,8 +192,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'id': self.user.id,
                 'username': self.user.username,
                 'email': self.user.email,
-                'first_name': self.user.first_name,
-                'last_name': self.user.last_name,
+                'full_name': self.user.full_name,
                 'role': self.user.role,
                 'company': self.user.company,
                 'phone': self.user.phone,
@@ -120,7 +223,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'id', 'username', 'email', 'first_name', 'last_name',
+            'id', 'username', 'email', 'full_name',
             'role', 'company', 'phone', 'location', 'is_verified',
             'profile_image',
             'date_joined', 'last_login'
@@ -135,7 +238,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'first_name', 'last_name', 'company', 'phone', 'location', 'profile_image'
+            'full_name', 'company', 'phone', 'location', 'profile_image'
         )
 
 
@@ -273,7 +376,7 @@ class UserListSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'id', 'username', 'email', 'full_name', 'first_name', 'last_name',
+            'id', 'username', 'email', 'full_name',
             'role', 'company', 'phone', 'location', 'is_active', 'is_verified', 'profile_image',
             'date_joined', 'last_login', 'listings_count',
             'inquiries_sent_count', 'inquiries_received_count'
