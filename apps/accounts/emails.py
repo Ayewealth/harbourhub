@@ -29,7 +29,7 @@ class EmailService:
                 'user': user,
                 'site_name': settings.SITE_NAME,
                 'site_url': settings.SITE_URL,
-                'login_url': f"{settings.SITE_URL}/login/",
+                'login_url': f"{settings.SITE_URL}/",
                 'support_email': settings.SUPPORT_EMAIL,
                 'current_year': timezone.now().year,
             }
