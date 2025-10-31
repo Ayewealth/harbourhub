@@ -76,7 +76,7 @@ class ListingFilter(filters.FilterSet):
         Accepts numeric id.
         """
         try:
-            from categories.models import Category
+            from apps.categories.models import Category
             cat = Category.objects.get(pk=int(value))
             descendant_ids = list(cat.get_descendants(
                 include_self=True).values_list("pk", flat=True))
@@ -89,7 +89,7 @@ class ListingFilter(filters.FilterSet):
         Filter by category slug and include descendants.
         """
         try:
-            from categories.models import Category
+            from apps.categories.models import Category
             cat = Category.objects.get(slug=value)
             descendant_ids = list(cat.get_descendants(
                 include_self=True).values_list("pk", flat=True))
