@@ -90,6 +90,8 @@ class CategoryTreeSerializer(serializers.ModelSerializer):
 class CategoryCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating/updating categories (admin use)"""
 
+    icon = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = Category
         fields = (

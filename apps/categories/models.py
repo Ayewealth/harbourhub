@@ -31,11 +31,7 @@ class Category(MPTTModel):
         blank=True,
         help_text=_('Category description')
     )
-    icon = models.CharField(
-        max_length=100,
-        blank=True,
-        help_text=_('Icon class (CSS) or image path')
-    )
+    icon = models.ImageField(upload_to="categories/images/")
     is_active = models.BooleanField(
         default=True,
         help_text=_('Whether this category is active')
