@@ -185,36 +185,44 @@ if USE_S3:
     AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY = config("AWS_SECRET_ACCESS_KEY")
     AWS_STORAGE_BUCKET_NAME = config("AWS_STORAGE_BUCKET_NAME")
-    AWS_S3_REGION_NAME = config(
-        "AWS_S3_REGION_NAME", default="eu-north-1")  # Stockholm
-    AWS_DEFAULT_ACL = None  # ✅ ensures no ACLs are applied
+    AWS_S3_REGION_NAME = config("AWS_S3_REGION_NAME", default="eu-north-1")
+    AWS_DEFAULT_ACL = None
+    AWS_QUERYSTRING_AUTH = False
+    AWS_S3_FILE_OVERWRITE = False
 
     AWS_S3_CUSTOM_DOMAIN = config(
         "AWS_S3_CUSTOM_DOMAIN",
         default=f"{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com"
     )
 
-    # ✅ remove any ACL parameter entirely
     AWS_S3_OBJECT_PARAMETERS = {
         "CacheControl": "max-age=86400",
     }
 
-    AWS_QUERYSTRING_AUTH = False
-    AWS_S3_FILE_OVERWRITE = False
-
-    # Storage backends
-    STATICFILES_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
-    DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "location": "media",
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "location": "static",
+            },
+        },
+    }
 
     STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/static/"
     MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
+
 else:
     STATIC_ROOT = config(
         "STATIC_ROOT", default=os.path.join(BASE_DIR, "staticfiles"))
     MEDIA_ROOT = config("MEDIA_ROOT", default=os.path.join(BASE_DIR, "media"))
     STATIC_URL = "/static/"
     MEDIA_URL = "/media/"
-
 # =============================================================================
 # CACHE
 # =============================================================================
