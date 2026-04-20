@@ -1,5 +1,6 @@
 # apps/inquiries/serializers.py
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
@@ -39,6 +40,38 @@ class InquiryAttachmentSerializer(serializers.ModelSerializer):
         return value
 
 
+class InquiryReplySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InquiryReply
+        fields = ("id", "inquiry", "user", "message", "created_at")
+        read_only_fields = ("id", "user", "inquiry", "created_at")
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        # view sets this in serializer context
+        inquiry = self.context.get("inquiry")
+        if not inquiry:
+            raise serializers.ValidationError("Inquiry context missing.")
+        # only recipient can reply (per your view logic)
+        if request and request.user != inquiry.to_user:
+            raise serializers.ValidationError(
+                "Only the listing owner may reply to this inquiry.")
+        return attrs
+
+    def create(self, validated_data):
+        inquiry = self.context.get("inquiry")
+        user = self.context["request"].user
+        reply = InquiryReply.objects.create(
+            inquiry=inquiry, user=user, message=validated_data["message"])
+        # task to notify inquirer
+        try:
+            from apps.inquiries.tasks import send_reply_notification_task
+            send_reply_notification_task.delay(reply.id)
+        except Exception:
+            pass
+        return reply
+
+
 class InquiryListSerializer(serializers.ModelSerializer):
     listing_title = serializers.CharField(
         source="listing.title", read_only=True)
@@ -56,6 +89,7 @@ class InquiryListSerializer(serializers.ModelSerializer):
             "subject", "status", "is_urgent", "created_at", "attachments_count"
         )
 
+    @extend_schema_field(serializers.IntegerField())
     def get_attachments_count(self, obj):
         return obj.attachments.count()
 
@@ -83,8 +117,9 @@ class InquirySerializer(serializers.ModelSerializer):
         read_only_fields = ("from_user", "to_user", "status",
                             "read_at", "replied_at", "created_at")
 
+    @extend_schema_field(InquiryReplySerializer(many=True))
     def get_replies(self, obj):
-        return InquiryReplySerializer(obj.replies.all(), many=True).data
+        return InquiryReplySerializer(obj.replies.all(), many=True, context=self.context).data
 
 
 class InquiryCreateSerializer(serializers.ModelSerializer):
@@ -124,7 +159,12 @@ class InquiryCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        # Basic contact email normalization
+        request = self.context.get("request")
+        if request and hasattr(request, 'FILES'):
+            attachments = request.FILES.getlist(
+                'attachments_data') or request.FILES.getlist('attachments')
+            if attachments:
+                attrs['attachments_data'] = attachments
         attrs['contact_email'] = attrs.get('contact_email', '').strip().lower()
         return attrs
 
@@ -171,35 +211,3 @@ class InquiryCreateSerializer(serializers.ModelSerializer):
             pass
 
         return inquiry
-
-
-class InquiryReplySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = InquiryReply
-        fields = ("id", "inquiry", "user", "message", "created_at")
-        read_only_fields = ("id", "user", "inquiry", "created_at")
-
-    def validate(self, attrs):
-        request = self.context.get("request")
-        # view sets this in serializer context
-        inquiry = self.context.get("inquiry")
-        if not inquiry:
-            raise serializers.ValidationError("Inquiry context missing.")
-        # only recipient can reply (per your view logic)
-        if request and request.user != inquiry.to_user:
-            raise serializers.ValidationError(
-                "Only the listing owner may reply to this inquiry.")
-        return attrs
-
-    def create(self, validated_data):
-        inquiry = self.context.get("inquiry")
-        user = self.context["request"].user
-        reply = InquiryReply.objects.create(
-            inquiry=inquiry, user=user, message=validated_data["message"])
-        # task to notify inquirer
-        try:
-            from apps.inquiries.tasks import send_reply_notification_task
-            send_reply_notification_task.delay(reply.id)
-        except Exception:
-            pass
-        return reply

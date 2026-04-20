@@ -5,7 +5,69 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from .constants import AdminModule, StaffRole
+
 User = get_user_model()
+
+
+class RolePermission(models.Model):
+    """
+    One row per (dashboard role, module). VIEW/MANAGE flags match the admin settings UI matrix.
+    """
+
+    role = models.CharField(
+        max_length=32, choices=StaffRole.choices, db_index=True)
+    module = models.CharField(
+        max_length=64, choices=AdminModule.choices, db_index=True)
+    can_view = models.BooleanField(default=False)
+    can_manage = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "admin_role_permissions"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["role", "module"], name="uniq_admin_role_module"),
+        ]
+
+    def __str__(self):
+        return f"{self.role} / {self.module}"
+
+
+class AdminProfile(models.Model):
+    """Dashboard staff: role, invite state (Add Admin modal)."""
+
+    class InviteStatus(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        ACTIVE = "active", _("Active")
+        REVOKED = "revoked", _("Revoked")
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="admin_profile",
+    )
+    staff_role = models.CharField(max_length=32, choices=StaffRole.choices)
+    invite_status = models.CharField(
+        max_length=20,
+        choices=InviteStatus.choices,
+        default=InviteStatus.ACTIVE,
+    )
+    invite_token = models.CharField(max_length=64, blank=True, db_index=True)
+    invited_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="admin_invites_sent",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "admin_profiles"
+
+    def __str__(self):
+        return f"{self.user.email} ({self.staff_role})"
 
 
 class ReportedContent(models.Model):
@@ -70,16 +132,47 @@ class ReportedContent(models.Model):
 
 
 class AdminActionLog(models.Model):
-    """Admin action audit log"""
-
     class ActionType(models.TextChoices):
+        # Content moderation
         CONTENT_REVIEWED = 'content_reviewed', _('Content Reviewed')
+        CONTENT_RESOLVED = 'content_resolved', _('Content Resolved')
+        CONTENT_DISMISSED = 'content_dismissed', _('Content Dismissed')
+        REPORT_SUBMITTED = 'report_submitted', _('Report Submitted')
+
+        # User management
         USER_VERIFIED = 'user_verified', _('User Verified')
+        USER_REJECTED = 'user_rejected', _('User Rejected')
+        USER_BANNED = 'user_banned', _('User Banned')
+        USER_UNBANNED = 'user_unbanned', _('User Unbanned')
+
+        # Admin management
+        ADMIN_INVITED = 'admin_invited', _('Admin Invited')
+        ADMIN_REVOKED = 'admin_revoked', _('Admin Revoked')
+        ADMIN_ACTIVATED = 'admin_activated', _('Admin Activated')
+
+        # Listings
+        LISTING_PUBLISHED = 'listing_published', _('Listing Published')
+        LISTING_ARCHIVED = 'listing_archived', _('Listing Archived')
+        LISTING_REMOVED = 'listing_removed', _('Listing Removed')
+        LISTING_FEATURED = 'listing_featured', _('Listing Featured')
+
+        # Bulk actions
         BULK_ACTION_PERFORMED = 'bulk_action_performed', _(
             'Bulk Action Performed')
 
+        # Roles & permissions
+        ROLES_MATRIX_UPDATED = 'roles_matrix_updated', _(
+            'Roles Matrix Updated')
+
+        # Verification
+        VERIFICATION_APPROVED = 'verification_approved', _(
+            'Verification Approved')
+        VERIFICATION_REJECTED = 'verification_rejected', _(
+            'Verification Rejected')
+
     admin_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
-    action_type = models.CharField(max_length=50, choices=ActionType.choices)
+    action_type = models.CharField(
+        max_length=50, choices=ActionType.choices)
     description = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
     extra_data = models.JSONField(default=dict, blank=True)

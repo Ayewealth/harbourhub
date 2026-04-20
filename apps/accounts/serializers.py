@@ -55,7 +55,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         password = attrs.get("password")
         password_confirm = attrs.get("password_confirm")
 
-        # ✅ Check OTP verification
         otp_valid = OneTimePassword.objects.filter(
             email__iexact=email,
             purpose=OneTimePassword.Purpose.REGISTRATION,
@@ -63,7 +62,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             expires_at__gte=timezone.now()
         ).exists()
 
-        # ✅ If OTP verified, password can be blank
         if otp_valid:
             if password:
                 if password != password_confirm:
@@ -72,7 +70,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
                     })
                 validate_password(password)
         else:
-            # ✅ OTP not verified → password is required
             if not password:
                 raise serializers.ValidationError({
                     "password": "Password is required if you haven't verified via OTP."
@@ -104,10 +101,25 @@ class OTPRequestSerializer(serializers.Serializer):
     def validate_email(self, value):
         return value.lower().strip()
 
+    def validate(self, attrs):
+        email = attrs["email"]
+        purpose = attrs["purpose"]
+
+        # For login OTP, user must already exist and be active
+        if purpose == OneTimePassword.Purpose.LOGIN:
+            user_exists = User.objects.filter(
+                email__iexact=email, is_active=True
+            ).exists()
+            if not user_exists:
+                raise serializers.ValidationError({
+                    "email": "No active account found with this email address."
+                })
+
+        return attrs
+
     def create(self, validated_data):
         email = validated_data["email"]
         purpose = validated_data["purpose"]
-
         otp = OneTimePassword.create_otp(email=email, purpose=purpose)
         from .tasks import send_otp_email_task
         send_otp_email_task.delay(email, otp.code, purpose, purpose)

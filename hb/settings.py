@@ -67,6 +67,9 @@ LOCAL_APPS = [
     "apps.admin_panel",
     "apps.analytics",
     "apps.health",
+    "apps.store",
+    "apps.reviews",
+    "apps.commerce",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -341,6 +344,8 @@ SPECTACULAR_SETTINGS = {
     "VERSION": config("API_VERSION", default="1.0.0"),
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    "ENUM_GENERATE_CHOICE_DESCRIPTION": True,   # ← shows enum values in description
+    "ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE": False,
 }
 
 

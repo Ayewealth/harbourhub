@@ -11,15 +11,13 @@ class IsInquiryParticipant(permissions.BasePermission):
     """
 
     def has_permission(self, request, view):
-        # listing of user's inquiries requires authentication
         if view.action in ("list", "create", "sent", "received"):
             return request.user and request.user.is_authenticated
-        # detail-level actions need object-level check
         return True
 
     def has_object_permission(self, request, view, obj):
-        # Admins allow
         if getattr(request.user, "is_admin_user", False):
             return True
-        # sender or recipient allowed
+        if view.action == 'destroy':
+            return obj.from_user_id == request.user.id
         return obj.from_user_id == request.user.id or obj.to_user_id == request.user.id

@@ -126,6 +126,14 @@ class User(AbstractUser):
     def can_create_listings(self):
         return self.role in [self.Role.SELLER, self.Role.SERVICE_PROVIDER]
 
+    @property
+    def can_create_stores(self):
+        return self.role in [self.Role.SELLER]
+
+    @property
+    def can_manage_stores(self):
+        return self.role == self.Role.SELLER
+
     def can_manage_user(self, user):
         """Check if current user can manage another user"""
         if self.role == self.Role.SUPER_ADMIN:

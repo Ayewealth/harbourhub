@@ -1,19 +1,25 @@
 # listings/views.py
-from rest_framework import viewsets, permissions, filters, status
+from apps.listings.tasks import record_listing_view_task
+from .permissions import IsOwnerOrAdminOrReadOnly, CanCreateListing
+from .filters import ListingFilter
+import logging
+
+from django.db.models import Avg, Count, FloatField, Q, Value
+from django.db.models.functions import Coalesce
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from drf_spectacular.utils import extend_schema, extend_schema_view,  OpenApiExample, inline_serializer
+from rest_framework import filters, generics, permissions, status, viewsets, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q
-from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from .models import Listing, ListingView
 from .serializers import (
     ListingListSerializer, ListingDetailSerializer,
     ListingCreateUpdateSerializer, MyListingSerializer
 )
-from .filters import ListingFilter
-from .permissions import IsOwnerOrAdminOrReadOnly, CanCreateListing
-from apps.listings.tasks import record_listing_view_task
+
+logger = logging.getLogger(__name__)
 
 
 @extend_schema_view(
@@ -44,6 +50,7 @@ class ListingViewSet(viewsets.ModelViewSet):
     queryset = Listing.objects.select_related(
         'category', 'user').prefetch_related('images')
     permission_classes = [IsOwnerOrAdminOrReadOnly, CanCreateListing]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     filter_backends = [DjangoFilterBackend,
                        filters.SearchFilter, filters.OrderingFilter]
     filterset_class = ListingFilter
@@ -142,6 +149,9 @@ class ListingViewSet(viewsets.ModelViewSet):
         updated = serializer.save()
         return updated
 
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
     @extend_schema(
         summary="Get my listings",
         description="Get current user's listings with all statuses"
@@ -202,6 +212,97 @@ class ListingViewSet(viewsets.ModelViewSet):
 
         return Response({'message': 'Listing archived successfully'}, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        summary="Upload Images",
+        description="Upload one or more images for a listing.",
+        request=inline_serializer(
+            name="UploadListingImagesRequest",
+            fields={
+                "images_data": serializers.ListField(
+                    child=serializers.ImageField()
+                )
+            },
+        ),
+        responses={200: inline_serializer(
+            name="UploadListingImagesResponse",
+            fields={
+                "message": serializers.CharField()
+            },
+        )},
+        examples=[
+            OpenApiExample(
+                "Upload images example",
+                description="Use multipart/form-data and repeat images_data for multiple files.",
+                value={
+                    "images_data": ["<file1>", "<file2>"]
+                },
+                request_only=True,
+            ),
+        ],
+    )
+    @action(detail=True, methods=['post'], url_path='upload-images')
+    def upload_images(self, request, pk=None):
+        listing = self.get_object()
+        images = request.FILES.getlist('images_data')
+        if not images:
+            return Response({'error': 'No images provided'}, status=400)
+
+        start_order = listing.images.count()
+        has_primary = listing.images.filter(is_primary=True).exists()
+        for i, image in enumerate(images):
+            ListingImage.objects.create(
+                listing=listing,
+                image=image,
+                is_primary=(not has_primary and i == 0),
+                sort_order=start_order + i,
+            )
+        return Response({'message': f'{len(images)} image(s) uploaded successfully'})
+
+    @extend_schema(
+        summary="Set Primary Image",
+        description="Set one existing listing image as the primary image.",
+        request=inline_serializer(
+            name="SetPrimaryImageRequest",
+            fields={
+                "image_id": serializers.IntegerField()
+            },
+        ),
+        responses={200: inline_serializer(
+            name="SetPrimaryImageResponse",
+            fields={
+                "message": serializers.CharField()
+            },
+        )},
+        examples=[
+            OpenApiExample(
+                "Set primary image example",
+                value={
+                    "image_id": 12
+                },
+                request_only=True,
+            ),
+        ],
+    )
+    @action(detail=True, methods=['post'], url_path='set-primary-image')
+    def set_primary_image(self, request, pk=None):
+        listing = self.get_object()
+        image_id = request.data.get('image_id')
+
+        if not image_id:
+            return Response({'error': 'image_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            image = listing.images.get(id=image_id)
+        except ListingImage.DoesNotExist:
+            return Response({'error': 'Image not found for this listing'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Unset all, then set the chosen one
+        listing.images.update(is_primary=False)
+        image.is_primary = True
+        image.save(update_fields=['is_primary'])
+
+        return Response({'message': f'Image {image_id} set as primary successfully'})
+
     def get_client_ip(self, request):
         """Get client IP address"""
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -210,3 +311,85 @@ class ListingViewSet(viewsets.ModelViewSet):
         else:
             ip = request.META.get('REMOTE_ADDR')
         return ip
+
+
+@extend_schema_view(
+    get=extend_schema(
+        summary="Top deals",
+        description=(
+            "Published listings prioritized by `featured`, then `published_at`, "
+            "then `created_at`. Query param `limit` (default 20, max 50)."
+        ),
+    ),
+)
+class TopDealsListView(generics.ListAPIView):
+    serializer_class = ListingListSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
+    filter_backends = []
+
+    def get_queryset(self):
+        try:
+            limit = int(self.request.query_params.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        limit = min(max(limit, 1), 50)
+
+        return (
+            Listing.objects.filter(status=Listing.Status.PUBLISHED)
+            .select_related("category", "user", "store")
+            .prefetch_related("images")
+            .annotate(
+                rating_avg=Coalesce(
+                    Avg("reviews__rating"),
+                    Value(0.0),
+                    output_field=FloatField(),
+                ),
+                review_count=Count("reviews", distinct=True),
+            )
+            .order_by("-featured", "-published_at", "-created_at")[:limit]
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        summary="Best reviewed listings",
+        description=(
+            "Published listings with at least one review, ordered by average rating, "
+            "review count, then recency. Query param `limit` (default 20, max 50)."
+        ),
+    ),
+)
+class BestReviewedListView(generics.ListAPIView):
+    serializer_class = ListingListSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
+    filter_backends = []
+
+    def get_queryset(self):
+        try:
+            limit = int(self.request.query_params.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        limit = min(max(limit, 1), 50)
+
+        return (
+            Listing.objects.filter(status=Listing.Status.PUBLISHED)
+            .select_related("category", "user", "store")
+            .prefetch_related("images")
+            .annotate(
+                rating_avg=Coalesce(
+                    Avg("reviews__rating"),
+                    Value(0.0),
+                    output_field=FloatField(),
+                ),
+                review_count=Count("reviews", distinct=True),
+            )
+            .filter(review_count__gt=0)
+            .order_by(
+                "-rating_avg",
+                "-review_count",
+                "-published_at",
+                "-created_at",
+            )[:limit]
+        )

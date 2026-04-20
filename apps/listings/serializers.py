@@ -79,6 +79,8 @@ class ListingListSerializer(serializers.ModelSerializer):
         source="category.name", read_only=True)
     category_full_name = serializers.CharField(
         source="category.get_full_name", read_only=True)
+    store_name = serializers.CharField(
+        source="store.name", read_only=True)
     owner_name = serializers.CharField(
         source="user.get_full_name", read_only=True)
     owner_company = serializers.CharField(
@@ -86,16 +88,19 @@ class ListingListSerializer(serializers.ModelSerializer):
     primary_image = serializers.SerializerMethodField()
     location_display = serializers.SerializerMethodField()
     currency_symbol = serializers.SerializerMethodField()
+    rating_average = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
         fields = (
-            "id", "title", "description", "category", "category_name", "category_full_name",
+            "id", "title", "description", "category", "store", "store_name", "category_name", "category_full_name",
             "listing_type", "price", "currency", "currency_symbol", "price_unit", "negotiable",
             "location", "location_display", "country", "city",
             "contact_name", "contact_email", "contact_phone",
             "manufacturer", "model", "year", "condition",
             "status", "featured", "views_count", "inquiries_count",
+            "rating_average", "review_count",
             "owner_name", "owner_company", "primary_image",
             "created_at", "updated_at", "published_at",
         )
@@ -119,10 +124,24 @@ class ListingListSerializer(serializers.ModelSerializer):
     def get_currency_symbol(self, obj):
         return CURRENCY_SYMBOLS.get(obj.currency, obj.currency)
 
+    @extend_schema_field(serializers.FloatField(allow_null=True))
+    def get_rating_average(self, obj):
+        v = getattr(obj, "rating_avg", None)
+        if v is None:
+            return None
+        return round(float(v), 2)
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_review_count(self, obj):
+        v = getattr(obj, "review_count", None)
+        return int(v) if v is not None else 0
+
 
 class ListingDetailSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(
         source="category.name", read_only=True)
+    store_name = serializers.CharField(
+        source="store.name", read_only=True)
     category_full_name = serializers.CharField(
         source="category.get_full_name", read_only=True)
     owner = serializers.SerializerMethodField()
@@ -134,7 +153,7 @@ class ListingDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Listing
         fields = (
-            "id", "title", "description", "category", "category_name", "category_full_name",
+            "id", "title", "description", "category", "store", "store_name", "category_name", "category_full_name",
             "listing_type", "price", "currency", "currency_symbol", "price_unit", "negotiable",
             "location", "location_display", "country", "state_province", "city",
             "contact_name", "contact_email", "contact_phone",
@@ -177,16 +196,18 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
     ), write_only=True, required=False, allow_empty=True)
     documents_data = serializers.ListField(
         child=serializers.FileField(), write_only=True, required=False, allow_empty=True)
+    images = ListingImageSerializer(many=True, read_only=True)
+    documents = ListingDocumentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Listing
         fields = (
-            "title", "description", "category", "listing_type",
+            "title", "description", "category", "store", "listing_type",
             "price", "currency", "price_unit", "negotiable",
             "location", "country", "state_province", "city",
             "contact_name", "contact_email", "contact_phone",
             "manufacturer", "model", "year", "condition", "service_area",
-            "status", "featured", "expires_at", "images_data", "documents_data"
+            "status", "featured", "expires_at", "images_data", "documents_data", "images", "documents"
         )
 
     def validate_category(self, value):
@@ -212,6 +233,17 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
+
+        # Pull repeated file fields from request.FILES manually
+        if request and hasattr(request, 'FILES'):
+            images = request.FILES.getlist('images_data')
+            if images:
+                attrs['images_data'] = images
+
+            documents = request.FILES.getlist('documents_data')
+            if documents:
+                attrs['documents_data'] = documents
+
         if self.instance:
             if "featured" in attrs and request.user != self.instance.user:
                 raise serializers.ValidationError(
@@ -242,8 +274,9 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        images_data = validated_data.pop("images_data", None)
-        documents_data = validated_data.pop("documents_data", None)
+        images_data = validated_data.pop("images_data", [])
+        documents_data = validated_data.pop("documents_data", [])
+
         featured_flag = validated_data.get("featured", None)
 
         for attr, value in validated_data.items():
@@ -254,13 +287,13 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
             _unset_other_featured_for_user(
                 instance.user, exclude_pk=instance.pk)
 
-        if images_data is not None:
-            instance.images.all().delete()
-            self._create_images(instance, images_data)
+        if images_data:
+            print("images_data:", images_data)
+            self._append_images(instance, images_data)
 
-        if documents_data is not None:
-            instance.documents.all().delete()
-            self._create_documents(instance, documents_data)
+        if documents_data:
+            print("documents_data:", documents_data)
+            self._append_documents(instance, documents_data)
 
         return instance
 
@@ -275,6 +308,26 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
             ListingDocument.objects.create(
                 listing=listing, document=doc_data, name=getattr(
                     doc_data, "name", "")
+            )
+
+    def _append_images(self, listing, images_data):
+        start_order = listing.images.count()
+        has_primary = listing.images.filter(is_primary=True).exists()
+
+        for i, image_data in enumerate(images_data):
+            ListingImage.objects.create(
+                listing=listing,
+                image=image_data,
+                is_primary=(not has_primary and i == 0),
+                sort_order=start_order + i,
+            )
+
+    def _append_documents(self, listing, documents_data):
+        for doc_data in documents_data:
+            ListingDocument.objects.create(
+                listing=listing,
+                document=doc_data,
+                name=getattr(doc_data, "name", "")
             )
 
 

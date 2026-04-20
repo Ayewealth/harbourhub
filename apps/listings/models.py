@@ -5,7 +5,9 @@ from django.utils.translation import gettext_lazy as _
 from django.core.validators import MinValueValidator
 from django.utils.text import slugify
 from django.db.models import F
+
 from apps.categories.models import Category
+from apps.store.models import Store
 
 
 class Listing(models.Model):
@@ -80,6 +82,9 @@ class Listing(models.Model):
     featured = models.BooleanField(default=False)
     views_count = models.PositiveIntegerField(default=0)
     inquiries_count = models.PositiveIntegerField(default=0)
+    store = models.ForeignKey(
+        Store, on_delete=models.CASCADE, null=True, blank=True, related_name="listings", help_text=_("The store that the listing belongs to")
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

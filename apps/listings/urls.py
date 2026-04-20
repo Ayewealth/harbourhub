@@ -1,11 +1,22 @@
-# listings/urls.py (no change required)
+# listings/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ListingViewSet
+
+from .views import (
+    BestReviewedListView,
+    ListingViewSet,
+    TopDealsListView,
+)
 
 router = DefaultRouter()
-router.register(r'', ListingViewSet, basename='listing')
+router.register(r"", ListingViewSet, basename="listing")
 
 urlpatterns = [
-    path('', include(router.urls)),
+    path("top-deals/", TopDealsListView.as_view(), name="listing-top-deals"),
+    path(
+        "best-reviewed/",
+        BestReviewedListView.as_view(),
+        name="listing-best-reviewed",
+    ),
+    path("", include(router.urls)),
 ]

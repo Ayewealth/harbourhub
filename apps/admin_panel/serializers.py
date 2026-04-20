@@ -23,10 +23,19 @@ class ReportedContentSerializer(serializers.ModelSerializer):
         )
 
 
+REPORTABLE_TYPES = [
+    ('listing', 'Listing'),
+    ('user', 'User'),
+    ('inquiry', 'Inquiry'),
+]
+
+
 class ReportedContentCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating content reports"""
-    content_type = serializers.CharField(
-    )  # accept simple string like "listing", "user", "inquiry"
+    content_type = serializers.ChoiceField(
+        choices=REPORTABLE_TYPES,
+        help_text="The type of content being reported: listing, user, or inquiry"
+    )
 
     class Meta:
         model = ReportedContent

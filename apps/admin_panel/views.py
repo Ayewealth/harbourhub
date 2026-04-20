@@ -33,6 +33,7 @@ class ReportedContentViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["status", "reason", "content_type"]
     search_fields = ["description", "reported_by__email"]
+    http_method_names = ['get', 'post']
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -55,7 +56,13 @@ class ReportedContentViewSet(viewsets.ModelViewSet):
         """Attach current user as reporter and optionally trigger async task."""
         report = serializer.save(reported_by=self.request.user)
 
-        # Optional: send async admin notification (if Celery is active)
+        AdminActionLog.log_action(
+            admin_user=self.request.user,
+            action_type=AdminActionLog.ActionType.REPORT_SUBMITTED,
+            description=f"User reported {report.content_type} #{report.object_id}",
+            extra_data={"reason": report.reason}
+        )
+
         try:
             from .tasks import notify_admins_of_new_report
             notify_admins_of_new_report.delay(report.id)
@@ -82,7 +89,7 @@ class ReportedContentViewSet(viewsets.ModelViewSet):
 
         AdminActionLog.log_action(
             admin_user=request.user,
-            action_type=AdminActionLog.ActionType.CONTENT_REVIEWED,
+            action_type=AdminActionLog.ActionType.CONTENT_RESOLVED,
             description=f"Resolved content report: {report.get_reason_display()}",
             extra_data={"action_taken": action_taken, "notes": admin_notes},
         )
@@ -109,7 +116,7 @@ class ReportedContentViewSet(viewsets.ModelViewSet):
 
         AdminActionLog.log_action(
             admin_user=request.user,
-            action_type=AdminActionLog.ActionType.CONTENT_REVIEWED,
+            action_type=AdminActionLog.ActionType.CONTENT_DISMISSED,
             description=f"Dismissed content report: {report.get_reason_display()}",
             extra_data={"notes": admin_notes},
         )
@@ -154,7 +161,7 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
         # Log admin action
         AdminActionLog.log_action(
             admin_user=request.user,
-            action_type=AdminActionLog.ActionType.USER_VERIFIED,
+            action_type=AdminActionLog.ActionType.VERIFICATION_APPROVED,
             description=f"Approved verification for {verification.user.email}",
             extra_data={"notes": notes},
         )
@@ -183,7 +190,7 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
         # Log admin action
         AdminActionLog.log_action(
             admin_user=request.user,
-            action_type=AdminActionLog.ActionType.USER_VERIFIED,
+            action_type=AdminActionLog.ActionType.VERIFICATION_REJECTED,
             description=f"Rejected verification for {verification.user.email}",
             extra_data={"notes": notes},
         )

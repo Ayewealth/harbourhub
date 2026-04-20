@@ -41,15 +41,19 @@ class ListingFilter(filters.FilterSet):
     # Currency
     currency = filters.CharFilter(field_name="currency", lookup_expr="iexact")
 
-    # created / published
+    # created / published (aliases: date_from / date_to on created_at for API consistency)
     created_after = filters.DateFilter(
         field_name="created_at", lookup_expr="gte")
     created_before = filters.DateFilter(
         field_name="created_at", lookup_expr="lte")
+    date_from = filters.DateFilter(method="filter_created_date_from")
+    date_to = filters.DateFilter(method="filter_created_date_to")
     published_after = filters.DateFilter(
         field_name="published_at", lookup_expr="gte")
     published_before = filters.DateFilter(
         field_name="published_at", lookup_expr="lte")
+    published_date_from = filters.DateFilter(method="filter_published_date_from")
+    published_date_to = filters.DateFilter(method="filter_published_date_to")
 
     # Free-text search across several fields
     q = filters.CharFilter(method="filter_search")
@@ -69,6 +73,26 @@ class ListingFilter(filters.FilterSet):
         model = Listing
         # default base qs fields — filters are defined above
         fields = []
+
+    def filter_created_date_from(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(created_at__date__gte=value)
+
+    def filter_created_date_to(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(created_at__date__lte=value)
+
+    def filter_published_date_from(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(published_at__date__gte=value)
+
+    def filter_published_date_to(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(published_at__date__lte=value)
 
     def filter_category(self, queryset, name, value):
         """

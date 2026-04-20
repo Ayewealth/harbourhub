@@ -64,22 +64,9 @@ class InquiryViewSet(viewsets.ModelViewSet):
 
     @method_decorator(ratelimit(key='user', rate='10/h', method='POST'))
     def create(self, request, *args, **kwargs):
-        """
-        Create inquiry with rate limiting.
-        Accepts multipart file uploads via field name `attachments` (multiple).
-        The serializer also supports `attachments_data` list field; we'll pass files into save()
-        so the serializer create() can use them.
-        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        # collect attachments from multipart file uploads if present
-        attachments = request.FILES.getlist(
-            'attachments') if request.FILES else []
-        # Save with attachments_data passed as kwarg so serializer.create receives them
-        with transaction.atomic():
-            inquiry = serializer.save(attachments_data=attachments)
-
+        inquiry = serializer.save()
         out_serializer = InquirySerializer(
             inquiry, context=self.get_serializer_context())
         return Response(out_serializer.data, status=status.HTTP_201_CREATED)
@@ -179,3 +166,12 @@ class InquiryViewSet(viewsets.ModelViewSet):
         return Response({
             'message': 'Inquiry marked as spam'
         }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def close(self, request, pk=None):
+        inquiry = self.get_object()
+        if inquiry.from_user != request.user and inquiry.to_user != request.user:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        inquiry.status = Inquiry.Status.CLOSED
+        inquiry.save(update_fields=['status'])
+        return Response({'message': 'Inquiry closed'})

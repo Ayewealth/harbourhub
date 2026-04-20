@@ -8,6 +8,9 @@ from django.utils.translation import gettext_lazy as _
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     model = User
+
+    readonly_fields = ("created_at", "updated_at")
+
     ordering = ('-created_at',)
     list_display = ('email', 'username', 'role', 'is_verified',
                     'is_staff', 'is_superuser', 'created_at')
