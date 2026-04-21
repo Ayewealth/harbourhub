@@ -12,9 +12,9 @@ from .views import (
     CartItemView,
     CheckoutView,
     PaymentVerifyView,
-    PaystackWebhookView,
     QuoteRequestVendorUpdateView,
 )
+from .webhooks import PaystackWebhookView
 
 urlpatterns = [
     path("quotes/", QuoteRequestListCreateView.as_view(), name="quote-list-create"),

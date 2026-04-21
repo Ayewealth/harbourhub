@@ -12,6 +12,8 @@ from rest_framework.views import APIView
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
+from apps.notifications.utils import notify_order_paid
+
 from .models import Order, OrderActivity, Payment
 
 logger = logging.getLogger(__name__)
@@ -105,6 +107,8 @@ class PaystackWebhookView(APIView):
         order.status = Order.Status.PAID
         order.save(update_fields=['status'])
 
+        notify_order_paid(order)
+
         OrderActivity.objects.create(
             order=order,
             event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
@@ -129,7 +133,7 @@ class PaystackWebhookView(APIView):
             order=order,
             listing=order.listing,
             earning_type=order.order_type,
-            gross_amount=order.total_amount,
+            gross_amount=order.subtotal,
             commission_rate=getattr(
                 order.store, 'commission_rate', 5.00) if order.store else 5.00,
             currency=order.currency,
@@ -159,8 +163,7 @@ class PaystackWebhookView(APIView):
 
         # Mark vendor earnings as paid out
         VendorEarning.objects.filter(
-            vendor=payout.vendor,
-            status=VendorEarning.Status.AVAILABLE
+            payout=payout
         ).update(status=VendorEarning.Status.PAID_OUT)
 
         logger.info(
@@ -185,6 +188,15 @@ class PaystackWebhookView(APIView):
             'gateway_response', 'Transfer failed')
         payout.save(update_fields=['status', 'failure_reason'])
 
+        # Release earnings back to available
+        from apps.financials.models import VendorEarning
+        VendorEarning.objects.filter(
+            payout=payout
+        ).update(
+            status=VendorEarning.Status.AVAILABLE,
+            payout=None
+        )
+
         logger.info(
             "Transfer failed processed for reference %s", reference)
 
@@ -208,9 +220,11 @@ class PaystackWebhookView(APIView):
 
         # Re-credit earnings back to available
         VendorEarning.objects.filter(
-            vendor=payout.vendor,
-            status=VendorEarning.Status.PAID_OUT
-        ).update(status=VendorEarning.Status.AVAILABLE)
+            payout=payout
+        ).update(
+            status=VendorEarning.Status.AVAILABLE,
+            payout=None
+        )
 
         logger.info(
             "Transfer reversed for reference %s", reference)

@@ -71,6 +71,8 @@ LOCAL_APPS = [
     "apps.reviews",
     "apps.commerce",
     "apps.financials",
+    "apps.notifications",
+    "apps.messaging"
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -473,6 +475,15 @@ CELERY_BEAT_SCHEDULE = {
     "compute-analytics-snapshot": {
         "task": "apps.analytics.tasks.compute_and_cache_analytics",
         "schedule": crontab(minute="*/10"),  # every 10 minutes
+    },
+
+    "send-rental-reminders-daily": {
+        "task": "apps.notifications.tasks.send_rental_reminders_task",
+        "schedule": crontab(hour=8, minute=0),  # 8am daily
+    },
+    "release-pending-earnings-every-hour": {
+        "task": "apps.financials.tasks.release_pending_earnings_task",
+        "schedule": crontab(minute=0, hour="*/1"),
     },
 }
 

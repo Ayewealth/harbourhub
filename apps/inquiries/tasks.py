@@ -6,6 +6,8 @@ from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.notifications.utils import notify_inquiry_replied, notify_new_inquiry
+
 from .models import Inquiry, InquiryReply
 
 
@@ -25,6 +27,8 @@ def send_inquiry_notification_task(inquiry_id: int):
             'listing', 'to_user', 'from_user').get(pk=inquiry_id)
     except Inquiry.DoesNotExist:
         return
+
+    notify_new_inquiry(inquiry)
 
     context = {
         "inquiry": inquiry,
@@ -63,6 +67,8 @@ def send_reply_notification_task(reply_id: int):
             'inquiry', 'user').get(pk=reply_id)
     except InquiryReply.DoesNotExist:
         return
+
+    notify_inquiry_replied(reply.inquiry)
 
     inquiry = reply.inquiry
     # decide recipient: if inquirer is a registered user, use their email, otherwise use contact_email

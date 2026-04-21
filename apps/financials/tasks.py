@@ -1,6 +1,8 @@
 from celery import shared_task
 import logging
 
+from apps.notifications.utils import notify_payout_failed, notify_payout_processed
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,6 +63,7 @@ def process_payout_task(self, payout_id):
 
         if transfer_data.get('status'):
             payout.status = Payout.Status.PROCESSING
+            notify_payout_processed(payout)
             payout.save(update_fields=['status'])
         else:
             raise Exception(f"Transfer failed: {transfer_data}")
@@ -69,6 +72,26 @@ def process_payout_task(self, payout_id):
         logger.exception("process_payout_task failed for payout %s: %s",
                          payout_id, exc)
         payout.status = Payout.Status.FAILED
+        notify_payout_failed(payout)
         payout.failure_reason = str(exc)
         payout.save(update_fields=['status', 'failure_reason'])
         raise self.retry(exc=exc, countdown=60)
+
+
+@shared_task
+def release_pending_earnings_task():
+    """Move pending earnings to available after escrow period."""
+    from .models import VendorEarning
+    from django.utils import timezone
+
+    now = timezone.now()
+    pending = VendorEarning.objects.filter(
+        status=VendorEarning.Status.PENDING,
+        available_at__lte=now
+    )
+
+    count = pending.count()
+    if count > 0:
+        pending.update(status=VendorEarning.Status.AVAILABLE)
+        logger.info("Released %d pending earnings to available status", count)
+    return count

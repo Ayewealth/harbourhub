@@ -23,6 +23,7 @@ from apps.commerce.models import Order, OrderActivity
 from apps.commerce.paystack import initialize_transaction, verify_transaction
 from apps.admin_panel.auth import has_admin_module_permission
 from apps.admin_panel.constants import AdminModule
+from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
 
 
 from .filters import OrderFilter, QuoteRequestFilter
@@ -97,6 +98,10 @@ class QuoteRequestListCreateView(generics.ListCreateAPIView):
         if user.is_staff and self.request.query_params.get("all") == "true":
             return qs
         return qs.filter(Q(buyer=user) | Q(listing__user=user))
+
+    def perform_create(self, serializer):
+        quote = serializer.save(buyer=self.request.user)
+        notify_quote_received(quote)
 
 
 @extend_schema_view(
@@ -180,6 +185,7 @@ class QuoteRequestActionView(APIView):
             if quote.status != QuoteRequest.Status.PENDING:
                 return Response({'error': 'Only pending quotes can be responded to'}, status=400)
             quote.status = QuoteRequest.Status.RESPONDED
+            notify_quote_responded(quote)
 
         elif action == 'convert':
             if quote.status != QuoteRequest.Status.RESPONDED:
@@ -322,6 +328,8 @@ class OrderDetailView(generics.RetrieveAPIView):
         order.status = Order.Status.CANCELLED
         order.save(update_fields=['status'])
 
+        notify_order_cancelled(order, cancelled_by=request.user)
+
         # Log activity
         OrderActivity.objects.create(
             order=order,
@@ -423,7 +431,10 @@ class OrderMarkShippedView(APIView):
             message="Order has been shipped"
         )
 
+        notify_order_shipped(order)
+
         return Response({"message": "Order marked as shipped"})
+
 
 class MarketplaceBreakdownView(APIView):
     """
@@ -622,6 +633,8 @@ class CheckoutView(APIView):
                 message="Order placed successfully."
             )
 
+            notify_order_placed(order)
+
             orders_created.append(order)
 
             # Use paystack.py client
@@ -731,93 +744,3 @@ class PaymentVerifyView(APIView):
         )
 
 
-@method_decorator(csrf_exempt, name='dispatch')
-class PaystackWebhookView(APIView):
-    """Handle Paystack webhook events."""
-    permission_classes = []
-    authentication_classes = []
-
-    def post(self, request):
-        # Verify webhook signature
-        paystack_signature = request.headers.get('x-paystack-signature', '')
-        secret = settings.PAYSTACK_SECRET_KEY.encode('utf-8')
-        body = request.body
-
-        expected = hmac.new(
-            secret, body, hashlib.sha512).hexdigest()
-
-        if not hmac.compare_digest(expected, paystack_signature):
-            return Response(
-                {'error': 'Invalid signature'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        import json
-        data = json.loads(body)
-        event = data.get('event')
-
-        if event == 'charge.success':
-            self._handle_charge_success(data['data'])
-        elif event == 'transfer.success':
-            self._handle_transfer_success(data['data'])
-        elif event == 'transfer.failed':
-            self._handle_transfer_failed(data['data'])
-
-        return Response({'status': 'ok'})
-
-    @transaction.atomic
-    def _handle_charge_success(self, data):
-        reference = data.get('reference')
-        try:
-            payment = Payment.objects.select_related(
-                'order').get(reference=reference)
-            if payment.status != Payment.Status.SUCCESS:
-                payment.status = Payment.Status.SUCCESS
-                payment.paid_at = timezone.now()
-                payment.gateway_response = data
-                payment.save(update_fields=[
-                    'status', 'paid_at', 'gateway_response'])
-
-                order = payment.order
-                order.status = Order.Status.PAID
-                order.save(update_fields=['status'])
-
-                OrderActivity.objects.create(
-                    order=order,
-                    event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
-                    message="Payment confirmed via Paystack webhook."
-                )
-        except Payment.DoesNotExist:
-            pass
-
-    @transaction.atomic
-    def _handle_transfer_success(self, data):
-        from apps.financials.models import Payout
-        reference = data.get('reference')
-        try:
-            payout = Payout.objects.get(reference=reference)
-            payout.status = Payout.Status.PAID
-            payout.processed_at = timezone.now()
-            payout.save(update_fields=['status', 'processed_at'])
-
-            # Mark earnings as paid out
-            from apps.financials.models import VendorEarning
-            VendorEarning.objects.filter(
-                vendor=payout.vendor,
-                status=VendorEarning.Status.AVAILABLE
-            ).update(status=VendorEarning.Status.PAID_OUT)
-        except Payout.DoesNotExist:
-            pass
-
-    @transaction.atomic
-    def _handle_transfer_failed(self, data):
-        from apps.financials.models import Payout
-        reference = data.get('reference')
-        try:
-            payout = Payout.objects.get(reference=reference)
-            payout.status = Payout.Status.FAILED
-            payout.failure_reason = data.get(
-                'gateway_response', 'Transfer failed')
-            payout.save(update_fields=['status', 'failure_reason'])
-        except Payout.DoesNotExist:
-            pass

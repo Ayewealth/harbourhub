@@ -5,6 +5,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import IsAdminUser
 from drf_spectacular.utils import extend_schema, extend_schema_view
 
+from apps.notifications.utils import notify_verification_approved, notify_verification_rejected
+
 from .models import ReportedContent, AdminActionLog
 from .serializers import ReportedContentSerializer, ReportedContentCreateSerializer
 from .permissions import IsAdminOrSuperAdmin
@@ -166,6 +168,8 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
             extra_data={"notes": notes},
         )
 
+        notify_verification_approved(verification.user)
+
         return Response(
             {"message": "Verification approved successfully."},
             status=status.HTTP_200_OK
@@ -194,6 +198,9 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
             description=f"Rejected verification for {verification.user.email}",
             extra_data={"notes": notes},
         )
+        
+        notify_verification_rejected(
+            verification.user, notes=notes)
 
         return Response(
             {"message": "Verification rejected successfully."},

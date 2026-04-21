@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -10,6 +11,8 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import generics, permissions, status, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from apps.financials.tasks import process_payout_task
 
 from .models import BankAccount, VendorEarning, Payout
 from .serializers import (
@@ -156,16 +159,40 @@ class PayoutListCreateView(generics.ListCreateAPIView):
         ).select_related('bank_account')
 
     def perform_create(self, serializer):
-        payout = serializer.save(
-            vendor=self.request.user,
-            reference=f"PAY-{uuid.uuid4().hex[:12].upper()}"
-        )
-        # Trigger async Paystack transfer
-        try:
-            from .tasks import process_payout_task
-            process_payout_task.delay(payout.id)
-        except Exception:
-            pass
+        user = self.request.user
+
+        with transaction.atomic():
+            payout = serializer.save(
+                vendor=user,
+                reference=f"PAY-{uuid.uuid4().hex[:12].upper()}"
+            )
+
+            # Lock earnings rows
+            earnings = VendorEarning.objects.select_for_update().filter(
+                vendor=user,
+                status=VendorEarning.Status.AVAILABLE
+            ).order_by('created_at')
+
+            total = 0
+            selected = []
+
+            for e in earnings:
+                if total >= payout.amount:
+                    break
+                selected.append(e)
+                total += e.net_amount
+
+            if total < payout.amount:
+                raise Exception("Insufficient balance after locking")
+
+            # Reserve them
+            for e in selected:
+                e.payout = payout
+                e.status = VendorEarning.Status.PROCESSING  # reserved for payout
+                e.save(update_fields=['payout', 'status'])
+
+        # Trigger async transfer
+        process_payout_task.delay(payout.id)
 
 
 class BankListView(APIView):

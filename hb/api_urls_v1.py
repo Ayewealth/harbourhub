@@ -13,6 +13,8 @@ urlpatterns = [
     path('reviews/', include('apps.reviews.urls')),
     path('commerce/', include('apps.commerce.urls')),
     path('financials/', include('apps.financials.urls')),
+    path('notifications/', include('apps.notifications.urls')),
+    path('messages/', include('apps.messaging.urls')),
 
     # # Admin panel
     path('admin-panel/', include('apps.admin_panel.urls')),

@@ -50,6 +50,7 @@ class VendorEarning(models.Model):
     class Status(models.TextChoices):
         PENDING = 'pending', _('Pending')
         AVAILABLE = 'available', _('Available')
+        PROCESSING = 'processing', _('Processing Payout')
         PAID_OUT = 'paid_out', _('Paid Out')
         REVERSED = 'reversed', _('Reversed')
 
@@ -79,6 +80,12 @@ class VendorEarning(models.Model):
         'listings.Listing',
         on_delete=models.SET_NULL,
         null=True, blank=True,
+        related_name='earnings'
+    )
+    payout = models.ForeignKey(
+        'financials.Payout',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
         related_name='earnings'
     )
     earning_type = models.CharField(
