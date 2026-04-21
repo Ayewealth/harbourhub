@@ -13,7 +13,11 @@ from .views import (
     VerificationViewSet,
     OTPRequestView,
     OTPVerifyView,
-    SetPasswordView
+    SetPasswordView,
+    DeliveryDetailListCreateView,
+    DeliveryDetailRetrieveUpdateDestroyView,
+    DeliveryDetailSetDefaultView,
+    UserPreferenceView
 )
 
 router = DefaultRouter()
@@ -38,4 +42,15 @@ urlpatterns = [
          name="password_reset_request"),
     path("password/reset/confirm/", PasswordResetConfirmView.as_view(),
          name="password_reset_confirm"),
+
+    # Delivery details
+    path('delivery-details/', DeliveryDetailListCreateView.as_view(),
+         name='delivery-list-create'),
+    path('delivery-details/<int:pk>/',
+         DeliveryDetailRetrieveUpdateDestroyView.as_view(), name='delivery-detail'),
+    path('delivery-details/<int:pk>/set-default/',
+         DeliveryDetailSetDefaultView.as_view(), name='delivery-set-default'),
+
+    # Account preferences
+    path('preferences/', UserPreferenceView.as_view(), name='user-preferences'),
 ]

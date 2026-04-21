@@ -22,6 +22,7 @@ class Listing(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", _("Draft")
         PUBLISHED = "published", _("Published")
+        PAUSED = "paused", _("Paused")
         ARCHIVED = "archived", _("Archived")
         FLAGGED = "flagged", _("Flagged")
         SUSPENDED = "suspended", _("Suspended")
@@ -242,3 +243,31 @@ class ListingView(models.Model):
 
     def __str__(self):
         return f"View of {self.listing.title} at {self.viewed_at}"
+
+
+class SavedItem(models.Model):
+    """Bookmarked listings for a user."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='saved_items'
+    )
+    listing = models.ForeignKey(
+        Listing,
+        on_delete=models.CASCADE,
+        related_name='saved_by'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'saved_items'
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'listing'],
+                name='unique_saved_item'
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} saved {self.listing.title}"

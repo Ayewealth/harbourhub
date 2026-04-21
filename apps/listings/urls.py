@@ -6,6 +6,8 @@ from .views import (
     BestReviewedListView,
     ListingViewSet,
     TopDealsListView,
+    SavedItemListView,
+    SavedItemToggleView,
 )
 
 router = DefaultRouter()
@@ -18,5 +20,8 @@ urlpatterns = [
         BestReviewedListView.as_view(),
         name="listing-best-reviewed",
     ),
+    path("saved/", SavedItemListView.as_view(),
+         name="saved-items"),              # ← add
+    path("<int:pk>/save/", SavedItemToggleView.as_view(), name="listing-save"),
     path("", include(router.urls)),
 ]

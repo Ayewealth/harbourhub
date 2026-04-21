@@ -1,6 +1,10 @@
 from django.urls import path
 
 from .views import (
+    StoreActivityListView,
+    StoreChecklistView,
+    StoreDashboardMetricsView,
+    StoreDashboardTrendView,
     StoreListCreateView,
     StoreRetrieveUpdateDestroyView,
     TopVendorsListView,
@@ -15,4 +19,9 @@ urlpatterns = [
     path("<slug:slug>/publish/", StorePublishView.as_view(), name="store-publish"),
     path("<slug:slug>/unpublish/",
          StoreUnpublishView.as_view(), name="store-unpublish"),
+
+    path("dashboard/checklist/", StoreChecklistView.as_view()),
+    path("dashboard/metrics/", StoreDashboardMetricsView.as_view()),
+    path("dashboard/trend/", StoreDashboardTrendView.as_view()),
+    path("dashboard/activity/", StoreActivityListView.as_view()),
 ]

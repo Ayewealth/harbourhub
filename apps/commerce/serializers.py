@@ -1,3 +1,4 @@
+from .models import Cart, CartItem, OrderActivity, Order, Payment
 import uuid
 
 from django.utils import timezone
@@ -61,6 +62,8 @@ class QuoteRequestSerializer(serializers.ModelSerializer):
             "preferred_delivery_date",
             "delivery_location",
             "notes",
+            "vendor_price",
+            "vendor_notes",
             "status",
             "created_at",
             "updated_at",
@@ -68,7 +71,38 @@ class QuoteRequestSerializer(serializers.ModelSerializer):
         read_only_fields = ("buyer", "status", "created_at", "updated_at")
 
 
+class QuoteRequestVendorUpdateSerializer(serializers.ModelSerializer):
+    """Vendor-only update: counter-offer price and notes."""
+
+    class Meta:
+        model = QuoteRequest
+        fields = ("vendor_price", "vendor_notes")
+
+
+class OrderActivitySerializer(serializers.ModelSerializer):
+    event_type_display = serializers.CharField(
+        source='get_event_type_display', read_only=True
+    )
+
+    class Meta:
+        model = OrderActivity
+        fields = (
+            'id',
+            'order',
+            'event_type',
+            'event_type_display',
+            'message',
+            'created_at',
+        )
+        read_only_fields = ('id', 'order', 'created_at')
+
+
 class OrderSerializer(serializers.ModelSerializer):
+    activities = OrderActivitySerializer(many=True, read_only=True)
+    rental_days_total = serializers.IntegerField(read_only=True)
+    rental_days_elapsed = serializers.IntegerField(read_only=True)
+    rental_progress_percentage = serializers.FloatField(read_only=True)
+
     class Meta:
         model = Order
         fields = (
@@ -80,10 +114,25 @@ class OrderSerializer(serializers.ModelSerializer):
             "listing",
             "store",
             "currency",
+            "subtotal",
+            "delivery_fee",
+            "escrow_fee",
             "total_amount",
             "status",
             "placed_at",
             "quote_request",
+            "tracking_id",
+            "delivery_address",
+            "delivery_contact_name",
+            "delivery_contact_phone",
+            "delivery_carrier",
+            "rental_start_date",
+            "rental_end_date",
+            "pickup_scheduled_date",
+            "rental_days_total",
+            "rental_days_elapsed",
+            "rental_progress_percentage",
+            "activities",
             "extra",
             "created_at",
             "updated_at",
@@ -132,3 +181,172 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         if not validated_data.get("placed_at") and validated_data.get("status") not in (Order.Status.DRAFT,):
             validated_data["placed_at"] = timezone.now()
         return super().create(validated_data)
+
+
+class CartItemSerializer(serializers.ModelSerializer):
+    listing_title = serializers.CharField(
+        source='listing.title', read_only=True)
+    listing_price = serializers.DecimalField(
+        source='listing.price',
+        max_digits=14, decimal_places=2,
+        read_only=True
+    )
+    primary_image = serializers.SerializerMethodField()
+    store_name = serializers.CharField(
+        source='store.name', read_only=True)
+    subtotal = serializers.DecimalField(
+        max_digits=14, decimal_places=2,
+        read_only=True
+    )
+
+    class Meta:
+        model = CartItem
+        fields = (
+            'id', 'listing', 'listing_title', 'listing_price',
+            'primary_image', 'store', 'store_name',
+            'purchase_type', 'quantity', 'duration_days',
+            'unit_price', 'subtotal', 'created_at',
+        )
+        read_only_fields = ('id', 'unit_price', 'subtotal', 'created_at')
+
+    def get_primary_image(self, obj):
+        primary = obj.listing.images.filter(is_primary=True).first()
+        if primary:
+            request = self.context.get('request')
+            return request.build_absolute_uri(
+                primary.image.url) if request else primary.image.url
+        return None
+
+
+class CartItemCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CartItem
+        fields = (
+            'listing', 'purchase_type',
+            'quantity', 'duration_days',
+        )
+
+    def validate_listing(self, value):
+        from apps.listings.models import Listing
+        if value.status != Listing.Status.PUBLISHED:
+            raise serializers.ValidationError(
+                "This listing is not available.")
+        return value
+
+    def validate(self, attrs):
+        listing = attrs['listing']
+        purchase_type = attrs.get('purchase_type', CartItem.PurchaseType.BUY)
+
+        # Validate duration for rent/lease
+        if purchase_type in [
+            CartItem.PurchaseType.RENT,
+            CartItem.PurchaseType.LEASE
+        ] and not attrs.get('duration_days'):
+            raise serializers.ValidationError(
+                "duration_days is required for rent/lease.")
+
+        # Set unit price from listing
+        attrs['unit_price'] = listing.price or 0
+        attrs['store'] = listing.store
+        return attrs
+
+    def create(self, validated_data):
+        cart = self.context['cart']
+        listing = validated_data['listing']
+        purchase_type = validated_data.get(
+            'purchase_type', CartItem.PurchaseType.BUY)
+
+        # Update if exists
+        item, created = CartItem.objects.update_or_create(
+            cart=cart,
+            listing=listing,
+            purchase_type=purchase_type,
+            defaults={
+                'quantity': validated_data.get('quantity', 1),
+                'duration_days': validated_data.get('duration_days'),
+                'unit_price': validated_data['unit_price'],
+                'store': validated_data.get('store'),
+            }
+        )
+        return item
+
+
+class CartSerializer(serializers.ModelSerializer):
+    items = CartItemSerializer(many=True, read_only=True)
+    total = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True)
+    item_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Cart
+        fields = ('id', 'items', 'total', 'item_count', 'updated_at')
+
+
+class CheckoutSerializer(serializers.Serializer):
+    """Converts cart items into an order and initiates payment."""
+    cart_item_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="IDs of cart items to checkout"
+    )
+    delivery_detail_id = serializers.IntegerField(
+        help_text="ID of saved delivery address"
+    )
+    payment_method = serializers.ChoiceField(
+        choices=[('paystack', 'Paystack')],
+        default='paystack'
+    )
+    terms_accepted = serializers.BooleanField()
+
+    def validate_terms_accepted(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                "You must accept the terms and conditions.")
+        return value
+
+    def validate_delivery_detail_id(self, value):
+        from apps.accounts.models import DeliveryDetail
+        user = self.context['request'].user
+        try:
+            self.delivery_detail = DeliveryDetail.objects.get(
+                pk=value, user=user)
+        except DeliveryDetail.DoesNotExist:
+            raise serializers.ValidationError(
+                "Delivery address not found.")
+        return value
+
+    def validate_cart_item_ids(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                "At least one cart item is required.")
+        return value
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        cart_item_ids = attrs['cart_item_ids']
+
+        try:
+            cart = Cart.objects.get(buyer=user)
+        except Cart.DoesNotExist:
+            raise serializers.ValidationError("Cart is empty.")
+
+        items = cart.items.filter(
+            id__in=cart_item_ids
+        ).select_related('listing', 'store')
+
+        if not items.exists():
+            raise serializers.ValidationError(
+                "No valid cart items found.")
+
+        attrs['cart_items'] = items
+        return attrs
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = (
+            'id', 'order', 'amount', 'currency',
+            'status', 'reference', 'authorization_url',
+            'paid_at', 'created_at',
+        )
+        read_only_fields = fields

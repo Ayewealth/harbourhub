@@ -2,6 +2,7 @@ from django.db import models
 
 from apps.accounts.models import User
 from django.utils.translation import gettext_lazy as _
+
 from apps.categories.models import Category
 # Create your models here.
 
@@ -38,6 +39,12 @@ class Store(models.Model):
         max_length=20, blank=True, null=True, help_text=_('The zip code of the store'))
     policy = models.TextField(help_text=_('The policy of the store'))
 
+    commission_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=5.00,
+        help_text="Platform commission percentage charged on sales"
+    )
     is_verified = models.BooleanField(
         default=False, help_text=_('Whether the store is verified'))
     is_active = models.BooleanField(
@@ -51,3 +58,17 @@ class Store(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class StoreActivity(models.Model):
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE,
+        related_name="activities"
+    )
+    action = models.CharField(max_length=100)
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

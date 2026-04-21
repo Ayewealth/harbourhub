@@ -70,6 +70,7 @@ LOCAL_APPS = [
     "apps.store",
     "apps.reviews",
     "apps.commerce",
+    "apps.financials",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -483,3 +484,13 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+# =============================================================================
+# PAYSTACK
+# =============================================================================
+PAYSTACK_SECRET_KEY = config("PAYSTACK_SECRET_KEY", default="")
+PAYSTACK_PUBLIC_KEY = config("PAYSTACK_PUBLIC_KEY", default="")
+PAYSTACK_CALLBACK_URL = config(
+    "PAYSTACK_CALLBACK_URL",
+    default="http://localhost:3000/payment/callback"
+)

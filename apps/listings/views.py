@@ -1,5 +1,8 @@
 # listings/views.py
+from rest_framework.generics import get_object_or_404
+from apps.listings.models import ListingImage
 from apps.listings.tasks import record_listing_view_task
+from apps.store.views import log_store_activity
 from .permissions import IsOwnerOrAdminOrReadOnly, CanCreateListing
 from .filters import ListingFilter
 import logging
@@ -12,8 +15,9 @@ from drf_spectacular.utils import extend_schema, extend_schema_view,  OpenApiExa
 from rest_framework import filters, generics, permissions, status, viewsets, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import Listing, ListingView
+from .models import Listing, ListingView, SavedItem
 from .serializers import (
     ListingListSerializer, ListingDetailSerializer,
     ListingCreateUpdateSerializer, MyListingSerializer
@@ -136,6 +140,13 @@ class ListingViewSet(viewsets.ModelViewSet):
         # Save: serializer.create handles featured flag too, but we also ensure no duplicates
         # call save with user param is supported by serializer.create
         listing = serializer.save(user=user)
+
+        log_store_activity(
+            listing.store,
+            "listing_created",
+            f"{listing.title} was just created"
+        )
+
         return listing
 
     def perform_update(self, serializer):
@@ -192,6 +203,12 @@ class ListingViewSet(viewsets.ModelViewSet):
         listing.status = Listing.Status.PUBLISHED
         listing.save(update_fields=['status', 'published_at'])
 
+        log_store_activity(
+            listing.store,
+            "listing_published",
+            f"{listing.title} has been published"
+        )
+
         return Response({'message': 'Listing published successfully'}, status=status.HTTP_200_OK)
 
     @extend_schema(
@@ -211,6 +228,64 @@ class ListingViewSet(viewsets.ModelViewSet):
         listing.save(update_fields=['status'])
 
         return Response({'message': 'Listing archived successfully'}, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary="Pause listing",
+        description="Pause an active listing. Paused listings are hidden from public search but remain visible to the owner."
+    )
+    @action(detail=True, methods=['post'])
+    def pause(self, request, pk=None):
+        """Pause a published listing"""
+        listing = self.get_object()
+
+        if not (request.user == listing.user or getattr(request.user, 'is_admin_user', False)):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        if listing.status != Listing.Status.PUBLISHED:
+            return Response(
+                {'error': 'Only published listings can be paused'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        listing.status = Listing.Status.PAUSED
+        listing.save(update_fields=['status'])
+
+        log_store_activity(
+            listing.store,
+            "listing_paused",
+            f"{listing.title} was paused"
+        )
+
+        return Response({'message': 'Listing paused successfully'}, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary="Resume listing",
+        description="Resume a paused listing, making it publicly visible again."
+    )
+    @action(detail=True, methods=['post'])
+    def resume(self, request, pk=None):
+        """Resume a paused listing"""
+        listing = self.get_object()
+
+        if not (request.user == listing.user or getattr(request.user, 'is_admin_user', False)):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        if listing.status != Listing.Status.PAUSED:
+            return Response(
+                {'error': 'Only paused listings can be resumed'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        listing.status = Listing.Status.PUBLISHED
+        listing.save(update_fields=['status'])
+
+        log_store_activity(
+            listing.store,
+            "listing_resumed",
+            f"{listing.title} has resumed"
+        )
+
+        return Response({'message': 'Listing resumed successfully'}, status=status.HTTP_200_OK)
 
     @extend_schema(
         summary="Upload Images",
@@ -392,4 +467,67 @@ class BestReviewedListView(generics.ListAPIView):
                 "-published_at",
                 "-created_at",
             )[:limit]
+        )
+
+
+class SavedItemListView(generics.ListAPIView):
+    serializer_class = ListingListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        saved_listing_ids = SavedItem.objects.filter(
+            user=self.request.user
+        ).values_list('listing_id', flat=True)
+
+        return (
+            Listing.objects.filter(id__in=saved_listing_ids)
+            .select_related('category', 'user', 'store')
+            .prefetch_related('images')
+        )
+
+
+class SavedItemToggleView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        """Save a listing"""
+        listing = get_object_or_404(
+            Listing, pk=pk, status=Listing.Status.PUBLISHED)
+
+        if listing.user == request.user:
+            return Response(
+                {'error': 'You cannot save your own listing'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        _, created = SavedItem.objects.get_or_create(
+            user=request.user,
+            listing=listing
+        )
+
+        if created:
+            return Response(
+                {'message': 'Listing saved successfully', 'saved': True},
+                status=status.HTTP_201_CREATED
+            )
+        return Response(
+            {'message': 'Listing already saved', 'saved': True},
+            status=status.HTTP_200_OK
+        )
+
+    def delete(self, request, pk):
+        """Unsave a listing"""
+        listing = get_object_or_404(Listing, pk=pk)
+        deleted, _ = SavedItem.objects.filter(
+            user=request.user, listing=listing
+        ).delete()
+
+        if deleted:
+            return Response(
+                {'message': 'Listing removed from saved items', 'saved': False},
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            {'error': 'Listing was not in your saved items'},
+            status=status.HTTP_404_NOT_FOUND
         )

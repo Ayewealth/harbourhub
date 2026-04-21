@@ -1,7 +1,7 @@
 # accounts/views.py
 from django.conf import settings
 from django.utils.decorators import method_decorator
-from rest_framework import status, permissions, viewsets
+from rest_framework import status, permissions, viewsets, generics
 from rest_framework.decorators import action
 from rest_framework.mixins import CreateModelMixin, RetrieveModelMixin, UpdateModelMixin
 from rest_framework.response import Response
@@ -18,10 +18,11 @@ from .serializers import (
     PasswordChangeSerializer, PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer, VerificationRequestSerializer,
     OTPRequestSerializer, OTPVerifySerializer,
-    SetPasswordSerializer
+    SetPasswordSerializer, DeliveryDetailSerializer,
+    UserPreferenceSerializer,
 )
 from .permissions import IsOwnerOrAdmin
-from .models import VerificationRequest, OneTimePassword
+from .models import DeliveryDetail, UserPreference, VerificationRequest, OneTimePassword
 from .emails import EmailService
 from apps.accounts.tasks import send_welcome_email_task, send_password_reset_email_task, send_password_reset_confirmation_email_task, notify_admins_verification_request
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -39,7 +40,7 @@ class UserRegistrationViewSet(CreateModelMixin, GenericViewSet):
     """User registration endpoint"""
 
     serializer_class = UserRegistrationSerializer
-    authentication_classes = []  # disable JWT parsing  
+    authentication_classes = []  # disable JWT parsing
     permission_classes = [permissions.AllowAny]
 
     @method_decorator(ratelimit(key='ip', rate='20/h', method=['POST']))
@@ -273,3 +274,58 @@ class VerificationViewSet(viewsets.ViewSet):
             ),
             'last_request': VerificationRequestSerializer(verification_request).data if verification_request else None
         })
+
+
+class DeliveryDetailListCreateView(generics.ListCreateAPIView):
+    serializer_class = DeliveryDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return DeliveryDetail.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class DeliveryDetailRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = DeliveryDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return DeliveryDetail.objects.filter(user=self.request.user)
+
+
+class DeliveryDetailSetDefaultView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        detail = generics.get_object_or_404(
+            DeliveryDetail, pk=pk, user=request.user
+        )
+        # Unset all others first
+        DeliveryDetail.objects.filter(
+            user=request.user, is_default=True
+        ).exclude(pk=pk).update(is_default=False)
+
+        detail.is_default = True
+        detail.save(update_fields=['is_default'])
+
+        return Response({'message': 'Default delivery address updated.'})
+
+
+class UserPreferenceView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        prefs, _ = UserPreference.objects.get_or_create(user=request.user)
+        serializer = UserPreferenceSerializer(prefs)
+        return Response(serializer.data)
+
+    def patch(self, request):
+        prefs, _ = UserPreference.objects.get_or_create(user=request.user)
+        serializer = UserPreferenceSerializer(
+            prefs, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

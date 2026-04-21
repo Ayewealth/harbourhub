@@ -324,3 +324,74 @@ class OneTimePassword(models.Model):
     def mark_used(self):
         self.used = True
         self.save(update_fields=["used"])
+
+
+class DeliveryDetail(models.Model):
+    """Saved delivery addresses for a user."""
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='delivery_details'
+    )
+    contact_person = models.CharField(max_length=100)
+    country = models.CharField(max_length=100)
+    address = models.TextField(
+        help_text="Delivery address / offshore coordinates")
+    state = models.CharField(max_length=100)
+    city = models.CharField(max_length=100)
+    zip_code = models.CharField(max_length=20, blank=True)
+    phone = models.CharField(max_length=30)
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'delivery_details'
+        ordering = ['-is_default', '-created_at']
+
+    def save(self, *args, **kwargs):
+        # Ensure only one default per user
+        if self.is_default:
+            DeliveryDetail.objects.filter(
+                user=self.user, is_default=True
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.contact_person} - {self.address}"
+
+
+class UserPreference(models.Model):
+    """Account preferences for a user."""
+
+    class Language(models.TextChoices):
+        ENGLISH_US = 'en_us', _('English (American)')
+        ENGLISH_UK = 'en_gb', _('English (British)')
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='preferences'
+    )
+    language = models.CharField(
+        max_length=10,
+        choices=Language.choices,
+        default=Language.ENGLISH_US
+    )
+    # Shopping category interests (list of category IDs)
+    interested_categories = models.JSONField(default=list, blank=True)
+
+    # Email preferences
+    email_newsletter = models.BooleanField(default=True)
+    email_promotions = models.BooleanField(default=True)
+    email_order_updates = models.BooleanField(default=True)
+    email_unsubscribe_all = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_preferences'
+
+    def __str__(self):
+        return f"Preferences for {self.user.email}"

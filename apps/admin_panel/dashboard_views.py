@@ -16,7 +16,7 @@ from .dashboard_serializers import (
     matrix_from_db,
     AcceptAdminInviteSerializer
 )
-from .models import AdminProfile, RolePermission
+from .models import AdminActionLog, AdminProfile, RolePermission
 
 User = get_user_model()
 

@@ -10,25 +10,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     # API v1
-    path('api/v1/', include([
-        # Authentication
-        path('auth/', include('apps.accounts.urls')),
-
-        # Core functionality
-        path('categories/', include('apps.categories.urls')),
-        path('listings/', include('apps.listings.urls')),
-        path('inquiries/', include('apps.inquiries.urls')),
-        path('stores/', include('apps.store.urls')),
-        path('reviews/', include('apps.reviews.urls')),
-        path('commerce/', include('apps.commerce.urls')),
-
-        # # Admin panel
-        path('admin-panel/', include('apps.admin_panel.urls')),
-        path('analytics/', include('apps.analytics.urls')),
-
-        # Global Search
-        path('search/', include('apps.core.urls'))
-    ])),
+    path('', include('hb.api_urls_v1')),
 
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

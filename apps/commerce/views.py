@@ -1,3 +1,10 @@
+import uuid
+import hmac
+import hashlib
+import requests
+
+from decimal import Decimal
+from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.utils.dateparse import parse_date
 from django_filters.rest_framework import DjangoFilterBackend
@@ -5,17 +12,32 @@ from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExam
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.generics import get_object_or_404
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
+from apps.commerce.models import Order, OrderActivity
+from apps.commerce.paystack import initialize_transaction, verify_transaction
 from apps.admin_panel.auth import has_admin_module_permission
 from apps.admin_panel.constants import AdminModule
 
+
 from .filters import OrderFilter, QuoteRequestFilter
-from .models import Order, QuoteRequest
+from .models import Cart, CartItem, Order, OrderActivity, Payment, QuoteRequest
 from .serializers import (
+    CartItemCreateSerializer,
+    CartItemSerializer,
+    CartSerializer,
+    CheckoutSerializer,
     OrderCreateSerializer,
     OrderSerializer,
     QuoteRequestCreateSerializer,
     QuoteRequestSerializer,
+    OrderActivitySerializer,
+    QuoteRequestVendorUpdateSerializer
 )
 
 
@@ -95,6 +117,27 @@ class QuoteRequestDetailView(generics.RetrieveUpdateAPIView):
         return qs.filter(Q(buyer=user) | Q(listing__user=user))
 
 
+class QuoteRequestVendorUpdateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, pk):
+        quote = get_object_or_404(
+            QuoteRequest,
+            pk=pk,
+            listing__user=request.user
+        )
+
+        serializer = QuoteRequestVendorUpdateSerializer(
+            quote,
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(serializer.data)
+
+
 @extend_schema(
     summary="Quote action",
     examples=[
@@ -148,6 +191,49 @@ class QuoteRequestActionView(APIView):
 
         quote.save(update_fields=['status'])
         return Response({'message': f'Quote {action}ed successfully'})
+
+
+class MoveQuoteToCartView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, pk):
+        quote = get_object_or_404(
+            QuoteRequest,
+            pk=pk,
+            buyer=request.user,
+            status=QuoteRequest.Status.RESPONDED
+        )
+
+        cart, _ = Cart.objects.get_or_create(buyer=request.user)
+
+        # Use quoted price if available, fallback to listing price
+        quoted_price = request.data.get('quoted_price') or quote.listing.price
+
+        CartItem.objects.update_or_create(
+            cart=cart,
+            listing=quote.listing,
+            purchase_type=quote.purchase_type,
+            defaults={
+                'quantity': quote.quantity,
+                'unit_price': quoted_price,
+                'store': quote.store,
+                'duration_days': None,
+            }
+        )
+
+        # Mark quote as converted
+        quote.status = QuoteRequest.Status.CONVERTED
+        quote.save(update_fields=['status'])
+
+        return Response({
+            'message': 'Quote moved to cart successfully.',
+            'cart_item': {
+                'listing': quote.listing.title,
+                'quantity': quote.quantity,
+                'unit_price': str(quoted_price),
+            }
+        })
 
 
 @extend_schema_view(
@@ -235,8 +321,109 @@ class OrderDetailView(generics.RetrieveAPIView):
             return Response({'error': 'Order cannot be cancelled at this stage'}, status=400)
         order.status = Order.Status.CANCELLED
         order.save(update_fields=['status'])
+
+        # Log activity
+        OrderActivity.objects.create(
+            order=order,
+            event_type=OrderActivity.EventType.ORDER_CANCELLED,
+            message="Order has been cancelled."
+        )
         return Response({'message': 'Order cancelled successfully'})
 
+
+@extend_schema_view(
+    post=extend_schema(summary="Extend order rental period"),
+    examples=[
+        OpenApiExample(
+            "Extend order",
+            value={
+                "new_end_date": "2026-04-20T10:00:00Z"
+            }
+        )
+    ]
+)
+class OrderExtendRentalView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            order = Order.objects.get(
+                pk=pk, buyer=request.user,
+                order_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE]
+            )
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found'}, status=404)
+
+        new_end_date = request.data.get('new_end_date')
+        if not new_end_date:
+            return Response({'error': 'new_end_date is required'}, status=400)
+
+        from django.utils.dateparse import parse_date
+        parsed = parse_date(new_end_date)
+        if not parsed:
+            return Response({'error': 'Invalid date format. Use YYYY-MM-DD'}, status=400)
+
+        if order.rental_end_date and parsed <= order.rental_end_date:
+            return Response({'error': 'New end date must be after current end date'}, status=400)
+
+        order.rental_end_date = parsed
+        order.save(update_fields=['rental_end_date'])
+
+        OrderActivity.objects.create(
+            order=order,
+            event_type=OrderActivity.EventType.RENTAL_EXTENDED,
+            message=f"Rental extended to {parsed}."
+        )
+
+        return Response({
+            'message': 'Rental extended successfully',
+            'new_end_date': str(parsed),
+            'rental_days_total': order.rental_days_total,
+        })
+
+
+class OrderActivityListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = OrderActivitySerializer
+
+    def get_queryset(self):
+        order_id = self.kwargs['pk']
+        user = self.request.user
+        order = get_object_or_404(
+            Order, pk=order_id,
+            **{'buyer': user} if not user.is_staff else {}
+        )
+        return OrderActivity.objects.filter(
+            order=order
+        ).order_by('-created_at')
+
+
+class OrderMarkShippedView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        order = get_object_or_404(
+            Order,
+            pk=pk,
+            seller=request.user
+        )
+
+        if order.status != Order.Status.PAID:
+            return Response(
+                {"error": "Only paid orders can be shipped"},
+                status=400
+            )
+
+        order.status = Order.Status.FULFILLED
+        order.save(update_fields=["status"])
+
+        OrderActivity.objects.create(
+            order=order,
+            event_type=OrderActivity.EventType.SHIPPED,
+            message="Order has been shipped"
+        )
+
+        return Response({"message": "Order marked as shipped"})
 
 class MarketplaceBreakdownView(APIView):
     """
@@ -287,3 +474,350 @@ class MarketplaceBreakdownView(APIView):
                 "currency": "NGN",
             }
         )
+
+
+class CartView(APIView):
+    """Get or clear the cart."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        cart, _ = Cart.objects.get_or_create(buyer=request.user)
+        serializer = CartSerializer(cart, context={'request': request})
+        return Response(serializer.data)
+
+    def delete(self, request):
+        """Clear entire cart."""
+        try:
+            cart = Cart.objects.get(buyer=request.user)
+            cart.items.all().delete()
+        except Cart.DoesNotExist:
+            pass
+        return Response({'message': 'Cart cleared.'})
+
+
+class CartItemView(APIView):
+    """Add, update, or remove cart items."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        """Add item to cart."""
+        cart, _ = Cart.objects.get_or_create(buyer=request.user)
+        serializer = CartItemCreateSerializer(
+            data=request.data,
+            context={'request': request, 'cart': cart}
+        )
+        serializer.is_valid(raise_exception=True)
+        item = serializer.save()
+        return Response(
+            CartItemSerializer(item, context={'request': request}).data,
+            status=status.HTTP_201_CREATED
+        )
+
+    def patch(self, request, item_id):
+        """Update cart item quantity or duration."""
+        cart = get_object_or_404(Cart, buyer=request.user)
+        item = get_object_or_404(CartItem, pk=item_id, cart=cart)
+
+        quantity = request.data.get('quantity')
+        duration_days = request.data.get('duration_days')
+
+        if quantity is not None:
+            if int(quantity) <= 0:
+                item.delete()
+                return Response({'message': 'Item removed from cart.'})
+            item.quantity = quantity
+
+        if duration_days is not None:
+            item.duration_days = duration_days
+
+        item.save()
+        return Response(
+            CartItemSerializer(item, context={'request': request}).data
+        )
+
+    def delete(self, request, item_id):
+        """Remove specific item from cart."""
+        cart = get_object_or_404(Cart, buyer=request.user)
+        item = get_object_or_404(CartItem, pk=item_id, cart=cart)
+        item.delete()
+        return Response({'message': 'Item removed from cart.'})
+
+
+class CheckoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    ESCROW_RATE = Decimal('0.05')
+    DELIVERY_FEE = Decimal('250.00')
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = CheckoutSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        cart_items = serializer.validated_data['cart_items']
+        delivery_detail = getattr(serializer, 'delivery_detail', None)
+
+        from collections import defaultdict
+        store_groups = defaultdict(list)
+        for item in cart_items:
+            store_key = item.store_id or 'no_store'
+            store_groups[store_key].append(item)
+
+        orders_created = []
+        payments_created = []
+
+        for store_key, items in store_groups.items():
+            subtotal = sum(item.subtotal for item in items)
+            escrow_fee = (subtotal * self.ESCROW_RATE).quantize(
+                Decimal('0.01'))
+            total = subtotal + self.DELIVERY_FEE + escrow_fee
+
+            first_item = items[0]
+            order_type_map = {
+                CartItem.PurchaseType.BUY: Order.OrderType.BUY,
+                CartItem.PurchaseType.RENT: Order.OrderType.HIRE,
+                CartItem.PurchaseType.LEASE: Order.OrderType.LEASE,
+            }
+            order_type = order_type_map.get(
+                first_item.purchase_type, Order.OrderType.BUY)
+
+            seller = first_item.listing.user
+            delivery_address = ''
+            delivery_contact_name = ''
+            delivery_contact_phone = ''
+
+            if delivery_detail:
+                delivery_address = (
+                    f"{delivery_detail.address}, "
+                    f"{delivery_detail.city}, {delivery_detail.state}"
+                )
+                delivery_contact_name = delivery_detail.contact_person
+                delivery_contact_phone = delivery_detail.phone
+
+            order = Order.objects.create(
+                order_number=f"ORD-{uuid.uuid4().hex[:12].upper()}",
+                order_type=order_type,
+                buyer=request.user,
+                seller=seller,
+                listing=first_item.listing,
+                store=first_item.store,
+                currency='NGN',
+                subtotal=subtotal,
+                delivery_fee=self.DELIVERY_FEE,
+                escrow_fee=escrow_fee,
+                total_amount=total,
+                status=Order.Status.PENDING_PAYMENT,
+                placed_at=timezone.now(),
+                delivery_address=delivery_address,
+                delivery_contact_name=delivery_contact_name,
+                delivery_contact_phone=delivery_contact_phone,
+            )
+
+            OrderActivity.objects.create(
+                order=order,
+                event_type=OrderActivity.EventType.ORDER_PLACED,
+                message="Order placed successfully."
+            )
+
+            orders_created.append(order)
+
+            # Use paystack.py client
+            reference = f"PAY-{uuid.uuid4().hex[:16].upper()}"
+            payment = Payment.objects.create(
+                order=order,
+                buyer=request.user,
+                amount=total,
+                currency='NGN',
+                reference=reference,
+                status=Payment.Status.PENDING,
+            )
+
+            paystack_data = initialize_transaction(
+                email=request.user.email,
+                amount_kobo=int(total * 100),
+                reference=reference,
+                metadata={'order_id': order.id},
+                callback_url=settings.PAYSTACK_CALLBACK_URL,
+            )
+
+            if paystack_data:
+                payment.authorization_url = paystack_data.get(
+                    'authorization_url', '')
+                payment.paystack_access_code = paystack_data.get(
+                    'access_code', '')
+                payment.gateway_response = paystack_data
+                payment.save(update_fields=[
+                    'authorization_url',
+                    'paystack_access_code',
+                    'gateway_response'
+                ])
+
+            payments_created.append(payment)
+
+        # Remove checked out items from cart
+        cart_items.delete()
+
+        return Response({
+            'message': f'{len(orders_created)} order(s) created.',
+            'orders': [
+                {
+                    'order_id': o.id,
+                    'order_number': o.order_number,
+                    'total_amount': str(o.total_amount),
+                }
+                for o in orders_created
+            ],
+            'payments': [
+                {
+                    'payment_id': p.id,
+                    'reference': p.reference,
+                    'authorization_url': p.authorization_url,
+                    'amount': str(p.amount),
+                }
+                for p in payments_created
+            ],
+        }, status=status.HTTP_201_CREATED)
+
+
+class PaymentVerifyView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def get(self, request, reference):
+        payment = get_object_or_404(
+            Payment, reference=reference, buyer=request.user)
+
+        if payment.status == Payment.Status.SUCCESS:
+            return Response({
+                'status': 'success',
+                'message': 'Payment already verified.',
+                'order_id': payment.order_id,
+            })
+
+        # Use paystack.py client
+        paystack_data = verify_transaction(reference)
+
+        if paystack_data and paystack_data.get('status') == 'success':
+            payment.status = Payment.Status.SUCCESS
+            payment.paid_at = timezone.now()
+            payment.gateway_response = paystack_data
+            payment.save(update_fields=[
+                'status', 'paid_at', 'gateway_response'])
+
+            order = payment.order
+            order.status = Order.Status.PAID
+            order.save(update_fields=['status'])
+
+            OrderActivity.objects.create(
+                order=order,
+                event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
+                message="Payment confirmed. Funds held in escrow."
+            )
+
+            return Response({
+                'status': 'success',
+                'message': 'Payment verified successfully.',
+                'order_id': payment.order_id,
+            })
+
+        payment.status = Payment.Status.FAILED
+        payment.save(update_fields=['status'])
+        return Response(
+            {'status': 'failed', 'message': 'Payment not successful.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class PaystackWebhookView(APIView):
+    """Handle Paystack webhook events."""
+    permission_classes = []
+    authentication_classes = []
+
+    def post(self, request):
+        # Verify webhook signature
+        paystack_signature = request.headers.get('x-paystack-signature', '')
+        secret = settings.PAYSTACK_SECRET_KEY.encode('utf-8')
+        body = request.body
+
+        expected = hmac.new(
+            secret, body, hashlib.sha512).hexdigest()
+
+        if not hmac.compare_digest(expected, paystack_signature):
+            return Response(
+                {'error': 'Invalid signature'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        import json
+        data = json.loads(body)
+        event = data.get('event')
+
+        if event == 'charge.success':
+            self._handle_charge_success(data['data'])
+        elif event == 'transfer.success':
+            self._handle_transfer_success(data['data'])
+        elif event == 'transfer.failed':
+            self._handle_transfer_failed(data['data'])
+
+        return Response({'status': 'ok'})
+
+    @transaction.atomic
+    def _handle_charge_success(self, data):
+        reference = data.get('reference')
+        try:
+            payment = Payment.objects.select_related(
+                'order').get(reference=reference)
+            if payment.status != Payment.Status.SUCCESS:
+                payment.status = Payment.Status.SUCCESS
+                payment.paid_at = timezone.now()
+                payment.gateway_response = data
+                payment.save(update_fields=[
+                    'status', 'paid_at', 'gateway_response'])
+
+                order = payment.order
+                order.status = Order.Status.PAID
+                order.save(update_fields=['status'])
+
+                OrderActivity.objects.create(
+                    order=order,
+                    event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
+                    message="Payment confirmed via Paystack webhook."
+                )
+        except Payment.DoesNotExist:
+            pass
+
+    @transaction.atomic
+    def _handle_transfer_success(self, data):
+        from apps.financials.models import Payout
+        reference = data.get('reference')
+        try:
+            payout = Payout.objects.get(reference=reference)
+            payout.status = Payout.Status.PAID
+            payout.processed_at = timezone.now()
+            payout.save(update_fields=['status', 'processed_at'])
+
+            # Mark earnings as paid out
+            from apps.financials.models import VendorEarning
+            VendorEarning.objects.filter(
+                vendor=payout.vendor,
+                status=VendorEarning.Status.AVAILABLE
+            ).update(status=VendorEarning.Status.PAID_OUT)
+        except Payout.DoesNotExist:
+            pass
+
+    @transaction.atomic
+    def _handle_transfer_failed(self, data):
+        from apps.financials.models import Payout
+        reference = data.get('reference')
+        try:
+            payout = Payout.objects.get(reference=reference)
+            payout.status = Payout.Status.FAILED
+            payout.failure_reason = data.get(
+                'gateway_response', 'Transfer failed')
+            payout.save(update_fields=['status', 'failure_reason'])
+        except Payout.DoesNotExist:
+            pass

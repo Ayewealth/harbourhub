@@ -1,12 +1,10 @@
 
 from django.db import transaction
 from django.utils import timezone
-from datetime import timedelta
 
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
 
 from .models import User, PasswordResetToken, VerificationRequest, OneTimePassword
 
@@ -20,7 +18,7 @@ from .models import User, OneTimePassword
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from django.utils import timezone
-from .models import User, OneTimePassword
+from .models import User, OneTimePassword, DeliveryDetail, UserPreference
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -122,7 +120,7 @@ class OTPRequestSerializer(serializers.Serializer):
         purpose = validated_data["purpose"]
         otp = OneTimePassword.create_otp(email=email, purpose=purpose)
         from .tasks import send_otp_email_task
-        send_otp_email_task.delay(email, otp.code, purpose, purpose)
+        send_otp_email_task.delay(email, otp.code, purpose, 30)
         return otp
 
 
@@ -451,3 +449,47 @@ class VerificationRequestSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('id', 'user', 'status',
                             'created_at', 'reviewed_at')
+
+
+class DeliveryDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryDetail
+        fields = (
+            'id',
+            'contact_person',
+            'country',
+            'address',
+            'state',
+            'city',
+            'zip_code',
+            'phone',
+            'is_default',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+class UserPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserPreference
+        fields = (
+            'id',
+            'language',
+            'interested_categories',
+            'email_newsletter',
+            'email_promotions',
+            'email_order_updates',
+            'email_unsubscribe_all',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+    def validate(self, attrs):
+        # If unsubscribe_all is True, turn off all other email prefs
+        if attrs.get('email_unsubscribe_all'):
+            attrs['email_newsletter'] = False
+            attrs['email_promotions'] = False
+            attrs['email_order_updates'] = False
+        return attrs

@@ -1,15 +1,20 @@
+from django.db.models import Sum
+from datetime import timedelta
+from django.utils import timezone
 from django.db.models import Avg, Count, FloatField, Q, Value
 from django.db.models.functions import Coalesce
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import filters, generics, permissions
+from rest_framework import filters, generics, permissions, status
+from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 
 from apps.listings.models import Listing
+from apps.commerce.models import Order, QuoteRequest
+from .models import Store, StoreActivity
 
 from .filters import StoreDirectoryFilter
-from .models import Store
 from .permissions import CanCreateStore, CanManageStore, IsStoreOwnerOrAdmin
 from .serializers import (
     StoreCreateSerializer,
@@ -57,6 +62,14 @@ def _store_detail_queryset():
             "listings",
             "listings__images",
         )
+    )
+    
+
+def log_store_activity(store, action, message):
+    StoreActivity.objects.create(
+        store=store,
+        action=action,
+        message=message
     )
 
 
@@ -230,3 +243,86 @@ class StoreUnpublishView(APIView):
             {"message": "Store unpublished successfully"},
             status=status.HTTP_200_OK
         )
+
+
+class StoreChecklistView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        store = get_object_or_404(Store, user=request.user)
+
+        checks = {
+            "has_name": bool(store.name),
+            "has_description": bool(store.description),
+            "has_logo": bool(store.logo),
+            "has_banner": bool(store.banner_image),
+            "has_category": store.categories.exists(),
+            "has_listing": store.listings.exists(),
+            "is_published": store.is_published,
+        }
+
+        progress = int(
+            (sum(checks.values()) / len(checks)) * 100
+        )
+
+        return Response({
+            "checks": checks,
+            "progress": progress
+        })
+
+class StoreDashboardMetricsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        store = get_object_or_404(Store, user=request.user)
+
+        listings = store.listings.all()
+
+        total_listings = listings.count()
+        published = listings.filter(status=Listing.Status.PUBLISHED).count()
+        paused = listings.filter(status=Listing.Status.PAUSED).count()
+
+        orders = Order.objects.filter(store=store)
+        total_orders = orders.count()
+        revenue = orders.aggregate(total=Sum("total_amount"))["total"] or 0
+
+        quotes = QuoteRequest.objects.filter(store=store).count()
+
+        return Response({
+            "total_listings": total_listings,
+            "published_listings": published,
+            "paused_listings": paused,
+            "total_orders": total_orders,
+            "total_revenue": float(revenue),
+            "quote_requests": quotes,
+        })
+
+
+class StoreDashboardTrendView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        store = get_object_or_404(Store, user=request.user)
+
+        days = int(request.query_params.get("days", 7))
+        since = timezone.now() - timedelta(days=days)
+
+        orders = (
+            Order.objects.filter(store=store, created_at__gte=since)
+            .values("created_at__date")
+            .annotate(
+                count=Count("id"),
+                revenue=Sum("total_amount")
+            )
+            .order_by("created_at__date")
+        )
+
+        return Response(list(orders))
+
+
+class StoreActivityListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        store = get_object_or_404(Store, user=self.request.user)
+        return store.activities.all()
