@@ -1,11 +1,13 @@
-# accounts/models.py
+import secrets
+import random
+import pyotp
+
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from datetime import timedelta
-import secrets
-import random
+from django.conf import settings
 
 
 class UserManager(BaseUserManager):
@@ -266,6 +268,11 @@ class VerificationRequest(models.Model):
         self.user.is_verified = True
         self.user.save(update_fields=['is_verified'])
 
+        # Update store verification status
+        if hasattr(self.user, 'store'):
+            self.user.store.is_verified = True
+            self.user.store.save(update_fields=['is_verified'])
+
     def reject(self, admin_user, notes=''):
         """Reject verification request"""
         self.status = self.Status.REJECTED
@@ -395,3 +402,86 @@ class UserPreference(models.Model):
 
     def __str__(self):
         return f"Preferences for {self.user.email}"
+
+
+class UserTwoFactor(models.Model):
+    """Google Authenticator TOTP 2FA for a user."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='two_factor'
+    )
+    secret = models.CharField(
+        max_length=64,
+        help_text="TOTP secret key"
+    )
+    is_enabled = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_two_factor'
+
+    def __str__(self):
+        return f"2FA for {self.user.email}"
+
+    @classmethod
+    def get_or_create_secret(cls, user):
+        obj, _ = cls.objects.get_or_create(
+            user=user,
+            defaults={'secret': pyotp.random_base32()}
+        )
+        if not obj.secret:
+            obj.secret = pyotp.random_base32()
+            obj.save(update_fields=['secret'])
+        return obj
+
+    def get_totp(self):
+        return pyotp.TOTP(self.secret)
+
+    def get_qr_uri(self):
+        """URI for QR code generation."""
+        totp = self.get_totp()
+        site_name = getattr(settings, 'SITE_NAME', 'HarbourHub')
+        return totp.provisioning_uri(
+            name=self.user.email,
+            issuer_name=site_name
+        )
+
+    def verify_code(self, code: str) -> bool:
+        totp = self.get_totp()
+        return totp.verify(code, valid_window=1)
+
+
+class UserSession(models.Model):
+    """Active session/device for a user."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='sessions'
+    )
+    device_name = models.CharField(
+        max_length=255,
+        help_text="e.g. iPhone 16, Chrome on Windows"
+    )
+    device_type = models.CharField(
+        max_length=50, blank=True,
+        help_text="mobile, desktop, tablet"
+    )
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+    # Store the JWT jti (unique token ID) to allow invalidation
+    token_jti = models.CharField(
+        max_length=255, unique=True, db_index=True)
+    is_active = models.BooleanField(default=True)
+    last_active = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'user_sessions'
+        ordering = ['-last_active']
+
+    def __str__(self):
+        return f"{self.device_name} — {self.user.email}"

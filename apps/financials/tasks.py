@@ -81,17 +81,44 @@ def process_payout_task(self, payout_id):
 @shared_task
 def release_pending_earnings_task():
     """Move pending earnings to available after escrow period."""
-    from .models import VendorEarning
+    from .models import VendorEarning, VendorWallet, WalletTransaction
     from django.utils import timezone
+    from django.db import transaction
 
     now = timezone.now()
     pending = VendorEarning.objects.filter(
         status=VendorEarning.Status.PENDING,
-        available_at__lte=now
+        available_at__lte=now,
+        is_disputed=False
     )
 
-    count = pending.count()
+    count = 0
+    for earning in pending:
+        with transaction.atomic():
+            earning.status = VendorEarning.Status.AVAILABLE
+            earning.save(update_fields=['status'])
+
+            wallet, _ = VendorWallet.objects.get_or_create(
+                user=earning.vendor,
+                store=earning.store,
+                defaults={'currency': earning.currency}
+            )
+
+            # Move from pending to available
+            wallet.pending_balance -= earning.net_amount
+            wallet.available_balance += earning.net_amount
+            wallet.save(update_fields=['pending_balance', 'available_balance'])
+
+            # Log transaction
+            WalletTransaction.objects.create(
+                wallet=wallet,
+                transaction_type=WalletTransaction.Type.EARNING,
+                amount=earning.net_amount,
+                description=f"Released earning for order {earning.order.order_number}",
+                reference_id=str(earning.id)
+            )
+            count += 1
+
     if count > 0:
-        pending.update(status=VendorEarning.Status.AVAILABLE)
         logger.info("Released %d pending earnings to available status", count)
     return count

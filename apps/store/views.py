@@ -284,7 +284,12 @@ class StoreDashboardMetricsView(APIView):
 
         orders = Order.objects.filter(store=store)
         total_orders = orders.count()
-        revenue = orders.aggregate(total=Sum("total_amount"))["total"] or 0
+        
+        from apps.financials.models import VendorWallet
+        wallet = VendorWallet.objects.filter(user=request.user, store=store).first()
+        revenue = 0
+        if wallet:
+            revenue = wallet.available_balance + wallet.pending_balance
 
         quotes = QuoteRequest.objects.filter(store=store).count()
 

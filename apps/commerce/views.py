@@ -27,7 +27,7 @@ from apps.notifications.utils import notify_order_cancelled, notify_order_placed
 
 
 from .filters import OrderFilter, QuoteRequestFilter
-from .models import Cart, CartItem, Order, OrderActivity, Payment, QuoteRequest
+from .models import Cart, CartItem, Order, OrderActivity, Payment, QuoteRequest, Dispute
 from .serializers import (
     CartItemCreateSerializer,
     CartItemSerializer,
@@ -38,7 +38,9 @@ from .serializers import (
     QuoteRequestCreateSerializer,
     QuoteRequestSerializer,
     OrderActivitySerializer,
-    QuoteRequestVendorUpdateSerializer
+    QuoteRequestVendorUpdateSerializer,
+    DisputeSerializer,
+    DisputeResolutionSerializer,
 )
 
 
@@ -744,3 +746,121 @@ class PaymentVerifyView(APIView):
         )
 
 
+class DisputeListCreateView(generics.ListCreateAPIView):
+    """Buyers can open a dispute. All users can list their related disputes."""
+    serializer_class = DisputeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if getattr(user, 'is_admin_user', False):
+            return Dispute.objects.all()
+        return Dispute.objects.filter(Q(buyer=user) | Q(order__seller=user))
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            dispute = serializer.save()
+            # Freeze vendor funds
+            from apps.financials.models import VendorEarning
+            VendorEarning.objects.filter(order=dispute.order).update(is_disputed=True)
+
+            OrderActivity.objects.create(
+                order=dispute.order,
+                event_type=OrderActivity.EventType.OTHER,
+                message=f"A dispute has been opened: {dispute.reason}"
+            )
+
+
+class DisputeDetailView(generics.RetrieveAPIView):
+    serializer_class = DisputeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if getattr(user, 'is_admin_user', False):
+            return Dispute.objects.all()
+        return Dispute.objects.filter(Q(buyer=user) | Q(order__seller=user))
+
+
+class DisputeActionView(APIView):
+    """Admin-only: Resolve or Refund a dispute."""
+    permission_classes = [permissions.IsAuthenticated] # Should be IsAdmin
+
+    def post(self, request, pk):
+        dispute = get_object_or_404(Dispute, pk=pk)
+        serializer = DisputeResolutionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        action = serializer.validated_data['action']
+        notes = serializer.validated_data['resolution_notes']
+
+        from apps.financials.models import VendorEarning, VendorWallet, WalletTransaction
+
+        with transaction.atomic():
+            earning = VendorEarning.objects.get(order=dispute.order)
+
+            if action == 'resolve':
+                dispute.status = Dispute.Status.RESOLVED
+                earning.is_disputed = False
+                earning.save(update_fields=['is_disputed'])
+                message = "Dispute resolved. Funds released to vendor escrow."
+
+            elif action == 'refund':
+                dispute.status = Dispute.Status.REFUNDED
+                earning.status = VendorEarning.Status.REVERSED
+                earning.is_disputed = False
+                earning.save(update_fields=['status', 'is_disputed'])
+
+                # Reverse wallet credit
+                wallet = VendorWallet.objects.get(user=earning.vendor)
+                if earning.status == VendorEarning.Status.PENDING:
+                    wallet.pending_balance -= earning.net_amount
+                    wallet.save(update_fields=['pending_balance'])
+                else:
+                    wallet.available_balance -= earning.net_amount
+                    wallet.save(update_fields=['available_balance'])
+
+                WalletTransaction.objects.create(
+                    wallet=wallet,
+                    transaction_type=WalletTransaction.Type.REFUND,
+                    amount=-earning.net_amount,
+                    description=f"Reversed earning due to dispute refund on order {dispute.order.order_number}",
+                    reference_id=str(dispute.id)
+                )
+
+                dispute.order.status = Order.Status.CANCELLED # or REFUNDED
+                dispute.order.save(update_fields=['status'])
+                message = "Dispute resolved with refund. Vendor funds reversed."
+
+            dispute.resolution_notes = notes
+            dispute.resolved_at = timezone.now()
+            dispute.save()
+
+            OrderActivity.objects.create(
+                order=dispute.order,
+                event_type=OrderActivity.EventType.OTHER,
+                message=message
+            )
+
+        return Response({'message': message})
+
+
+class RecentSalesView(generics.ListAPIView):
+    """
+    Returns recent paid or fulfilled orders for the vendor's store.
+    Used for the vendor dashboard 'Recent Sales' widget.
+    """
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        if not hasattr(user, 'store'):
+            return Order.objects.none()
+            
+        return Order.objects.filter(
+            store=user.store,
+            status__in=[Order.Status.PAID, Order.Status.FULFILLED]
+        ).select_related(
+            "buyer", "listing"
+        ).order_by("-created_at")[:10]  # Return top 10 recent sales

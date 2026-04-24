@@ -4,6 +4,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from django.conf import settings
 
 from .constants import AdminModule, StaffRole
 
@@ -188,3 +189,55 @@ class AdminActionLog(models.Model):
             description=description,
             extra_data=extra_data or {}
         )
+
+
+class PlatformConfig(models.Model):
+    """
+    Global platform settings. Only one row ever exists (singleton).
+    """
+    # Marketplace mode
+    enable_buy = models.BooleanField(default=True)
+    enable_rent = models.BooleanField(default=True)
+    enable_services = models.BooleanField(default=False)
+
+    # Approval rules
+    vendor_approval_required = models.BooleanField(default=True)
+    listing_approval_required = models.BooleanField(default=True)
+
+    # Locale
+    default_currency = models.CharField(max_length=10, default='NGN')
+    timezone = models.CharField(
+        max_length=50, default='Africa/Lagos')
+    date_format = models.CharField(
+        max_length=20, default='DD/MM/YY')
+
+    # Security
+    force_password_reset = models.BooleanField(default=False)
+    session_timeout = models.BooleanField(default=True)
+
+    # Admin notification preferences
+    notify_new_vendor_signup = models.BooleanField(default=True)
+    notify_new_dispute = models.BooleanField(default=True)
+    notify_contract_expiring = models.BooleanField(default=False)
+    notify_failed_payment = models.BooleanField(default=False)
+    channel_in_app = models.BooleanField(default=True)
+    channel_email = models.BooleanField(default=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True
+    )
+
+    class Meta:
+        db_table = 'platform_config'
+
+    @classmethod
+    def get(cls):
+        """Always returns the single config instance."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return "Platform Configuration"

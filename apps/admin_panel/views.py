@@ -1,9 +1,13 @@
+from datetime import timedelta, timezone
 from rest_framework import viewsets, permissions, filters, status
+from rest_framework import generics
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import IsAdminUser
 from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework.views import APIView
 
 from apps.notifications.utils import notify_verification_approved, notify_verification_rejected
 
@@ -198,7 +202,7 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
             description=f"Rejected verification for {verification.user.email}",
             extra_data={"notes": notes},
         )
-        
+
         notify_verification_rejected(
             verification.user, notes=notes)
 
@@ -206,3 +210,372 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
             {"message": "Verification rejected successfully."},
             status=status.HTTP_200_OK
         )
+
+
+class AdminVendorListView(generics.ListAPIView):
+    """Admin view of all vendors with metrics."""
+    permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    search_fields = ['user__email', 'name', 'user__company']
+
+    def get_queryset(self):
+        from apps.store.models import Store
+        return Store.objects.select_related(
+            'user'
+        ).prefetch_related('categories').order_by('-created_at')
+
+    def get_serializer_class(self):
+        from apps.store.serializers import StoreListSerializer
+        return StoreListSerializer
+
+    def list(self, request, *args, **kwargs):
+        from apps.store.models import Store
+        from apps.accounts.models import VerificationRequest
+
+        qs = self.get_queryset()
+        page = self.paginate_queryset(
+            self.filter_queryset(qs))
+
+        from apps.store.serializers import StoreListSerializer
+        serializer = StoreListSerializer(
+            page, many=True, context={'request': request})
+
+        response = self.get_paginated_response(serializer.data)
+
+        # Add summary metrics
+        now = timezone.now()
+        this_month = now.replace(day=1, hour=0, minute=0, second=0)
+        last_month = (this_month - timedelta(days=1)).replace(day=1)
+
+        def pct(cur, prev):
+            if prev == 0:
+                return 100.0 if cur > 0 else 0.0
+            return round((cur - prev) / prev * 100, 1)
+
+        total = Store.objects.count()
+        pending = VerificationRequest.objects.filter(
+            status='pending').count()
+        approved = Store.objects.filter(
+            is_verified=True).count()
+        rejected = VerificationRequest.objects.filter(
+            status='rejected').count()
+
+        total_last = Store.objects.filter(
+            created_at__lt=this_month).count()
+        pending_last = VerificationRequest.objects.filter(
+            status='pending',
+            created_at__gte=last_month,
+            created_at__lt=this_month
+        ).count()
+
+        response.data['summary'] = {
+            'total_vendors': total,
+            'pending_approval': pending,
+            'approved_vendors': approved,
+            'rejected_suspended': rejected,
+            'total_change_percent': pct(total, total_last),
+            'pending_change_percent': pct(pending, pending_last),
+        }
+        return response
+
+
+class AdminVendorActionView(APIView):
+    """Approve, reject, or suspend a vendor."""
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def post(self, request, pk, action):
+        from apps.store.models import Store
+        from apps.accounts.models import VerificationRequest
+
+        store = get_object_or_404(Store, pk=pk)
+        reason = request.data.get('reason', '')
+        notes = request.data.get('notes', '')
+        duration = request.data.get('duration', 'indefinite')
+
+        if action == 'approve':
+            store.is_verified = True
+            # store.is_published = True
+            store.save(update_fields=['is_verified'])
+
+            # Approve verification request
+            vr = VerificationRequest.objects.filter(
+                user=store.user,
+                status='pending'
+            ).first()
+            if vr:
+                vr.approve(admin_user=request.user, notes=notes)
+
+            from apps.notifications.utils import notify_verification_approved
+            notify_verification_approved(store.user)
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.USER_VERIFIED,
+                description=f"Approved vendor: {store.name}",
+            )
+            return Response({'message': 'Vendor approved successfully.'})
+
+        elif action == 'reject':
+            store.is_verified = False
+            store.save(update_fields=['is_verified',])
+
+            vr = VerificationRequest.objects.filter(
+                user=store.user,
+                status='pending'
+            ).first()
+            if vr:
+                vr.reject(admin_user=request.user, notes=reason)
+
+            from apps.notifications.utils import notify_verification_rejected
+            notify_verification_rejected(store.user, notes=reason)
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.USER_REJECTED,
+                description=f"Rejected vendor: {store.name}. Reason: {reason}",
+            )
+            return Response({'message': 'Vendor rejected.'})
+
+        elif action == 'suspend':
+            store.is_active = False
+            store.save(update_fields=['is_active'])
+
+            from apps.notifications.utils import create_notification
+            create_notification(
+                recipient=store.user,
+                notification_type='store_verified',
+                title='Store Suspended',
+                message=(
+                    f"Your store has been suspended. "
+                    f"Reason: {reason}. Duration: {duration}."
+                ),
+                priority='high',
+            )
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.USER_BANNED,
+                description=(
+                    f"Suspended vendor: {store.name}. "
+                    f"Reason: {reason}. Duration: {duration}."
+                ),
+            )
+            return Response({'message': 'Vendor suspended.'})
+
+        return Response(
+            {'error': 'Invalid action.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class AdminListingListView(generics.ListAPIView):
+    """Admin view of all listings."""
+    permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter
+    ]
+    search_fields = ['title', 'user__email', 'manufacturer']
+    ordering_fields = ['created_at', 'updated_at', 'status']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        from apps.listings.models import Listing
+        return Listing.objects.select_related(
+            'user', 'category', 'store'
+        ).prefetch_related('images')
+
+    def get_serializer_class(self):
+        from apps.listings.serializers import ListingListSerializer
+        return ListingListSerializer
+
+
+class AdminListingActionView(APIView):
+    """Approve, reject, or deactivate a listing."""
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def post(self, request, pk, action):
+        from apps.listings.models import Listing
+        from apps.notifications.utils import create_notification
+
+        listing = get_object_or_404(Listing, pk=pk)
+        reason = request.data.get('reason', '')
+        notes = request.data.get('notes', '')
+
+        if action == 'approve':
+            listing.status = Listing.Status.PUBLISHED
+            listing.save(update_fields=['status', 'published_at'])
+
+            create_notification(
+                recipient=listing.user,
+                notification_type='listing_approved',
+                title='Listing Approved',
+                message=f"Your listing '{listing.title}' has been approved.",
+                priority='high',
+                action_url=f"/listings/{listing.id}",
+                action_label="View Listing",
+            )
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.LISTING_PUBLISHED,
+                description=f"Approved listing: {listing.title}",
+            )
+            return Response({'message': 'Listing approved successfully.'})
+
+        elif action == 'reject':
+            listing.status = Listing.Status.ARCHIVED
+            listing.save(update_fields=['status'])
+
+            create_notification(
+                recipient=listing.user,
+                notification_type='listing_rejected',
+                title='Listing Rejected',
+                message=(
+                    f"Your listing '{listing.title}' was rejected. "
+                    f"Reason: {reason}"
+                ),
+                priority='high',
+            )
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.LISTING_REMOVED,
+                description=(
+                    f"Rejected listing: {listing.title}. Reason: {reason}"
+                ),
+            )
+            return Response({'message': 'Listing rejected.'})
+
+        elif action == 'deactivate':
+            listing.status = Listing.Status.SUSPENDED
+            listing.save(update_fields=['status'])
+
+            create_notification(
+                recipient=listing.user,
+                notification_type='listing_rejected',
+                title='Listing Deactivated',
+                message=(
+                    f"Your listing '{listing.title}' has been deactivated. "
+                    f"Reason: {reason}. Notes: {notes}"
+                ),
+                priority='high',
+            )
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.LISTING_ARCHIVED,
+                description=(
+                    f"Deactivated listing: {listing.title}. Reason: {reason}"
+                ),
+            )
+            return Response({'message': 'Listing deactivated.'})
+
+        return Response(
+            {'error': 'Invalid action.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class AdminPaymentListView(generics.ListAPIView):
+    """Admin view of all payments/transactions."""
+    permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['status', 'gateway']
+    search_fields = ['reference', 'order__order_number', 'buyer__email']
+
+    def get_queryset(self):
+        from apps.commerce.models import Payment
+        return Payment.objects.select_related(
+            'order', 'buyer',
+            'order__seller', 'order__listing'
+        ).order_by('-created_at')
+
+    def get_serializer_class(self):
+        from apps.commerce.serializers import PaymentSerializer
+        return PaymentSerializer
+
+    def list(self, request, *args, **kwargs):
+        from apps.commerce.models import Payment
+        from django.db.models import Sum
+
+        response = super().list(request, *args, **kwargs)
+
+        now = timezone.now()
+        this_month = now.replace(day=1, hour=0, minute=0, second=0)
+        last_month = (this_month - timedelta(days=1)).replace(day=1)
+
+        qs = Payment.objects.filter(status='success')
+
+        def pct(cur, prev):
+            if prev == 0:
+                return 100.0 if cur > 0 else 0.0
+            return round((cur - prev) / prev * 100, 1)
+
+        total_vol = qs.aggregate(
+            t=Sum('amount'))['t'] or 0
+        platform_rev = qs.aggregate(
+            t=Sum('order__escrow_fee'))['t'] or 0
+
+        from apps.financials.models import Payout
+        vendor_payouts = Payout.objects.filter(
+            status='paid'
+        ).aggregate(t=Sum('amount'))['t'] or 0
+        pending_payouts = Payout.objects.filter(
+            status__in=['requested', 'processing']
+        ).aggregate(t=Sum('amount'))['t'] or 0
+
+        this_vol = qs.filter(
+            created_at__gte=this_month
+        ).aggregate(t=Sum('amount'))['t'] or 0
+        last_vol = qs.filter(
+            created_at__gte=last_month,
+            created_at__lt=this_month
+        ).aggregate(t=Sum('amount'))['t'] or 0
+
+        response.data['summary'] = {
+            'total_transaction_volume': total_vol,
+            'platform_revenue': platform_rev,
+            'vendor_payouts': vendor_payouts,
+            'pending_payouts': pending_payouts,
+            'volume_change_percent': pct(this_vol, last_vol),
+        }
+        return response
+
+
+class AdminMarkPayoutPaidView(APIView):
+    """Admin manually marks a payout as paid."""
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def post(self, request, pk):
+        from apps.financials.models import Payout, VendorEarning
+
+        payout = get_object_or_404(Payout, pk=pk)
+
+        if payout.status == Payout.Status.PAID:
+            return Response(
+                {'error': 'Payout already marked as paid.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        payout.status = Payout.Status.PAID
+        payout.processed_at = timezone.now()
+        payout.save(update_fields=['status', 'processed_at'])
+
+        # Mark earnings as paid out
+        VendorEarning.objects.filter(
+            vendor=payout.vendor,
+            status=VendorEarning.Status.AVAILABLE
+        ).update(status=VendorEarning.Status.PAID_OUT)
+
+        from apps.notifications.utils import notify_payout_processed
+        notify_payout_processed(payout)
+
+        AdminActionLog.log_action(
+            admin_user=request.user,
+            action_type='payout_marked_paid',
+            description=f"Manually marked payout #{payout.pk} as paid.",
+        )
+
+        return Response({'message': 'Payout marked as paid.'})

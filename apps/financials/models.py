@@ -119,6 +119,10 @@ class VendorEarning(models.Model):
         null=True, blank=True,
         help_text="When funds become available for payout"
     )
+    is_disputed = models.BooleanField(
+        default=False,
+        help_text="If true, funds cannot be moved to available or paid out"
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -193,3 +197,59 @@ class Payout(models.Model):
 
     def __str__(self):
         return f"Payout {self.pk} - {self.amount} {self.currency}"
+
+
+class VendorWallet(models.Model):
+    """Internal balance tracking for a vendor."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='wallet'
+    )
+    store = models.OneToOneField(
+        'store.Store',
+        on_delete=models.CASCADE,
+        related_name='wallet',
+        null=True, blank=True
+    )
+    pending_balance = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0)
+    available_balance = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0)
+    total_withdrawn = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0)
+    currency = models.CharField(max_length=3, default='NGN')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vendor_wallets'
+
+    def __str__(self):
+        return f"Wallet for {self.user.email} - Available: {self.available_balance}"
+
+
+class WalletTransaction(models.Model):
+    """Audit log for all wallet movements."""
+
+    class Type(models.TextChoices):
+        EARNING = 'earning', _('Earning Credit')
+        PAYOUT = 'payout', _('Payout Debit')
+        REFUND = 'refund', _('Refund/Reversal')
+        ADJUSTMENT = 'adjustment', _('Manual Adjustment')
+
+    wallet = models.ForeignKey(
+        VendorWallet,
+        on_delete=models.CASCADE,
+        related_name='transactions'
+    )
+    transaction_type = models.CharField(max_length=20, choices=Type.choices)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    description = models.CharField(max_length=255)
+    reference_id = models.CharField(
+        max_length=100, blank=True, help_text="ID of the related object (Order, Payout, etc.)")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'wallet_transactions'
+        ordering = ['-created_at']

@@ -16,7 +16,8 @@ from .dashboard_serializers import (
     matrix_from_db,
     AcceptAdminInviteSerializer
 )
-from .models import AdminActionLog, AdminProfile, RolePermission
+from .serializers import PlatformConfigSerializer
+from .models import AdminActionLog, AdminProfile, RolePermission, PlatformConfig
 
 User = get_user_model()
 
@@ -215,3 +216,114 @@ class AcceptAdminInviteView(APIView):
             {'message': f'Account activated. You can now log in as {user.email}'},
             status=status.HTTP_200_OK
         )
+
+
+class PlatformConfigView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not can_edit_dashboard_matrix(request.user):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        config = PlatformConfig.get()
+        return Response(PlatformConfigSerializer(config).data)
+
+    def patch(self, request):
+        if not can_edit_dashboard_matrix(request.user):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        config = PlatformConfig.get()
+        serializer = PlatformConfigSerializer(
+            config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(updated_by=request.user)
+
+        AdminActionLog.log_action(
+            admin_user=request.user,
+            action_type=AdminActionLog.ActionType.ROLES_MATRIX_UPDATED,
+            description="Platform configuration updated",
+            extra_data=request.data
+        )
+
+        return Response(serializer.data)
+
+
+class AdminUserEditView(APIView):
+    """Edit admin role or disable/enable an admin."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, pk):
+        if not can_edit_dashboard_matrix(request.user):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            user = User.objects.select_related(
+                'admin_profile').get(pk=pk)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        profile = getattr(user, 'admin_profile', None)
+        if not profile:
+            return Response(
+                {'error': 'User is not an admin'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        new_role = request.data.get('staff_role')
+        new_status = request.data.get('status')
+
+        if new_role and new_role in [c[0] for c in StaffRole.choices]:
+            profile.staff_role = new_role
+            profile.save(update_fields=['staff_role'])
+
+        if new_status == 'disabled':
+            profile.invite_status = AdminProfile.InviteStatus.REVOKED
+            profile.save(update_fields=['invite_status'])
+        elif new_status == 'active':
+            profile.invite_status = AdminProfile.InviteStatus.ACTIVE
+            profile.save(update_fields=['invite_status'])
+
+        AdminActionLog.log_action(
+            admin_user=request.user,
+            action_type=AdminActionLog.ActionType.ADMIN_REVOKED
+            if new_status == 'disabled'
+            else AdminActionLog.ActionType.ADMIN_ACTIVATED,
+            description=(
+                f"Updated admin {user.email}: "
+                f"role={new_role}, status={new_status}"
+            ),
+        )
+
+        return Response({
+            'message': 'Admin updated successfully.',
+            'staff_role': profile.staff_role,
+            'invite_status': profile.invite_status,
+        })
+
+    def delete(self, request, pk):
+        """Permanently remove an admin."""
+        if not can_edit_dashboard_matrix(request.user):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            user = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Remove admin profile and downgrade role
+        AdminProfile.objects.filter(user=user).delete()
+        user.role = 'buyer'
+        user.is_staff = False
+        user.save(update_fields=['role', 'is_staff'])
+
+        AdminActionLog.log_action(
+            admin_user=request.user,
+            action_type=AdminActionLog.ActionType.ADMIN_REVOKED,
+            description=f"Removed admin: {user.email}",
+        )
+
+        return Response({'message': f'Admin {user.email} removed.'})

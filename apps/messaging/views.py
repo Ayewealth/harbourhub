@@ -3,6 +3,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
+from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -57,6 +58,10 @@ class StartConversationView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=StartConversationSerializer,
+        responses={201: ConversationListSerializer, 200: ConversationListSerializer}
+    )
     def post(self, request):
         serializer = StartConversationSerializer(
             data=request.data,
@@ -110,6 +115,7 @@ class ConversationDetailView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: ConversationDetailSerializer})
     def get(self, request, pk):
         conversation = get_object_or_404(
             Conversation,
@@ -156,6 +162,7 @@ class SendMessageView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=SendMessageSerializer, responses={201: MessageSerializer})
     def post(self, request, pk):
         conversation = get_object_or_404(Conversation, pk=pk)
 
@@ -229,6 +236,7 @@ class RequestQuoteInChatView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=RequestQuoteInChatSerializer, responses={201: MessageSerializer})
     def post(self, request, pk):
         conversation = get_object_or_404(
             Conversation,
@@ -297,6 +305,7 @@ class RequestChangesInChatView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=RequestChangesSerializer, responses={201: MessageSerializer})
     def post(self, request, pk):
         conversation = get_object_or_404(
             Conversation,
@@ -354,6 +363,7 @@ class MoveQuoteToCartFromChatView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: dict})
     def post(self, request, pk, message_id):
         conversation = get_object_or_404(
             Conversation,
@@ -434,6 +444,7 @@ class UnreadMessageCountView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: dict})
     def get(self, request):
         user = request.user
         unread = Message.objects.filter(

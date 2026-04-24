@@ -17,7 +17,24 @@ from .views import (
     DeliveryDetailListCreateView,
     DeliveryDetailRetrieveUpdateDestroyView,
     DeliveryDetailSetDefaultView,
-    UserPreferenceView
+    UserPreferenceView,
+    # 2FA
+    TwoFactorStatusView,
+    TwoFactorSetupView,
+    TwoFactorQRCodeView,
+    TwoFactorEnableView,
+    TwoFactorDisableView,
+    TwoFactorVerifyLoginView,
+    # Sessions
+    SessionListView,
+    SessionRemoveView,
+    SessionRemoveAllView,
+    # Onboarding
+    BecomeSellerView,
+    SellerOnboardingStep1View,
+    SellerOnboardingStep2View,
+    SellerOnboardingStep3View,
+    OnboardingStatusView,
 )
 
 router = DefaultRouter()
@@ -53,4 +70,38 @@ urlpatterns = [
 
     # Account preferences
     path('preferences/', UserPreferenceView.as_view(), name='user-preferences'),
+
+    # 2FA
+    path('2fa/status/', TwoFactorStatusView.as_view(),
+         name='2fa-status'),
+    path('2fa/setup/', TwoFactorSetupView.as_view(),
+         name='2fa-setup'),
+    path('2fa/qr/', TwoFactorQRCodeView.as_view(),
+         name='2fa-qr'),
+    path('2fa/enable/', TwoFactorEnableView.as_view(),
+         name='2fa-enable'),
+    path('2fa/disable/', TwoFactorDisableView.as_view(),
+         name='2fa-disable'),
+    path('2fa/verify/', TwoFactorVerifyLoginView.as_view(),
+         name='2fa-verify-login'),
+
+    # Sessions
+    path('sessions/', SessionListView.as_view(),
+         name='session-list'),
+    path('sessions/<int:pk>/', SessionRemoveView.as_view(),
+         name='session-remove'),
+    path('sessions/remove-all/', SessionRemoveAllView.as_view(),
+         name='session-remove-all'),
+
+    # Seller onboarding
+    path('become-seller/', BecomeSellerView.as_view(),
+         name='become-seller'),
+    path('onboarding/status/', OnboardingStatusView.as_view(),
+         name='onboarding-status'),
+    path('onboarding/step-1/', SellerOnboardingStep1View.as_view(),
+         name='onboarding-step-1'),
+    path('onboarding/step-2/', SellerOnboardingStep2View.as_view(),
+         name='onboarding-step-2'),
+    path('onboarding/step-3/', SellerOnboardingStep3View.as_view(),
+         name='onboarding-step-3'),
 ]

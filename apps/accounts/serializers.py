@@ -6,19 +6,17 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 
-from .models import User, PasswordResetToken, VerificationRequest, OneTimePassword
+from .models import User, PasswordResetToken, VerificationRequest, OneTimePassword, DeliveryDetail, UserPreference, UserTwoFactor, UserSession
 
 
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from django.utils import timezone
-from .models import User, OneTimePassword
 
 
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from django.utils import timezone
-from .models import User, OneTimePassword, DeliveryDetail, UserPreference
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -493,3 +491,278 @@ class UserPreferenceSerializer(serializers.ModelSerializer):
             attrs['email_promotions'] = False
             attrs['email_order_updates'] = False
         return attrs
+
+
+class TwoFactorStatusSerializer(serializers.Serializer):
+    is_enabled = serializers.BooleanField(read_only=True)
+
+
+class TwoFactorSetupSerializer(serializers.Serializer):
+    """Returns QR URI and secret for setup."""
+    secret = serializers.CharField(read_only=True)
+    qr_uri = serializers.CharField(read_only=True)
+    is_enabled = serializers.BooleanField(read_only=True)
+
+
+class TwoFactorEnableSerializer(serializers.Serializer):
+    """Verify TOTP code to enable 2FA."""
+    code = serializers.CharField(max_length=6, min_length=6)
+
+    def validate_code(self, value):
+        user = self.context['request'].user
+        try:
+            tf = UserTwoFactor.objects.get(user=user)
+        except UserTwoFactor.DoesNotExist:
+            raise serializers.ValidationError(
+                "2FA not set up. Please request setup first.")
+        if not tf.verify_code(value):
+            raise serializers.ValidationError("Invalid code.")
+        self._tf = tf
+        return value
+
+    def save(self):
+        self._tf.is_enabled = True
+        self._tf.save(update_fields=['is_enabled'])
+        self._clear_other_sessions()
+        return self._tf
+        
+    def _clear_other_sessions(self):
+        request = self.context.get('request')
+        if request:
+            try:
+                from rest_framework_simplejwt.authentication import JWTAuthentication
+                from .models import UserSession
+                auth = JWTAuthentication()
+                raw_token = auth.get_raw_token(auth.get_header(request))
+                if raw_token:
+                    validated = auth.get_validated_token(raw_token)
+                    current_jti = str(validated.get('jti', ''))
+                    UserSession.objects.filter(user=request.user).exclude(token_jti=current_jti).delete()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).exception("Failed to clear sessions on 2FA toggle.")
+
+
+class TwoFactorDisableSerializer(serializers.Serializer):
+    """Verify TOTP code to disable 2FA."""
+    code = serializers.CharField(max_length=6, min_length=6)
+
+    def validate_code(self, value):
+        user = self.context['request'].user
+        try:
+            tf = UserTwoFactor.objects.get(user=user, is_enabled=True)
+        except UserTwoFactor.DoesNotExist:
+            raise serializers.ValidationError("2FA is not enabled.")
+        if not tf.verify_code(value):
+            raise serializers.ValidationError("Invalid code.")
+        self._tf = tf
+        return value
+
+    def save(self):
+        self._tf.is_enabled = False
+        self._tf.save(update_fields=['is_enabled'])
+        
+        # We can reuse the same session clearing logic
+        request = self.context.get('request')
+        if request:
+            try:
+                from rest_framework_simplejwt.authentication import JWTAuthentication
+                from .models import UserSession
+                auth = JWTAuthentication()
+                raw_token = auth.get_raw_token(auth.get_header(request))
+                if raw_token:
+                    validated = auth.get_validated_token(raw_token)
+                    current_jti = str(validated.get('jti', ''))
+                    UserSession.objects.filter(user=request.user).exclude(token_jti=current_jti).delete()
+            except Exception as e:
+                pass
+                
+        return self._tf
+
+
+class TwoFactorVerifyLoginSerializer(serializers.Serializer):
+    """Verify TOTP code during login (if 2FA is enabled)."""
+    code = serializers.CharField(max_length=6, min_length=6)
+    token = serializers.CharField()
+
+    def validate(self, attrs):
+        from django.contrib.auth import get_user_model
+        from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+        
+        User = get_user_model()
+        signer = TimestampSigner()
+        
+        try:
+            # Token is valid for 5 minutes (300 seconds)
+            user_id = signer.unsign(attrs['token'], max_age=300)
+        except SignatureExpired:
+            raise serializers.ValidationError("2FA session expired. Please log in again.")
+        except BadSignature:
+            raise serializers.ValidationError("Invalid 2FA session token.")
+
+        try:
+            user = User.objects.get(pk=user_id)
+            tf = UserTwoFactor.objects.get(user=user, is_enabled=True)
+        except (User.DoesNotExist, UserTwoFactor.DoesNotExist):
+            raise serializers.ValidationError(
+                "Invalid user or 2FA not enabled.")
+            
+        if not tf.verify_code(attrs['code']):
+            raise serializers.ValidationError("Invalid 2FA code.")
+            
+        self._user = user
+        return attrs
+
+    def get_user(self):
+        return self._user
+
+
+class UserSessionSerializer(serializers.ModelSerializer):
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserSession
+        fields = (
+            'id', 'device_name', 'device_type',
+            'ip_address', 'is_active', 'is_current',
+            'last_active', 'created_at',
+        )
+        read_only_fields = fields
+
+    def get_is_current(self, obj):
+        request = self.context.get('request')
+        if request:
+            current_jti = self._get_current_jti(request)
+            return obj.token_jti == current_jti
+        return False
+
+    def _get_current_jti(self, request):
+        try:
+            from rest_framework_simplejwt.authentication import (
+                JWTAuthentication)
+            auth = JWTAuthentication()
+            validated = auth.get_validated_token(
+                auth.get_raw_token(
+                    auth.get_header(request)))
+            return str(validated.get('jti', ''))
+        except Exception:
+            return ''
+
+
+class SellerOnboardingStep1Serializer(serializers.Serializer):
+    """Step 1: Business details."""
+    business_name = serializers.CharField(max_length=255)
+    phone = serializers.CharField(max_length=30)
+    email = serializers.EmailField()
+    country = serializers.CharField(max_length=100)
+
+    def save(self, user):
+        # Update user profile
+        user.phone = self.validated_data['phone']
+        user.company = self.validated_data['business_name']
+        user.save(update_fields=['phone', 'company'])
+
+        # Create or update store
+        from apps.store.models import Store
+        import re
+        from django.utils.text import slugify
+        base_slug = slugify(self.validated_data['business_name'])
+        slug = base_slug
+        counter = 1
+        while Store.objects.filter(
+                slug=slug).exclude(user=user).exists():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+
+        store, _ = Store.objects.update_or_create(
+            user=user,
+            defaults={
+                'name': self.validated_data['business_name'],
+                'email': self.validated_data['email'],
+                'country': self.validated_data['country'],
+                'slug': slug,
+                'policy': '',
+            }
+        )
+        return store
+
+
+class SellerOnboardingStep2Serializer(serializers.Serializer):
+    """Step 2: What do you sell — category selection."""
+    category_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1,
+        help_text="List of category IDs"
+    )
+
+    def validate_category_ids(self, value):
+        from apps.categories.models import Category
+        categories = Category.objects.filter(
+            pk__in=value, is_active=True)
+        if not categories.exists():
+            raise serializers.ValidationError(
+                "No valid categories found.")
+        self._categories = categories
+        return value
+
+    def save(self, user):
+        from apps.store.models import Store
+        store = Store.objects.get(user=user)
+        store.categories.set(self._categories)
+        return store
+
+
+class SellerOnboardingStep3Serializer(serializers.Serializer):
+    """Step 3: Verification details."""
+    business_type = serializers.ChoiceField(choices=[
+        ('sole_proprietorship', 'Sole Proprietorship'),
+        ('partnership', 'Partnership'),
+        ('limited_liability', 'Limited Liability Company'),
+        ('corporation', 'Corporation'),
+        ('ngo', 'NGO / Non-profit'),
+    ])
+    government_id = serializers.FileField()
+    proof_of_registration = serializers.FileField()
+    confirmed = serializers.BooleanField()
+
+    def validate_confirmed(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                "You must confirm documents are valid.")
+        return value
+
+    def save(self, user):
+        from apps.accounts.models import VerificationRequest
+        # Create verification request
+        vr, _ = VerificationRequest.objects.update_or_create(
+            user=user,
+            defaults={
+                'business_license': self.validated_data[
+                    'proof_of_registration'],
+                'additional_info': self.validated_data['business_type'],
+            }
+        )
+
+        # Promote user to seller role if not already
+        if user.role not in ['seller', 'service_provider']:
+            user.role = 'seller'
+            user.save(update_fields=['role'])
+
+        return vr
+
+
+class BecomeSellerSerializer(serializers.Serializer):
+    """
+    One-shot: promote an existing buyer to seller.
+    Used when buyer clicks 'Become a seller' button.
+    """
+    business_name = serializers.CharField(max_length=255)
+    phone = serializers.CharField(max_length=30)
+    country = serializers.CharField(max_length=100)
+
+    def save(self, user):
+        user.role = 'seller'
+        user.company = self.validated_data['business_name']
+        user.phone = self.validated_data['phone']
+        user.save(update_fields=['role', 'company', 'phone'])
+        return user

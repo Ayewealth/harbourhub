@@ -13,7 +13,7 @@ class CategoryListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = (
-            'id', 'name', 'slug', 'icon', 'parent',
+            'id', 'name', 'slug', 'icon', 'icon_url', 'parent',
             'listing_count', 'has_children'
         )
 
@@ -46,7 +46,7 @@ class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = (
-            'id', 'name', 'slug', 'description', 'icon',
+            'id', 'name', 'slug', 'description', 'icon', 'icon_url',
             'parent', 'parent_detail', 'is_active', 'sort_order',
             'full_name', 'listing_count', 'children',
             'created_at', 'updated_at'
@@ -73,7 +73,7 @@ class CategoryTreeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ("id", "name", "slug", "icon", "children")
+        fields = ("id", "name", "slug", "icon", "icon_url", "children")
 
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
     def get_children(self, obj):
@@ -95,7 +95,7 @@ class CategoryCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = (
-            'name', 'description', 'icon', 'parent',
+            'name', 'description', 'icon', 'icon_url', 'parent',
             'is_active', 'sort_order'
         )
 

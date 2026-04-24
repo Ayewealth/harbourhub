@@ -72,7 +72,9 @@ LOCAL_APPS = [
     "apps.commerce",
     "apps.financials",
     "apps.notifications",
-    "apps.messaging"
+    "apps.messaging",
+    "apps.support",
+    "apps.compliance"
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -471,7 +473,7 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute=0, hour="*/1"),
     },
 
-    # 🆕 Analytics snapshot updater – runs every 10 minutes
+    # Analytics snapshot updater – runs every 10 minutes
     "compute-analytics-snapshot": {
         "task": "apps.analytics.tasks.compute_and_cache_analytics",
         "schedule": crontab(minute="*/10"),  # every 10 minutes
@@ -484,6 +486,10 @@ CELERY_BEAT_SCHEDULE = {
     "release-pending-earnings-every-hour": {
         "task": "apps.financials.tasks.release_pending_earnings_task",
         "schedule": crontab(minute=0, hour="*/1"),
+    },
+    "update-compliance-statuses-daily": {
+        "task": "apps.compliance.tasks.update_compliance_statuses_task",
+        "schedule": crontab(hour=1, minute=0),
     },
 }
 

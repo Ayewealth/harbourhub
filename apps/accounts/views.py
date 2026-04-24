@@ -1,9 +1,14 @@
-# accounts/views.py
+import io
+import qrcode
+import qrcode.image.svg
+
+from django.http import HttpResponse
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from rest_framework import status, permissions, viewsets, generics
 from rest_framework.decorators import action
 from rest_framework.mixins import CreateModelMixin, RetrieveModelMixin, UpdateModelMixin
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -11,6 +16,7 @@ from django_ratelimit.decorators import ratelimit
 from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.views import APIView
+from django.core.signing import TimestampSigner
 
 from .serializers import (
     UserRegistrationSerializer, CustomTokenObtainPairSerializer,
@@ -20,9 +26,19 @@ from .serializers import (
     OTPRequestSerializer, OTPVerifySerializer,
     SetPasswordSerializer, DeliveryDetailSerializer,
     UserPreferenceSerializer,
+    TwoFactorSetupSerializer,
+    TwoFactorEnableSerializer,
+    TwoFactorDisableSerializer,
+    TwoFactorVerifyLoginSerializer,
+    TwoFactorStatusSerializer,
+    UserSessionSerializer,
+    SellerOnboardingStep1Serializer,
+    SellerOnboardingStep2Serializer,
+    SellerOnboardingStep3Serializer,
+    BecomeSellerSerializer,
 )
 from .permissions import IsOwnerOrAdmin
-from .models import DeliveryDetail, UserPreference, VerificationRequest, OneTimePassword
+from .models import DeliveryDetail, UserPreference, VerificationRequest, OneTimePassword, UserTwoFactor, UserSession
 from .emails import EmailService
 from apps.accounts.tasks import send_welcome_email_task, send_password_reset_email_task, send_password_reset_confirmation_email_task, notify_admins_verification_request
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -126,13 +142,80 @@ class SetPasswordView(APIView):
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
-    """Custom JWT token view with user data"""
-
     serializer_class = CustomTokenObtainPairSerializer
 
     @method_decorator(ratelimit(key='ip', rate='10/h', method='POST'))
     def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
+        response = super().post(request, *args, **kwargs)
+
+        if response.status_code == 200:
+            # Check if user has 2FA enabled
+            user_data = response.data.get('user', {})
+            user_id = user_data.get('id')
+            if user_id:
+                try:
+                    tf = UserTwoFactor.objects.get(
+                        user_id=user_id, is_enabled=True)
+                    # Return partial response — frontend must
+                    # complete 2FA verification using the secure token
+                    signer = TimestampSigner()
+                    token = signer.sign(str(user_id))
+                    return Response({
+                        'requires_2fa': True,
+                        'token': token,
+                        'message': (
+                            'Please complete 2FA verification.')
+                    }, status=status.HTTP_200_OK)
+                except UserTwoFactor.DoesNotExist:
+                    pass
+
+            # No 2FA — record session
+            self._record_session(request, response.data)
+
+        return response
+
+    def _record_session(self, request, token_data):
+        try:
+            from rest_framework_simplejwt.tokens import (
+                AccessToken)
+            access = AccessToken(token_data['access'])
+            jti = str(access.get('jti', ''))
+            user_id = access.get('user_id')
+
+            ua_string = request.META.get('HTTP_USER_AGENT', '')
+            device_name = self._parse_device_name(ua_string)
+
+            UserSession.objects.create(
+                user_id=user_id,
+                device_name=device_name,
+                user_agent=ua_string,
+                ip_address=self._get_ip(request),
+                token_jti=jti,
+            )
+        except Exception:
+            pass
+
+    def _parse_device_name(self, ua_string: str) -> str:
+        ua = ua_string.lower()
+        if 'iphone' in ua:
+            return 'iPhone'
+        elif 'ipad' in ua:
+            return 'iPad'
+        elif 'android' in ua:
+            return 'Android Device'
+        elif 'windows' in ua:
+            return 'Windows PC'
+        elif 'mac' in ua:
+            return 'Mac'
+        elif 'linux' in ua:
+            return 'Linux'
+        return 'Unknown Device'
+
+    def _get_ip(self, request) -> str:
+        xff = request.META.get('HTTP_X_FORWARDED_FOR')
+        if xff:
+            return xff.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR', '')
 
 
 @extend_schema_view(
@@ -329,3 +412,352 @@ class UserPreferenceView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class TwoFactorStatusView(APIView):
+    """Check if 2FA is enabled for the user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        tf = UserTwoFactor.objects.filter(
+            user=request.user).first()
+        return Response({
+            'is_enabled': tf.is_enabled if tf else False
+        })
+
+
+class TwoFactorSetupView(APIView):
+    """
+    Step 1: Get secret + QR URI to show in authenticator app.
+    Does NOT enable 2FA yet — user must verify code first.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        tf = UserTwoFactor.get_or_create_secret(request.user)
+        return Response({
+            'secret': tf.secret,
+            'qr_uri': tf.get_qr_uri(),
+            'is_enabled': tf.is_enabled,
+        })
+
+
+class TwoFactorQRCodeView(APIView):
+    """
+    Returns QR code as SVG image.
+    Frontend renders this as <img src="/api/v1/auth/2fa/qr/"> 
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        tf = UserTwoFactor.get_or_create_secret(request.user)
+        uri = tf.get_qr_uri()
+
+        # Generate SVG QR code
+        img = qrcode.make(
+            uri,
+            image_factory=qrcode.image.svg.SvgImage
+        )
+        buffer = io.BytesIO()
+        img.save(buffer)
+        return HttpResponse(
+            buffer.getvalue(),
+            content_type='image/svg+xml'
+        )
+
+
+class TwoFactorEnableView(APIView):
+    """
+    Step 2: Submit TOTP code to enable 2FA.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = TwoFactorEnableSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({
+            'message': '2FA enabled successfully.'
+        })
+
+
+class TwoFactorDisableView(APIView):
+    """Disable 2FA by verifying current TOTP code."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = TwoFactorDisableSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({
+            'message': '2FA disabled successfully.'
+        })
+
+
+class TwoFactorVerifyLoginView(APIView):
+    """
+    Called after normal login when user has 2FA enabled.
+    Returns JWT tokens if code is valid.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = TwoFactorVerifyLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.get_user()
+
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'message': '2FA verified successfully.',
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            },
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'role': user.role,
+            }
+        })
+
+
+class SessionListView(APIView):
+    """List all active sessions/devices for the user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        sessions = UserSession.objects.filter(
+            user=request.user,
+            is_active=True
+        )
+        serializer = UserSessionSerializer(
+            sessions,
+            many=True,
+            context={'request': request}
+        )
+        return Response(serializer.data)
+
+
+class SessionRemoveView(APIView):
+    """Remove/revoke a specific session."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            session = UserSession.objects.get(
+                pk=pk, user=request.user)
+        except UserSession.DoesNotExist:
+            return Response(
+                {'error': 'Session not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        session.is_active = False
+        session.save(update_fields=['is_active'])
+
+        # Blacklist the JWT token
+        try:
+            from rest_framework_simplejwt.token_blacklist.models import (
+                OutstandingToken, BlacklistedToken)
+            token = OutstandingToken.objects.get(
+                jti=session.token_jti)
+            BlacklistedToken.objects.get_or_create(token=token)
+        except Exception:
+            pass
+
+        return Response(
+            {'message': 'Session removed successfully.'},
+            status=status.HTTP_200_OK
+        )
+
+
+class SessionRemoveAllView(APIView):
+    """Remove all sessions except current."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request):
+        # Get current session JTI
+        current_jti = ''
+        try:
+            from rest_framework_simplejwt.authentication import (
+                JWTAuthentication)
+            auth = JWTAuthentication()
+            token = auth.get_validated_token(
+                auth.get_raw_token(auth.get_header(request)))
+            current_jti = str(token.get('jti', ''))
+        except Exception:
+            pass
+
+        sessions = UserSession.objects.filter(
+            user=request.user,
+            is_active=True
+        ).exclude(token_jti=current_jti)
+
+        # Blacklist all tokens
+        for session in sessions:
+            try:
+                from rest_framework_simplejwt.token_blacklist.models import (
+                    OutstandingToken, BlacklistedToken)
+                token = OutstandingToken.objects.get(
+                    jti=session.token_jti)
+                BlacklistedToken.objects.get_or_create(token=token)
+            except Exception:
+                pass
+
+        sessions.update(is_active=False)
+
+        return Response({
+            'message': 'All other sessions removed.'
+        })
+
+
+class BecomeSellerView(APIView):
+    """
+    Quick promote: buyer clicks 'Become a seller' button.
+    Upgrades their role and redirects to onboarding flow.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role in ['seller', 'service_provider']:
+            return Response(
+                {'error': 'You are already a seller.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = BecomeSellerSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(request.user)
+
+        return Response({
+            'message': 'Account upgraded to seller.',
+            'next_step': 'onboarding/step-1',
+        })
+
+
+class SellerOnboardingStep1View(APIView):
+    """Step 1 — Business details + create store."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = SellerOnboardingStep1Serializer(
+            data=request.data)
+        serializer.is_valid(raise_exception=True)
+        store = serializer.save(request.user)
+
+        return Response({
+            'message': 'Business details saved.',
+            'store_id': store.id,
+            'store_slug': store.slug,
+            'next_step': 'onboarding/step-2',
+        })
+
+
+class SellerOnboardingStep2View(APIView):
+    """Step 2 — Select selling categories."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from apps.store.models import Store
+        if not Store.objects.filter(user=request.user).exists():
+            return Response(
+                {'error': 'Please complete step 1 first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = SellerOnboardingStep2Serializer(
+            data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(request.user)
+
+        return Response({
+            'message': 'Categories saved.',
+            'next_step': 'onboarding/step-3',
+        })
+
+
+class SellerOnboardingStep3View(APIView):
+    """Step 3 — Verification docs + submit."""
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        from apps.store.models import Store
+        if not Store.objects.filter(user=request.user).exists():
+            return Response(
+                {'error': 'Please complete steps 1 and 2 first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = SellerOnboardingStep3Serializer(
+            data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(request.user)
+
+        # Notify admins
+        try:
+            from apps.accounts.tasks import (
+                notify_admins_verification_request)
+            from apps.accounts.models import VerificationRequest
+            vr = VerificationRequest.objects.get(
+                user=request.user)
+            notify_admins_verification_request.delay(
+                vr.id, request.user.email)
+        except Exception:
+            pass
+
+        return Response({
+            'message': (
+                'Verification submitted. Your store setup '
+                'request has been received. We will activate '
+                'your store once verification is complete.'
+            ),
+            'next_step': 'dashboard',
+        })
+
+
+class OnboardingStatusView(APIView):
+    """
+    Returns which onboarding steps are complete.
+    Used by frontend to know where to redirect.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        from apps.store.models import Store
+        from apps.accounts.models import VerificationRequest
+
+        store = Store.objects.filter(user=user).first()
+        verification = VerificationRequest.objects.filter(
+            user=user).first()
+
+        steps = {
+            'step_1_complete': bool(
+                store and store.name and store.email),
+            'step_2_complete': bool(
+                store and store.categories.exists()),
+            'step_3_complete': bool(verification),
+            'is_verified': user.is_verified,
+            'store_active': bool(
+                store and store.is_active and store.is_published),
+        }
+
+        # Determine which step to go to next
+        if not steps['step_1_complete']:
+            steps['current_step'] = 1
+        elif not steps['step_2_complete']:
+            steps['current_step'] = 2
+        elif not steps['step_3_complete']:
+            steps['current_step'] = 3
+        else:
+            steps['current_step'] = None  # complete
+
+        return Response(steps)

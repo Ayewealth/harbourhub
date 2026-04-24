@@ -127,7 +127,7 @@ class PaystackWebhookView(APIView):
         if VendorEarning.objects.filter(order=order).exists():
             return
 
-        VendorEarning.objects.create(
+        earning = VendorEarning.objects.create(
             vendor=order.seller,
             store=order.store,
             order=order,
@@ -141,10 +141,20 @@ class PaystackWebhookView(APIView):
             available_at=timezone.now() + datetime.timedelta(days=7)
         )
 
+        # Update wallet pending balance
+        from apps.financials.models import VendorWallet
+        wallet, _ = VendorWallet.objects.get_or_create(
+            user=order.seller,
+            store=order.store,
+            defaults={'currency': order.currency}
+        )
+        wallet.pending_balance += earning.net_amount
+        wallet.save(update_fields=['pending_balance'])
+
     @transaction.atomic
     def _handle_transfer_success(self, data: dict):
         """Vendor payout was successful."""
-        from apps.financials.models import Payout, VendorEarning
+        from apps.financials.models import Payout, VendorEarning, VendorWallet, WalletTransaction
 
         reference = data.get('reference')
         if not reference:
@@ -166,13 +176,18 @@ class PaystackWebhookView(APIView):
             payout=payout
         ).update(status=VendorEarning.Status.PAID_OUT)
 
+        # Update wallet total withdrawn
+        wallet, _ = VendorWallet.objects.get_or_create(user=payout.vendor)
+        wallet.total_withdrawn += payout.amount
+        wallet.save(update_fields=['total_withdrawn'])
+
         logger.info(
             "Transfer success processed for reference %s", reference)
 
     @transaction.atomic
     def _handle_transfer_failed(self, data: dict):
         """Vendor payout failed."""
-        from apps.financials.models import Payout
+        from apps.financials.models import Payout, VendorEarning, VendorWallet, WalletTransaction
 
         reference = data.get('reference')
         if not reference:
@@ -188,8 +203,21 @@ class PaystackWebhookView(APIView):
             'gateway_response', 'Transfer failed')
         payout.save(update_fields=['status', 'failure_reason'])
 
-        # Release earnings back to available
-        from apps.financials.models import VendorEarning
+        # Re-credit wallet
+        wallet, _ = VendorWallet.objects.get_or_create(user=payout.vendor)
+        wallet.available_balance += payout.amount
+        wallet.save(update_fields=['available_balance'])
+
+        # Log transaction
+        WalletTransaction.objects.create(
+            wallet=wallet,
+            transaction_type=WalletTransaction.Type.REFUND,
+            amount=payout.amount,
+            description=f"Refunded payout {payout.reference} (Transfer failed)",
+            reference_id=str(payout.id)
+        )
+
+        # Also release earnings back (historical tracking)
         VendorEarning.objects.filter(
             payout=payout
         ).update(
@@ -203,7 +231,7 @@ class PaystackWebhookView(APIView):
     @transaction.atomic
     def _handle_transfer_reversed(self, data: dict):
         """Transfer was reversed, re-credit vendor balance."""
-        from apps.financials.models import Payout, VendorEarning
+        from apps.financials.models import Payout, VendorEarning, VendorWallet, WalletTransaction
 
         reference = data.get('reference')
         if not reference:
@@ -218,7 +246,21 @@ class PaystackWebhookView(APIView):
         payout.failure_reason = "Transfer reversed by Paystack"
         payout.save(update_fields=['status', 'failure_reason'])
 
-        # Re-credit earnings back to available
+        # Re-credit wallet
+        wallet, _ = VendorWallet.objects.get_or_create(user=payout.vendor)
+        wallet.available_balance += payout.amount
+        wallet.save(update_fields=['available_balance'])
+
+        # Log transaction
+        WalletTransaction.objects.create(
+            wallet=wallet,
+            transaction_type=WalletTransaction.Type.REFUND,
+            amount=payout.amount,
+            description=f"Refunded payout {payout.reference} (Transfer reversed)",
+            reference_id=str(payout.id)
+        )
+
+        # Re-credit earnings back
         VendorEarning.objects.filter(
             payout=payout
         ).update(

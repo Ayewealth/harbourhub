@@ -15,6 +15,8 @@ urlpatterns = [
     path('financials/', include('apps.financials.urls')),
     path('notifications/', include('apps.notifications.urls')),
     path('messages/', include('apps.messaging.urls')),
+    path('compliance/', include('apps.compliance.urls')),
+    path('support/', include('apps.support.urls')),
 
     # # Admin panel
     path('admin-panel/', include('apps.admin_panel.urls')),

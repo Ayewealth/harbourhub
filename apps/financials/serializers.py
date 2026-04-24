@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import BankAccount, VendorEarning, Payout
+from .models import BankAccount, VendorEarning, Payout, VendorWallet, WalletTransaction
 
 
 class BankAccountSerializer(serializers.ModelSerializer):
@@ -99,16 +99,15 @@ class PayoutCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         user = self.context['request'].user
-        # Check available balance
-        from django.db.models import Sum
-        available = VendorEarning.objects.filter(
-            vendor=user,
-            status=VendorEarning.Status.AVAILABLE
-        ).aggregate(total=Sum('net_amount'))['total'] or 0
+        # Check wallet available balance
+        try:
+            wallet = VendorWallet.objects.get(user=user)
+        except VendorWallet.DoesNotExist:
+            raise serializers.ValidationError("Wallet not found.")
 
-        if attrs['amount'] > available:
+        if attrs['amount'] > wallet.available_balance:
             raise serializers.ValidationError(
-                f"Insufficient balance. Available: {available}")
+                f"Insufficient balance. Available: {wallet.available_balance}")
         return attrs
 
 
@@ -123,3 +122,27 @@ class EarningsSummarySerializer(serializers.Serializer):
     revenue_change_percent = serializers.FloatField()
     pending_change_percent = serializers.FloatField()
     currency = serializers.CharField()
+
+
+class WalletTransactionSerializer(serializers.ModelSerializer):
+    transaction_type_display = serializers.CharField(
+        source='get_transaction_type_display', read_only=True)
+
+    class Meta:
+        model = WalletTransaction
+        fields = (
+            'id', 'transaction_type', 'transaction_type_display',
+            'amount', 'description', 'reference_id', 'created_at'
+        )
+
+
+class VendorWalletSerializer(serializers.ModelSerializer):
+    transactions = WalletTransactionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = VendorWallet
+        fields = (
+            'id', 'pending_balance', 'available_balance',
+            'total_withdrawn', 'currency', 'updated_at',
+            'transactions'
+        )

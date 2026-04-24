@@ -10,11 +10,11 @@ class Category(MPTTModel):
     name = models.CharField(
         max_length=100,
         unique=True,
-        db_index=True,   # ✅ improves lookup speed
+        db_index=True,
         help_text=_('Category name')
     )
     slug = models.SlugField(
-        max_length=120,   # ✅ slightly longer to avoid collisions
+        max_length=120,
         unique=True,
         db_index=True,
         help_text=_('URL-friendly category name')
@@ -31,7 +31,12 @@ class Category(MPTTModel):
         blank=True,
         help_text=_('Category description')
     )
-    icon = models.ImageField(upload_to="categories/images/")
+    icon = models.ImageField(upload_to="categories/images/", null=True, blank=True,
+                             help_text="Category icon image")
+    icon_url = models.URLField(
+        blank=True,
+        help_text="External icon URL if not uploading file"
+    )
     is_active = models.BooleanField(
         default=True,
         help_text=_('Whether this category is active')

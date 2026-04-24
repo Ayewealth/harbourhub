@@ -67,6 +67,40 @@ class InquiryViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         inquiry = serializer.save()
+
+        # --- Create a linked Conversation for unified messaging ---
+        try:
+            from apps.messaging.models import Conversation, Message
+            conversation, _ = Conversation.objects.get_or_create(
+                buyer=inquiry.from_user,
+                vendor=inquiry.to_user,
+                listing=inquiry.listing,
+                defaults={
+                    'store': getattr(inquiry.to_user, 'store', None),
+                }
+            )
+            
+            # Formulate initial message body
+            msg_body = f"Inquiry from {inquiry.contact_name}:\n\n{inquiry.subject}\n\n{inquiry.message}"
+            if inquiry.contact_company:
+                msg_body += f"\nCompany: {inquiry.contact_company}"
+            if inquiry.contact_phone:
+                msg_body += f"\nPhone: {inquiry.contact_phone}"
+                
+            msg = Message.objects.create(
+                conversation=conversation,
+                sender=inquiry.from_user,
+                message_type=Message.MessageType.TEXT,
+                body=msg_body,
+            )
+            conversation.last_message_at = msg.created_at
+            conversation.last_message_preview = msg.body[:200]
+            conversation.save(update_fields=['last_message_at', 'last_message_preview'])
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).exception(f"Failed to bridge Inquiry {inquiry.id} to Conversation: {e}")
+        # -----------------------------------------------------------
+
         out_serializer = InquirySerializer(
             inquiry, context=self.get_serializer_context())
         return Response(out_serializer.data, status=status.HTTP_201_CREATED)

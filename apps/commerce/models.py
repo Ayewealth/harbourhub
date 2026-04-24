@@ -372,3 +372,44 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment {self.reference} - {self.status}"
+
+
+class Dispute(models.Model):
+    """A dispute opened by a buyer against an order."""
+
+    class Status(models.TextChoices):
+        OPEN = 'open', _('Open')
+        UNDER_REVIEW = 'under_review', _('Under Review')
+        RESOLVED = 'resolved', _('Resolved (Funds Released)')
+        REFUNDED = 'refunded', _('Refunded (Funds Returned)')
+        CANCELLED = 'cancelled', _('Cancelled')
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='disputes'
+    )
+    buyer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='disputes_opened'
+    )
+    reason = models.CharField(max_length=255)
+    description = models.TextField()
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True
+    )
+    resolution_notes = models.TextField(blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'disputes'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Dispute on {self.order.order_number} - {self.status}"

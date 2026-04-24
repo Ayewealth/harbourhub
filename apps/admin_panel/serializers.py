@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from .models import ReportedContent, AdminActionLog
 from django.contrib.contenttypes.models import ContentType
+
+from .models import ReportedContent, AdminActionLog, PlatformConfig
 
 
 class ReportedContentSerializer(serializers.ModelSerializer):
@@ -90,3 +91,10 @@ class ReportedContentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Authentication required.")
 
         return attrs
+
+
+class PlatformConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlatformConfig
+        exclude = ('updated_by',)
+        read_only_fields = ('id', 'updated_at')

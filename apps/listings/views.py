@@ -163,6 +163,44 @@ class ListingViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a listing. Prevent deletion if there are active orders or quotes.
+        """
+        instance = self.get_object()
+        
+        try:
+            from apps.commerce.models import Order, QuoteRequest
+            
+            # Check for active orders
+            active_orders = Order.objects.filter(
+                listing=instance, 
+                status__in=[Order.Status.PENDING_PAYMENT, Order.Status.PAID]
+            ).exists()
+            
+            if active_orders:
+                return Response(
+                    {'error': 'Cannot delete listing. There are active orders associated with it.'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Check for active quotes
+            active_quotes = QuoteRequest.objects.filter(
+                listing=instance,
+                status__in=[QuoteRequest.Status.PENDING, QuoteRequest.Status.RESPONDED]
+            ).exists()
+            
+            if active_quotes:
+                return Response(
+                    {'error': 'Cannot delete listing. There are pending quote requests.'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+        except Exception as e:
+            logger.exception(f"Error checking listing deletion constraints: {e}")
+            
+        return super().destroy(request, *args, **kwargs)
+
     @extend_schema(
         summary="Get my listings",
         description="Get current user's listings with all statuses"

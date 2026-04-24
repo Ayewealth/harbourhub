@@ -13,6 +13,10 @@ from .views import (
     CheckoutView,
     PaymentVerifyView,
     QuoteRequestVendorUpdateView,
+    DisputeListCreateView,
+    DisputeDetailView,
+    DisputeActionView,
+    RecentSalesView,
 )
 from .webhooks import PaystackWebhookView
 
@@ -28,6 +32,7 @@ urlpatterns = [
 
     # Orders
     path("orders/", OrderListCreateView.as_view(), name="order-list-create"),
+    path("orders/recent-sales/", RecentSalesView.as_view(), name="recent-sales"),
     path("orders/<int:pk>/", OrderDetailView.as_view(), name="order-detail"),
     path("orders/<int:pk>/cancel/", OrderDetailView.as_view(), name="order-cancel"),
     path("orders/<int:pk>/extend-rental/",
@@ -56,4 +61,9 @@ urlpatterns = [
         MarketplaceBreakdownView.as_view(),
         name="marketplace-breakdown",
     ),
+
+    # Disputes
+    path("disputes/", DisputeListCreateView.as_view(), name="dispute-list-create"),
+    path("disputes/<int:pk>/", DisputeDetailView.as_view(), name="dispute-detail"),
+    path("disputes/<int:pk>/action/", DisputeActionView.as_view(), name="dispute-action"),
 ]

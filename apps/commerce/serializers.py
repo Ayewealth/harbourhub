@@ -350,3 +350,28 @@ class PaymentSerializer(serializers.ModelSerializer):
             'paid_at', 'created_at',
         )
         read_only_fields = fields
+
+
+class DisputeSerializer(serializers.ModelSerializer):
+    order_number = serializers.CharField(source='order.order_number', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = __import__('apps.commerce.models', fromlist=['Dispute']).Dispute
+        fields = (
+            'id', 'order', 'order_number', 'buyer', 'reason',
+            'description', 'status', 'status_display',
+            'resolution_notes', 'resolved_at', 'created_at',
+            'updated_at'
+        )
+        read_only_fields = ('buyer', 'status', 'resolution_notes', 'resolved_at', 'created_at', 'updated_at')
+
+    def create(self, validated_data):
+        validated_data['buyer'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+class DisputeResolutionSerializer(serializers.Serializer):
+    """Admin-only: resolve or refund a dispute."""
+    action = serializers.ChoiceField(choices=['resolve', 'refund'])
+    resolution_notes = serializers.CharField(required=True)

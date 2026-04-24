@@ -154,6 +154,9 @@ class StoreCreateSerializer(serializers.ModelSerializer):
 
 
 class StoreUpdateSerializer(serializers.ModelSerializer):
+    commission_rate = serializers.DecimalField(
+        max_digits=5, decimal_places=2, read_only=True)
+
     class Meta:
         model = Store
         fields = '__all__'
@@ -169,6 +172,8 @@ class StoreDetailSerializer(
 
     user = UserProfileSerializer(read_only=True)
     categories = serializers.StringRelatedField(many=True, read_only=True)
+    commission_rate = serializers.DecimalField(
+        max_digits=5, decimal_places=2, read_only=True)
 
     class Meta:
         model = Store
@@ -187,6 +192,7 @@ class StoreDetailSerializer(
             "city",
             "state",
             "country",
+            "commission_rate",
             "zip_code",
             "policy",
             "is_active",
