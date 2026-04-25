@@ -81,6 +81,8 @@ class ListingListSerializer(serializers.ModelSerializer):
         source="category.get_full_name", read_only=True)
     store_name = serializers.CharField(
         source="store.name", read_only=True)
+    store_slug = serializers.CharField(
+        source="store.slug", read_only=True)
     owner_name = serializers.CharField(
         source="user.get_full_name", read_only=True)
     owner_company = serializers.CharField(
@@ -94,7 +96,7 @@ class ListingListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Listing
         fields = (
-            "id", "title", "description", "category", "store", "store_name", "category_name", "category_full_name",
+            "id", "title", "description", "category", "store", "store_name", "store_slug", "category_name", "category_full_name",
             "listing_type", "price", "currency", "currency_symbol", "price_unit", "negotiable",
             "location", "location_display", "country", "city",
             "contact_name", "contact_email", "contact_phone",
@@ -142,6 +144,8 @@ class ListingDetailSerializer(serializers.ModelSerializer):
         source="category.name", read_only=True)
     store_name = serializers.CharField(
         source="store.name", read_only=True)
+    store_slug = serializers.CharField(
+        source="store.slug", read_only=True)
     category_full_name = serializers.CharField(
         source="category.get_full_name", read_only=True)
     owner = serializers.SerializerMethodField()
@@ -153,7 +157,7 @@ class ListingDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Listing
         fields = (
-            "id", "title", "description", "category", "store", "store_name", "category_name", "category_full_name",
+            "id", "title", "description", "category", "store", "store_name", "store_slug", "category_name", "category_full_name",
             "listing_type", "price", "currency", "currency_symbol", "price_unit", "negotiable",
             "location", "location_display", "country", "state_province", "city",
             "contact_name", "contact_email", "contact_phone",

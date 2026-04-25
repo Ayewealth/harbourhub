@@ -9,12 +9,16 @@ class ListingReviewSerializer(serializers.ModelSerializer):
     reviewer_name = serializers.CharField(
         source="reviewer.get_full_name", read_only=True
     )
+    store_slug = serializers.CharField(source="listing.store.slug", read_only=True)
+    listing_title = serializers.CharField(source="listing.title", read_only=True)
 
     class Meta:
         model = ListingReview
         fields = (
             "id",
             "listing",
+            "listing_title",
+            "store_slug",
             "reviewer",
             "reviewer_name",
             "rating",
@@ -62,12 +66,16 @@ class StoreReviewSerializer(serializers.ModelSerializer):
     reviewer_name = serializers.CharField(
         source="reviewer.get_full_name", read_only=True
     )
+    store_name = serializers.CharField(source="store.name", read_only=True)
+    store_slug = serializers.CharField(source="store.slug", read_only=True)
 
     class Meta:
         model = StoreReview
         fields = (
             "id",
             "store",
+            "store_name",
+            "store_slug",
             "reviewer",
             "reviewer_name",
             "rating",

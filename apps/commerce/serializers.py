@@ -46,6 +46,8 @@ class QuoteRequestSerializer(serializers.ModelSerializer):
     listing_title = serializers.CharField(
         source="listing.title", read_only=True)
     buyer_email = serializers.EmailField(source="buyer.email", read_only=True)
+    store_name = serializers.CharField(source="store.name", read_only=True)
+    store_slug = serializers.CharField(source="store.slug", read_only=True)
 
     class Meta:
         model = QuoteRequest
@@ -56,6 +58,8 @@ class QuoteRequestSerializer(serializers.ModelSerializer):
             "buyer",
             "buyer_email",
             "store",
+            "store_name",
+            "store_slug",
             "purchase_type",
             "quantity",
             "duration_bucket",
@@ -102,6 +106,8 @@ class OrderSerializer(serializers.ModelSerializer):
     rental_days_total = serializers.IntegerField(read_only=True)
     rental_days_elapsed = serializers.IntegerField(read_only=True)
     rental_progress_percentage = serializers.FloatField(read_only=True)
+    store_name = serializers.CharField(source="store.name", read_only=True)
+    store_slug = serializers.CharField(source="store.slug", read_only=True)
 
     class Meta:
         model = Order
@@ -113,6 +119,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "seller",
             "listing",
             "store",
+            "store_name",
+            "store_slug",
             "currency",
             "subtotal",
             "delivery_fee",

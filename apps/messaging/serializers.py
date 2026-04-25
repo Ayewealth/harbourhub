@@ -10,14 +10,19 @@ class ParticipantSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(
         source='get_full_name', read_only=True)
     store_name = serializers.SerializerMethodField()
+    store_slug = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ('id', 'full_name', 'email', 'store_name')
+        fields = ('id', 'full_name', 'email', 'store_name', 'store_slug')
 
     def get_store_name(self, obj):
         store = getattr(obj, 'store', None)
         return store.name if store else None
+
+    def get_store_slug(self, obj):
+        store = getattr(obj, 'store', None)
+        return store.slug if store else None
 
 
 class QuoteSnippetSerializer(serializers.Serializer):
@@ -131,6 +136,8 @@ class ConversationListSerializer(serializers.ModelSerializer):
         source='listing.title', read_only=True, default=None)
     store_name = serializers.CharField(
         source='store.name', read_only=True, default=None)
+    store_slug = serializers.CharField(
+        source='store.slug', read_only=True, default=None)
     unread_count = serializers.SerializerMethodField()
     last_message_preview = serializers.CharField(read_only=True)
     last_message_at = serializers.DateTimeField(read_only=True)
@@ -144,6 +151,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'listing_title',
             'store',
             'store_name',
+            'store_slug',
             'unread_count',
             'last_message_preview',
             'last_message_at',
