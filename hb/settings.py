@@ -507,9 +507,12 @@ if not DEBUG:
         "SECURE_SSL_REDIRECT", default=False, cast=bool)
 
     # Disable HSTS for now since we don't have a domain/SSL
-    SECURE_HSTS_SECONDS = 0
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
-    SECURE_HSTS_PRELOAD = False
+    SECURE_HSTS_SECONDS = config(
+        "SECURE_HSTS_SECONDS", default=0)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = config(
+        "SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False, cast=bool)
+    SECURE_HSTS_PRELOAD = config(
+        "SECURE_HSTS_PRELOAD", default=False, cast=bool)
 
 # =============================================================================
 # PAYSTACK
