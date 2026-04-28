@@ -502,10 +502,14 @@ CELERY_BEAT_SCHEDULE = {
 # HTTPS / HSTS (only in production)
 # =============================================================================
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000  # 1 year
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    # Use cast=bool so "False" in .env becomes a real False in Python
+    SECURE_SSL_REDIRECT = config(
+        "SECURE_SSL_REDIRECT", default=False, cast=bool)
+
+    # Disable HSTS for now since we don't have a domain/SSL
+    SECURE_HSTS_SECONDS = 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
 
 # =============================================================================
 # PAYSTACK
