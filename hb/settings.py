@@ -264,51 +264,51 @@ SESSION_CACHE_ALIAS = "default"
 # Optional: cache timeout defaults
 CACHE_TTL = 60 * 15  # 15 minutes
 
-# # =============================================================================
-# # EMAIL
-# # =============================================================================
-
-# EMAIL_BACKEND = config(
-#     "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
-# EMAIL_HOST = config("EMAIL_HOST", default="localhost")
-# EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
-# EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
-# EMAIL_USE_SSL = config("EMAIL_USE_SSL", default=False, cast=bool)
-# EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
-# EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
-
-# DEFAULT_FROM_EMAIL = config(
-#     "DEFAULT_FROM_EMAIL", default="noreply@harbourhub.com")
-# SERVER_EMAIL = config("SERVER_EMAIL", default="server@harbourhub.com")
-# ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@harbourhub.com")
-# SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@harbourhub.com")
-# SECURITY_EMAIL = config("SECURITY_EMAIL", default="security@harbourhub.com")
-# SEND_WELCOME_EMAIL = config("SEND_WELCOME_EMAIL", default=True, cast=bool)
-
 # =============================================================================
-# EMAIL (SendGrid)
+# EMAIL
 # =============================================================================
 
 EMAIL_BACKEND = config(
-    "EMAIL_BACKEND", default="sendgrid_backend.SendgridBackend"
-)
-
-SENDGRID_API_KEY = config("SENDGRID_API_KEY", default=None)
-SENDGRID_SANDBOX_MODE_IN_DEBUG = config(
-    "SENDGRID_SANDBOX_MODE_IN_DEBUG", default=False, cast=bool
-)
-SENDGRID_ECHO_TO_STDOUT = config(
-    "SENDGRID_ECHO_TO_STDOUT", default=False, cast=bool
-)
+    "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = config("EMAIL_HOST", default="localhost")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+EMAIL_USE_SSL = config("EMAIL_USE_SSL", default=False, cast=bool)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 
 DEFAULT_FROM_EMAIL = config(
-    "DEFAULT_FROM_EMAIL", default="harbourhub2025@gmail.com"
-)
-SERVER_EMAIL = config("SERVER_EMAIL", default="harbourhub2025@gmail.com")
-ADMIN_EMAIL = config("ADMIN_EMAIL", default="harbourhub2025@gmail.com")
-SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="harbourhub2025@gmail.com")
+    "DEFAULT_FROM_EMAIL", default="noreply@harbourhub.com")
+SERVER_EMAIL = config("SERVER_EMAIL", default="server@harbourhub.com")
+ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@harbourhub.com")
+SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@harbourhub.com")
 SECURITY_EMAIL = config("SECURITY_EMAIL", default="security@harbourhub.com")
 SEND_WELCOME_EMAIL = config("SEND_WELCOME_EMAIL", default=True, cast=bool)
+
+# # =============================================================================
+# # EMAIL (SendGrid)
+# # =============================================================================
+
+# EMAIL_BACKEND = config(
+#     "EMAIL_BACKEND", default="sendgrid_backend.SendgridBackend"
+# )
+
+# SENDGRID_API_KEY = config("SENDGRID_API_KEY", default=None)
+# SENDGRID_SANDBOX_MODE_IN_DEBUG = config(
+#     "SENDGRID_SANDBOX_MODE_IN_DEBUG", default=False, cast=bool
+# )
+# SENDGRID_ECHO_TO_STDOUT = config(
+#     "SENDGRID_ECHO_TO_STDOUT", default=False, cast=bool
+# )
+
+# DEFAULT_FROM_EMAIL = config(
+#     "DEFAULT_FROM_EMAIL", default="harbourhub2025@gmail.com"
+# )
+# SERVER_EMAIL = config("SERVER_EMAIL", default="harbourhub2025@gmail.com")
+# ADMIN_EMAIL = config("ADMIN_EMAIL", default="harbourhub2025@gmail.com")
+# SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="harbourhub2025@gmail.com")
+# SECURITY_EMAIL = config("SECURITY_EMAIL", default="security@harbourhub.com")
+# SEND_WELCOME_EMAIL = config("SEND_WELCOME_EMAIL", default=True, cast=bool)
 
 # =============================================================================
 # DRF
@@ -460,7 +460,7 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # Secure Redis SSL (important for Aiven)
-BROKER_USE_SSL = {"ssl_cert_reqs": None}
+CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": None}
 CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": None}
 
 # Retry connection on startup to avoid race conditions
