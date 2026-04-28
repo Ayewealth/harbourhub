@@ -24,6 +24,10 @@ ALLOWED_HOSTS = config(
     "ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv()
 )
 
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
 SITE_URL = config("SITE_URL", default="http://localhost:8000")
 SITE_NAME = config("SITE_NAME", default="Harbour Hub")
 
