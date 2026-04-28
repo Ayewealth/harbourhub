@@ -108,6 +108,8 @@ if config("RATELIMIT_ENABLE", default=False, cast=bool):
     )
     RATELIMIT_ENABLE = True
     RATELIMIT_USE_CACHE = "default"
+    RATELIMIT_IP_META_KEY = config(
+        "RATELIMIT_IP_META_KEY", default="HTTP_X_FORWARDED_FOR")
 else:
     RATELIMIT_ENABLE = False
 
