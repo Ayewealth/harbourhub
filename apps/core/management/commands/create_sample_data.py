@@ -28,7 +28,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.NOTICE("Creating sample data..."))
 
         # 🧠 Prevent duplicate data creation
-        if User.objects.filter(email="harbourhub2025@gmail.com").exists() and Listing.objects.exists():
+        # User.objects.filter(email="harbourhub2025@gmail.com").exists() and
+        if Listing.objects.exists():
             self.stdout.write(self.style.WARNING(
                 "⚠️ Sample data already exists. Skipping."))
             return
@@ -74,20 +75,20 @@ class Command(BaseCommand):
         roles = [User.Role.BUYER, User.Role.SELLER, User.Role.SERVICE_PROVIDER]
         users = []
 
-        # Admin
-        if not User.objects.filter(email="harbourhub2025@gmail.com").exists():
-            admin = User.objects.create_superuser(
-                email="harbourhub2025@gmail.com",
-                password="admin123",
-                username="admin",
-                first_name="Super",
-                last_name="Admin",
-                role=User.Role.SUPER_ADMIN,
-                is_verified=True,
-            )
-            users.append(admin)
-            self.stdout.write(
-                "Admin user created: harbourhub2025@gmail.com / admin123")
+        # # Admin
+        # if not User.objects.filter(email="harbourhub2025@gmail.com").exists():
+        #     admin = User.objects.create_superuser(
+        #         email="harbourhub2025@gmail.com",
+        #         password="admin123",
+        #         username="admin",
+        #         first_name="Super",
+        #         last_name="Admin",
+        #         role=User.Role.SUPER_ADMIN,
+        #         is_verified=True,
+        #     )
+        #     users.append(admin)
+        #     self.stdout.write(
+        #         "Admin user created: harbourhub2025@gmail.com / admin123")
 
         for i in range(count):
             role = random.choice(roles)
