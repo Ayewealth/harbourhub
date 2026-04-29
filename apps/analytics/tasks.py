@@ -19,13 +19,19 @@ def compute_and_cache_analytics():
         now = timezone.now()
         last_30_days = now - timedelta(days=30)
         last_7_days = now - timedelta(days=7)
+        last_90_days = now - timedelta(days=90)
+        last_365_days = now - timedelta(days=365)
 
         payload = {
-            "user_stats": view._get_user_statistics(last_30_days, last_7_days),
-            "listing_stats": view._get_listing_statistics(last_30_days, last_7_days),
-            "inquiry_stats": view._get_inquiry_statistics(last_30_days, last_7_days),
+            "user_stats": view._get_user_statistics(
+                last_30_days, last_7_days, last_90_days, last_365_days),
+            "listing_stats": view._get_listing_statistics(
+                last_30_days, last_7_days, last_90_days, last_365_days),
+            "inquiry_stats": view._get_inquiry_statistics(
+                last_30_days, last_7_days, last_90_days, last_365_days),
             "category_stats": view._get_category_statistics(),
-            "business_stats": view._get_business_statistics(last_30_days),
+            "business_stats": view._get_business_statistics(
+                last_30_days, last_7_days, last_90_days, last_365_days),
             "generated_at": now,
         }
         cache.set(CACHE_KEY, payload, CACHE_TTL)

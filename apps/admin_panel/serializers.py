@@ -98,3 +98,36 @@ class PlatformConfigSerializer(serializers.ModelSerializer):
         model = PlatformConfig
         exclude = ('updated_by',)
         read_only_fields = ('id', 'updated_at')
+
+
+class AdminOrderListSerializer(serializers.ModelSerializer):
+    buyer_name = serializers.CharField(source='buyer.full_name', read_only=True)
+    buyer_email = serializers.EmailField(source='buyer.email', read_only=True)
+    listing_title = serializers.CharField(
+        source='listing.title', read_only=True)
+    amount = serializers.DecimalField(
+        source='total_amount', max_digits=14, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = __import__('apps.commerce.models', fromlist=['Order']).Order
+        fields = (
+            'id', 'order_number', 'buyer_name', 'buyer_email',
+            'listing_title', 'amount', 'currency', 'status', 'created_at'
+        )
+        read_only_fields = fields
+
+
+class AdminActionLogSerializer(serializers.ModelSerializer):
+    admin_user_email = serializers.EmailField(
+        source='admin_user.email', read_only=True)
+    action_type_display = serializers.CharField(
+        source='get_action_type_display', read_only=True)
+
+    class Meta:
+        model = AdminActionLog
+        fields = (
+            'id', 'admin_user', 'admin_user_email',
+            'action_type', 'action_type_display',
+            'description', 'timestamp', 'extra_data'
+        )
+        read_only_fields = ('id', 'timestamp')

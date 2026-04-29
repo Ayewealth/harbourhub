@@ -10,6 +10,8 @@ from .views import (
     AdminListingActionView,
     AdminPaymentListView,
     AdminMarkPayoutPaidView,
+    AdminActivityViewSet,
+    AdminOrderViewSet,
 )
 from .dashboard_views import (
     RolesMatrixView,
@@ -26,6 +28,8 @@ router = DefaultRouter()
 router.register(r'reports', ReportedContentViewSet, basename='reports')
 router.register(r'verifications', VerificationAdminViewSet,
                 basename='admin-verifications')
+router.register(r'activity', AdminActivityViewSet, basename='admin-activity')
+router.register(r'orders', AdminOrderViewSet, basename='admin-orders')
 
 urlpatterns = router.urls + [
     # Dashboard settings

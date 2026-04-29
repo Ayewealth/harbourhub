@@ -47,12 +47,18 @@ class AnalyticsViewSet(ViewSet):
         now = timezone.now()
         last_30_days = now - timedelta(days=30)
         last_7_days = now - timedelta(days=7)
+        last_90_days = now - timedelta(days=90)
+        last_365_days = now - timedelta(days=365)
 
-        user_stats = self._get_user_statistics(last_30_days, last_7_days)
-        listing_stats = self._get_listing_statistics(last_30_days, last_7_days)
-        inquiry_stats = self._get_inquiry_statistics(last_30_days, last_7_days)
+        user_stats = self._get_user_statistics(
+            last_30_days, last_7_days, last_90_days, last_365_days)
+        listing_stats = self._get_listing_statistics(
+            last_30_days, last_7_days, last_90_days, last_365_days)
+        inquiry_stats = self._get_inquiry_statistics(
+            last_30_days, last_7_days, last_90_days, last_365_days)
         category_stats = self._get_category_statistics()
-        business_stats = self._get_business_statistics(last_30_days)
+        business_stats = self._get_business_statistics(
+            last_30_days, last_7_days, last_90_days, last_365_days)
 
         payload = {
             "user_stats": user_stats,
@@ -233,7 +239,7 @@ class AnalyticsViewSet(ViewSet):
     # ───────────────────────────────
     # INTERNAL HELPERS
     # ───────────────────────────────
-    def _get_user_statistics(self, last_30_days, last_7_days):
+    def _get_user_statistics(self, last_30_days, last_7_days, last_90_days, last_365_days):
         return {
             "total_users": User.objects.count(),
             "active_users_30d": User.objects.filter(
@@ -243,12 +249,14 @@ class AnalyticsViewSet(ViewSet):
                 date_joined__gte=last_30_days
             ).count(),
             "new_users_7d": User.objects.filter(date_joined__gte=last_7_days).count(),
+            "new_users_90d": User.objects.filter(date_joined__gte=last_90_days).count(),
+            "new_users_365d": User.objects.filter(date_joined__gte=last_365_days).count(),
             "verified_users": User.objects.filter(is_verified=True).count(),
             "users_by_role": dict(User.objects.values_list("role").annotate(Count("role"))),
             "inactive_users": User.objects.filter(is_active=False).count(),
         }
 
-    def _get_listing_statistics(self, last_30_days, last_7_days):
+    def _get_listing_statistics(self, last_30_days, last_7_days, last_90_days, last_365_days):
         return {
             "total_listings": Listing.objects.count(),
             "published_listings": Listing.objects.filter(
@@ -259,6 +267,12 @@ class AnalyticsViewSet(ViewSet):
             ).count(),
             "new_listings_7d": Listing.objects.filter(
                 created_at__gte=last_7_days
+            ).count(),
+            "new_listings_90d": Listing.objects.filter(
+                created_at__gte=last_90_days
+            ).count(),
+            "new_listings_365d": Listing.objects.filter(
+                created_at__gte=last_365_days
             ).count(),
             "featured_listings": Listing.objects.filter(featured=True).count(),
             "listings_by_type": dict(
@@ -279,7 +293,7 @@ class AnalyticsViewSet(ViewSet):
             or 0,
         }
 
-    def _get_inquiry_statistics(self, last_30_days, last_7_days):
+    def _get_inquiry_statistics(self, last_30_days, last_7_days, last_90_days, last_365_days):
         return {
             "total_inquiries": Inquiry.objects.count(),
             "new_inquiries_30d": Inquiry.objects.filter(
@@ -287,6 +301,12 @@ class AnalyticsViewSet(ViewSet):
             ).count(),
             "new_inquiries_7d": Inquiry.objects.filter(
                 created_at__gte=last_7_days
+            ).count(),
+            "new_inquiries_90d": Inquiry.objects.filter(
+                created_at__gte=last_90_days
+            ).count(),
+            "new_inquiries_365d": Inquiry.objects.filter(
+                created_at__gte=last_365_days
             ).count(),
             "inquiries_by_status": dict(
                 Inquiry.objects.values_list("status").annotate(Count("status"))
@@ -319,7 +339,21 @@ class AnalyticsViewSet(ViewSet):
             ),
         }
 
-    def _get_business_statistics(self, last_30_days):
+    def _get_business_statistics(self, last_30_days, last_7_days, last_90_days, last_365_days):
+        from apps.commerce.models import Order
+        from apps.admin_panel.models import PlatformConfig
+
+        def get_rev(since):
+            return Order.objects.filter(
+                status__in=[Order.Status.PAID, Order.Status.FULFILLED],
+                created_at__gte=since
+            ).aggregate(total=Sum('total_amount'))['total'] or 0
+
+        now = timezone.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        config = PlatformConfig.get()
+
         return {
             "active_transactions_30d": Inquiry.objects.filter(
                 created_at__gte=last_30_days,
@@ -327,6 +361,12 @@ class AnalyticsViewSet(ViewSet):
             ).count(),
             "marketplace_activity_score": self._calculate_activity_score(),
             "user_engagement_rate": self._calculate_engagement_rate(last_30_days),
+            "revenue_today": get_rev(today_start),
+            "revenue_7d": get_rev(last_7_days),
+            "revenue_30d": get_rev(last_30_days),
+            "revenue_90d": get_rev(last_90_days),
+            "revenue_365d": get_rev(last_365_days),
+            "currency": config.default_currency,
         }
 
     def _calculate_avg_response_time(self) -> float:

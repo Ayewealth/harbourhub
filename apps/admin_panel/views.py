@@ -11,8 +11,13 @@ from rest_framework.views import APIView
 
 from apps.notifications.utils import notify_verification_approved, notify_verification_rejected
 
-from .models import ReportedContent, AdminActionLog
-from .serializers import ReportedContentSerializer, ReportedContentCreateSerializer
+from .models import ReportedContent, AdminActionLog, PlatformConfig
+from .serializers import (
+    ReportedContentSerializer,
+    ReportedContentCreateSerializer,
+    AdminActionLogSerializer,
+    AdminOrderListSerializer
+)
 from .permissions import IsAdminOrSuperAdmin
 from .tasks import send_verification_decision_email
 
@@ -579,3 +584,29 @@ class AdminMarkPayoutPaidView(APIView):
         )
 
         return Response({'message': 'Payout marked as paid.'})
+
+
+class AdminActivityViewSet(viewsets.ReadOnlyModelViewSet):
+    """Admin view of platform activity logs."""
+    queryset = AdminActionLog.objects.select_related('admin_user').all()
+    serializer_class = AdminActionLogSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['action_type', 'admin_user']
+    search_fields = ['description', 'admin_user__email']
+    ordering = ['-timestamp']
+
+
+class AdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
+    """Admin view of all platform orders."""
+    serializer_class = AdminOrderListSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['status']
+    search_fields = ['order_number', 'buyer__full_name', 'buyer__email']
+    ordering_fields = ['created_at', 'total_amount']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        from apps.commerce.models import Order
+        return Order.objects.select_related('buyer', 'listing').all()

@@ -66,14 +66,3 @@ class UserAnalyticsSerializer(serializers.ModelSerializer):
     @extend_schema_field(str)
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
-
-
-class AnalyticsOverviewSerializer(serializers.Serializer):
-    """Serializer for high-level analytics summary (optional helper)."""
-
-    user_stats = serializers.DictField()
-    listing_stats = serializers.DictField()
-    inquiry_stats = serializers.DictField()
-    category_stats = serializers.DictField()
-    business_stats = serializers.DictField()
-    generated_at = serializers.DateTimeField()
