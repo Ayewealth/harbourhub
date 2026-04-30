@@ -291,33 +291,6 @@ ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@harbourhub.com")
 SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@harbourhub.com")
 SECURITY_EMAIL = config("SECURITY_EMAIL", default="security@harbourhub.com")
 SEND_WELCOME_EMAIL = config("SEND_WELCOME_EMAIL", default=True, cast=bool)
-
-# # =============================================================================
-# # EMAIL (SendGrid)
-# # =============================================================================
-
-# EMAIL_BACKEND = config(
-#     "EMAIL_BACKEND", default="sendgrid_backend.SendgridBackend"
-# )
-
-# SENDGRID_API_KEY = config("SENDGRID_API_KEY", default=None)
-# SENDGRID_SANDBOX_MODE_IN_DEBUG = config(
-#     "SENDGRID_SANDBOX_MODE_IN_DEBUG", default=False, cast=bool
-# )
-# SENDGRID_ECHO_TO_STDOUT = config(
-#     "SENDGRID_ECHO_TO_STDOUT", default=False, cast=bool
-# )
-
-# DEFAULT_FROM_EMAIL = config(
-#     "DEFAULT_FROM_EMAIL", default="harbourhub2025@gmail.com"
-# )
-# SERVER_EMAIL = config("SERVER_EMAIL", default="harbourhub2025@gmail.com")
-# ADMIN_EMAIL = config("ADMIN_EMAIL", default="harbourhub2025@gmail.com")
-# SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="harbourhub2025@gmail.com")
-# SECURITY_EMAIL = config("SECURITY_EMAIL", default="security@harbourhub.com")
-# SEND_WELCOME_EMAIL = config("SEND_WELCOME_EMAIL", default=True, cast=bool)
-
-# =============================================================================
 # DRF
 # =============================================================================
 
