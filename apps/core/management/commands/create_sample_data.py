@@ -172,7 +172,7 @@ class Command(BaseCommand):
                 role=role,
                 company=fake.company() if role != User.Role.BUYER else "",
                 location=fake.city(),
-                phone=fake.phone_number(),
+                phone=fake.phone_number()[:20],
                 is_verified=(role == User.Role.BUYER or random.choice([True, False]))
             )
             
@@ -219,8 +219,8 @@ class Command(BaseCommand):
                 name=f"{seller.company or seller.full_name} Store",
                 slug=f"store-{uuid.uuid4().hex[:8]}",
                 description=fake.paragraph(),
-                email=seller.email,
-                phone=seller.phone,
+                email=seller.email[:255],
+                phone=(seller.phone or fake.phone_number())[:20],
                 address=fake.address(),
                 is_verified=seller.is_verified,
                 is_active=True,
