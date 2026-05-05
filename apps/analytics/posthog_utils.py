@@ -15,22 +15,26 @@ def is_tracking_enabled():
         return False
     return True
 
+def _init_posthog():
+    """Initialize PostHog with correct attribute name."""
+    posthog.api_key = settings.POSTHOG_PROJECT_API_KEY
+    posthog.host = getattr(
+        settings, 'POSTHOG_HOST', 'https://app.posthog.com')
+
 def capture_event(distinct_id, event_name, properties=None):
-    """
-    Wrapper around posthog.capture to ensure safety.
-    If PostHog fails, it shouldn't crash the main application.
-    """
     if not is_tracking_enabled() or not distinct_id:
         return
 
     try:
+        _init_posthog()
         posthog.capture(
             distinct_id=str(distinct_id),
             event=event_name,
             properties=properties or {}
         )
     except Exception as e:
-        logger.error(f"PostHog capture failed for event {event_name}: {str(e)}")
+        logger.error(
+            f"PostHog capture failed for event {event_name}: {str(e)}")
 
 # ==========================================
 # AUTH & ONBOARDING EVENTS
