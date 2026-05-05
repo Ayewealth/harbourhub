@@ -5,6 +5,7 @@ from apps.listings.tasks import record_listing_view_task
 from apps.store.views import log_store_activity
 from .permissions import IsOwnerOrAdminOrReadOnly, CanCreateListing
 from .filters import ListingFilter
+from apps.analytics.posthog_utils import track_listing_viewed, track_listing_created, track_search_performed, track_listing_deleted
 import logging
 
 from django.db.models import Avg, Count, FloatField, Q, Value
@@ -80,6 +81,16 @@ class ListingViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        if request.query_params:
+            track_search_performed(
+                request.user, 
+                request.query_params, 
+                getattr(response, 'data', {}).get('count', 0)
+            )
+        return response
+
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
         if self.action == 'list':
@@ -121,6 +132,7 @@ class ListingViewSet(viewsets.ModelViewSet):
             # Refresh instance so .views_count reflects the increment we just made
             try:
                 instance.refresh_from_db(fields=['views_count'])
+                track_listing_viewed(request.user, instance)
             except Exception:
                 # ignore refresh failures (very unlikely)
                 pass
@@ -140,6 +152,7 @@ class ListingViewSet(viewsets.ModelViewSet):
         # Save: serializer.create handles featured flag too, but we also ensure no duplicates
         # call save with user param is supported by serializer.create
         listing = serializer.save(user=user)
+        track_listing_created(user, listing)
 
         log_store_activity(
             listing.store,
@@ -199,7 +212,15 @@ class ListingViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.exception(f"Error checking listing deletion constraints: {e}")
             
-        return super().destroy(request, *args, **kwargs)
+        listing_id = instance.id
+        title = instance.title
+        
+        response = super().destroy(request, *args, **kwargs)
+        
+        if response.status_code == 204:
+            track_listing_deleted(request.user, listing_id, title)
+            
+        return response
 
     @extend_schema(
         summary="Get my listings",

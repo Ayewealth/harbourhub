@@ -13,6 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
 from apps.notifications.utils import notify_order_paid
+from apps.analytics.posthog_utils import track_payment_success
 
 from .models import Order, OrderActivity, Payment
 
@@ -108,6 +109,7 @@ class PaystackWebhookView(APIView):
         order.save(update_fields=['status'])
 
         notify_order_paid(order)
+        track_payment_success(order.buyer, order)
 
         OrderActivity.objects.create(
             order=order,

@@ -1,5 +1,6 @@
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import generics, permissions
+from apps.analytics.posthog_utils import track_review_submitted
 
 from .models import ListingReview, StoreReview
 from .serializers import (
@@ -34,6 +35,15 @@ class ListingReviewListCreateView(generics.ListCreateAPIView):
             return ListingReviewCreateSerializer
         return ListingReviewSerializer
 
+    def perform_create(self, serializer):
+        review = serializer.save(reviewer=self.request.user)
+        track_review_submitted(
+            self.request.user, 
+            'listing', 
+            review.listing_id, 
+            review.rating
+        )
+
 
 @extend_schema_view(
     get=extend_schema(
@@ -58,3 +68,12 @@ class StoreReviewListCreateView(generics.ListCreateAPIView):
         if self.request.method == "POST":
             return StoreReviewCreateSerializer
         return StoreReviewSerializer
+
+    def perform_create(self, serializer):
+        review = serializer.save(reviewer=self.request.user)
+        track_review_submitted(
+            self.request.user, 
+            'store', 
+            review.store_id, 
+            review.rating
+        )

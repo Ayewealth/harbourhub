@@ -41,6 +41,11 @@ from .permissions import IsOwnerOrAdmin
 from .models import DeliveryDetail, UserPreference, VerificationRequest, OneTimePassword, UserTwoFactor, UserSession
 from .emails import EmailService
 from apps.accounts.tasks import send_welcome_email_task, send_password_reset_email_task, send_password_reset_confirmation_email_task, notify_admins_verification_request
+from apps.analytics.posthog_utils import (
+    track_user_registered, track_user_login, 
+    track_verification_submitted, track_password_reset_requested,
+    track_store_created, track_profile_updated
+)
 from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
@@ -66,6 +71,7 @@ class UserRegistrationViewSet(CreateModelMixin, GenericViewSet):
     def perform_create(self, serializer):
         user = serializer.save()
         send_welcome_email_task.delay(user.id)
+        track_user_registered(user)
 
 
 class OTPRequestView(APIView):
@@ -101,6 +107,7 @@ class OTPVerifyView(APIView):
                 return Response({"error": "User account is inactive."}, status=status.HTTP_403_FORBIDDEN)
 
             refresh = RefreshToken.for_user(user)
+            track_user_login(user)
             return Response({
                 "message": "OTP verified successfully. Login complete.",
                 "user": {
@@ -171,6 +178,15 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
             # No 2FA — record session
             self._record_session(request, response.data)
+            
+            # Track login
+            try:
+                user_id = response.data.get('user', {}).get('id')
+                if user_id:
+                    user = User.objects.get(id=user_id)
+                    track_user_login(user)
+            except Exception:
+                pass
 
         return response
 
@@ -237,6 +253,11 @@ class UserProfileViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
     def get_object(self):
         return self.request.user
 
+    def perform_update(self, serializer):
+        fields = list(serializer.validated_data.keys())
+        serializer.save()
+        track_profile_updated(self.request.user, fields)
+
 
 class PasswordChangeView(APIView):
     """Endpoint for changing password when logged in."""
@@ -267,6 +288,7 @@ class PasswordResetRequestView(APIView):
         }
         if reset_token:
             send_password_reset_email_task.delay(reset_token.id)
+            track_password_reset_requested(serializer.validated_data['email'])
             if settings.DEBUG:
                 # for dev/testing only
                 response_data["reset_token"] = reset_token.token
@@ -327,6 +349,8 @@ class VerificationViewSet(viewsets.ViewSet):
             verification_request.id,
             request.user.email
         )
+        
+        track_verification_submitted(request.user, verification_request.company_name)
 
         return Response({
             'message': 'Verification request submitted successfully',
@@ -514,6 +538,7 @@ class TwoFactorVerifyLoginView(APIView):
 
         from rest_framework_simplejwt.tokens import RefreshToken
         refresh = RefreshToken.for_user(user)
+        track_user_login(user)
         return Response({
             'message': '2FA verified successfully.',
             'tokens': {
@@ -651,6 +676,8 @@ class SellerOnboardingStep1View(APIView):
             data=request.data)
         serializer.is_valid(raise_exception=True)
         store = serializer.save(request.user)
+        
+        track_store_created(request.user, store.id, store.name)
 
         return Response({
             'message': 'Business details saved.',

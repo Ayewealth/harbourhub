@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from apps.listings.models import Listing
 from apps.commerce.models import Order, QuoteRequest
 from .models import Store, StoreActivity
+from apps.analytics.posthog_utils import track_store_created
 
 from .filters import StoreDirectoryFilter
 from .permissions import CanCreateStore, CanManageStore, IsStoreOwnerOrAdmin
@@ -116,7 +117,8 @@ class StoreListCreateView(generics.ListCreateAPIView):
         return context
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        store = serializer.save(user=self.request.user)
+        track_store_created(self.request.user, store.id, store.name)
 
 
 @extend_schema_view(

@@ -1,28 +1,28 @@
 name: Deploy to EC2
 
 on:
-    push:
-        branches: [ main ]
+  push:
+    branches: [main]
 
 jobs:
-    deploy:
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v3
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-            - name: Deploy via SSH
-              uses: appleboy/ssh-action@master
-              with:
-                  host: 16.16.214.13
-                  username: ubuntu
-                  key: ${{ secrets.EC2_SSH_KEY }}
-                  script: |
-                      cd /var/www/harbourhub
-                      source venv/bin/activate
-                      git pull origin main
-                      pip install -r requirements.txt
-                      python manage.py migrate --noinput
-                      python manage.py collectstatic --noinput
-                      python manage.py create_sample_data --users 30 --listings 80 --inquiries 150
-                      sudo systemctl restart harbourhub-web harbourhub-worker harbourhub-beat nginx
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: 16.16.214.13
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /var/www/harbourhub
+            source venv/bin/activate
+            git pull origin main
+            pip install -r requirements.txt
+            python manage.py migrate --noinput
+            python manage.py collectstatic --noinput
+            python manage.py create_sample_data
+            sudo systemctl restart harbourhub-web harbourhub-worker harbourhub-beat nginx

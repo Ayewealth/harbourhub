@@ -18,6 +18,7 @@ from .serializers import (
     InquiryListSerializer, InquiryReplySerializer
 )
 from .permissions import IsInquiryParticipant
+from apps.analytics.posthog_utils import track_inquiry_sent, track_inquiry_replied
 
 
 @extend_schema_view(
@@ -100,6 +101,8 @@ class InquiryViewSet(viewsets.ModelViewSet):
             import logging
             logging.getLogger(__name__).exception(f"Failed to bridge Inquiry {inquiry.id} to Conversation: {e}")
         # -----------------------------------------------------------
+        
+        track_inquiry_sent(request.user, inquiry)
 
         out_serializer = InquirySerializer(
             inquiry, context=self.get_serializer_context())
@@ -173,6 +176,8 @@ class InquiryViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         # serializer.create uses context['inquiry'] and request.user
         reply = serializer.save()
+        
+        track_inquiry_replied(request.user, reply)
 
         return Response({
             'message': 'Reply sent successfully',

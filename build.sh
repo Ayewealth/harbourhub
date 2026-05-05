@@ -16,6 +16,6 @@ python manage.py makemigrations --noinput
 python manage.py migrate --noinput
 
 # Create sample data (runs only if DB is empty)
-python manage.py create_sample_data --users 30 --listings 80 --inquiries 150
+python manage.py create_sample_data
 
 echo "✅ Build complete!"

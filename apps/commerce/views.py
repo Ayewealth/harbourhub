@@ -24,6 +24,11 @@ from apps.commerce.paystack import initialize_transaction, verify_transaction
 from apps.admin_panel.auth import has_admin_module_permission
 from apps.admin_panel.constants import AdminModule
 from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
+from apps.analytics.posthog_utils import (
+    track_quote_requested, track_order_placed, 
+    track_payment_success, track_payment_failed,
+    track_item_added_to_cart
+)
 
 
 from .filters import OrderFilter, QuoteRequestFilter
@@ -104,6 +109,7 @@ class QuoteRequestListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         quote = serializer.save(buyer=self.request.user)
         notify_quote_received(quote)
+        track_quote_requested(self.request.user, quote)
 
 
 @extend_schema_view(
@@ -521,6 +527,9 @@ class CartItemView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         item = serializer.save()
+        
+        track_item_added_to_cart(request.user, item.listing, item.quantity)
+
         return Response(
             CartItemSerializer(item, context={'request': request}).data,
             status=status.HTTP_201_CREATED
@@ -636,6 +645,7 @@ class CheckoutView(APIView):
             )
 
             notify_order_placed(order)
+            track_order_placed(request.user, order)
 
             orders_created.append(order)
 
@@ -732,6 +742,8 @@ class PaymentVerifyView(APIView):
                 message="Payment confirmed. Funds held in escrow."
             )
 
+            track_payment_success(request.user, order)
+
             return Response({
                 'status': 'success',
                 'message': 'Payment verified successfully.',
@@ -740,6 +752,9 @@ class PaymentVerifyView(APIView):
 
         payment.status = Payment.Status.FAILED
         payment.save(update_fields=['status'])
+        
+        track_payment_failed(request.user, payment.order, "Verification failed or cancelled")
+        
         return Response(
             {'status': 'failed', 'message': 'Payment not successful.'},
             status=status.HTTP_400_BAD_REQUEST

@@ -97,6 +97,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "posthog.integrations.django.PosthogContextMiddleware",
 ]
 
 if DEBUG and config("ENABLE_DEBUG_TOOLBAR", default=False, cast=bool):
@@ -502,3 +503,9 @@ PAYSTACK_CALLBACK_URL = config(
     "PAYSTACK_CALLBACK_URL",
     default="http://localhost:3000/payment/callback"
 )
+
+# =============================================================================
+# POSTHOG
+# =============================================================================
+POSTHOG_PROJECT_API_KEY = config("POSTHOG_PROJECT_API_KEY", default="")
+POSTHOG_HOST = config("POSTHOG_HOST", default="https://eu.i.posthog.com")
