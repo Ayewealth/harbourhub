@@ -19,7 +19,10 @@ Harbour Hub is a comprehensive B2B marketplace platform specifically designed fo
 - **Category Management**: Hierarchical categorization using MPTT
 - **Search & Discovery**: Global search across all listings and categories
 - **Inquiry System**: Direct communication between buyers and sellers
-- **Analytics Dashboard**: Comprehensive business insights and metrics
+- **Storefronts**: Dedicated vendor stores with custom policies and verification
+- **Commerce Engine**: Shopping carts, multi-vendor checkout, and order lifecycle
+- **Financials**: Vendor wallets, automated earnings calculation, and payout tracking
+- **Advanced Analytics**: Granular user behavior tracking via PostHog
 
 ### Advanced Features
 
@@ -43,7 +46,8 @@ Harbour Hub is a comprehensive B2B marketplace platform specifically designed fo
 - **Authentication**: JWT tokens with refresh mechanism
 - **Documentation**: DRF Spectacular (OpenAPI/Swagger)
 - **Email**: SMTP with HTML templates
-- **Monitoring**: Sentry integration (optional)
+- **Analytics**: PostHog (Granular event tracking)
+- **Monitoring**: Sentry integration
 
 ### Project Structure
 
@@ -57,7 +61,13 @@ hb/
 │   ├── core/             # Core utilities & global search
 │   ├── health/           # Health checks
 │   ├── inquiries/        # Buyer-seller communication
-│   └── listings/         # Equipment & service listings
+│   ├── listings/         # Equipment & service listings
+│   ├── commerce/         # Orders, payments, and checkout
+│   ├── financials/       # Vendor wallets & earnings
+│   ├── store/            # Vendor store management
+│   ├── reviews/          # Listing and store feedback
+│   ├── notifications/    # In-app notification system
+│   └── messaging/        # Internal messaging system
 ├── templates/            # Email templates
 ├── media/               # User uploads
 ├── static/              # Static files
@@ -126,6 +136,10 @@ hb/
    AWS_ACCESS_KEY_ID=your-access-key
    AWS_SECRET_ACCESS_KEY=your-secret-key
    AWS_STORAGE_BUCKET_NAME=your-bucket-name
+
+   # PostHog Analytics
+   POSTHOG_PROJECT_API_KEY=phc_your_key_here
+   POSTHOG_HOST=https://eu.i.posthog.com
    ```
 
 5. **Database Setup**
@@ -143,7 +157,11 @@ hb/
 7. **Generate Sample Data (Optional)**
 
    ```bash
+   # Generates users, stores, listings, inquiries, orders, and financial records
    python manage.py create_sample_data
+   
+   # Use --clean to wipe existing data first
+   python manage.py create_sample_data --clean
    ```
 
 8. **Start Development Server**
@@ -338,7 +356,11 @@ coverage report
 ### Sample Data Generation
 
 ```bash
-python manage.py create_sample_data --users 20 --listings 50 --inquiries 100
+# Recommended for fresh dev environments
+python manage.py create_sample_data --clean
+
+# Custom counts
+python manage.py create_sample_data --users 50 --listings 150 --orders 30
 ```
 
 ### Database Maintenance
