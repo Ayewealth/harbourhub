@@ -42,7 +42,7 @@ class Store(models.Model):
     commission_rate = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=5.00,
+        default=__import__('decimal').Decimal('5.00'),
         help_text="Platform commission percentage charged on sales"
     )
     is_verified = models.BooleanField(

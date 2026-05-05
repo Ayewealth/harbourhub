@@ -98,7 +98,7 @@ class VendorEarning(models.Model):
     )
     commission_rate = models.DecimalField(
         max_digits=5, decimal_places=2,
-        default=5.00,
+        default=__import__('decimal').Decimal('5.00'),
         help_text="Platform commission percentage"
     )
     commission_amount = models.DecimalField(
@@ -137,9 +137,10 @@ class VendorEarning(models.Model):
     def save(self, *args, **kwargs):
         # Auto-calculate commission and net
         if self.gross_amount and self.commission_rate:
+            from decimal import Decimal
             self.commission_amount = (
-                self.gross_amount * self.commission_rate / 100
-            ).quantize(__import__('decimal').Decimal('0.01'))
+                self.gross_amount * (self.commission_rate / Decimal('100'))
+            ).quantize(Decimal('0.01'))
             self.net_amount = self.gross_amount - self.commission_amount
         super().save(*args, **kwargs)
 
