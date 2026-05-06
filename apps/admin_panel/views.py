@@ -611,3 +611,131 @@ class AdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         from apps.commerce.models import Order
         return Order.objects.select_related('buyer', 'listing').all()
+
+    @extend_schema(
+        summary="Order statistics for dashboard cards",
+        description=(
+            "Returns Total Orders, Active Orders, Pending Quote Requests, and "
+            "Completed Transactions — each with a percentage change vs the previous "
+            "equivalent period. Filter using `date_from` and `date_to` (YYYY-MM-DD). "
+            "Defaults to the current calendar month vs the previous month."
+        ),
+        parameters=[
+            {
+                "name": "date_from",
+                "in": "query",
+                "required": False,
+                "schema": {"type": "string", "format": "date"},
+                "description": "Start of the period (YYYY-MM-DD)",
+            },
+            {
+                "name": "date_to",
+                "in": "query",
+                "required": False,
+                "schema": {"type": "string", "format": "date"},
+                "description": "End of the period (YYYY-MM-DD)",
+            },
+        ],
+    )
+    @action(detail=False, methods=["get"], url_path="stats", url_name="stats")
+    def stats(self, request):
+        from apps.commerce.models import Order, QuoteRequest
+        from django.utils.dateparse import parse_date
+
+        now = timezone.now()
+
+        # ── Resolve current period ──────────────────────────────────────────
+        raw_from = request.query_params.get("date_from")
+        raw_to   = request.query_params.get("date_to")
+
+        if raw_from and raw_to:
+            date_from = parse_date(raw_from)
+            date_to   = parse_date(raw_to)
+            if not date_from or not date_to:
+                return Response(
+                    {"error": "Invalid date format. Use YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # Convert dates → aware datetimes (start of day / end of day)
+            period_start = timezone.make_aware(
+                timezone.datetime.combine(date_from, timezone.datetime.min.time())
+            )
+            period_end = timezone.make_aware(
+                timezone.datetime.combine(date_to, timezone.datetime.max.time())
+            )
+        else:
+            # Default: current calendar month
+            period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            period_end   = now
+
+        period_length = period_end - period_start
+
+        # ── Resolve previous (comparison) period ───────────────────────────
+        prev_end   = period_start
+        prev_start = period_start - period_length
+
+        # ── Helper: % change ───────────────────────────────────────────────
+        def pct_change(current, previous):
+            if previous == 0:
+                return 100.0 if current > 0 else 0.0
+            return round((current - previous) / previous * 100, 1)
+
+        def card(label, current, previous):
+            return {
+                "label":          label,
+                "value":          current,
+                "change_percent": pct_change(current, previous),
+                "increased":      current >= previous,
+            }
+
+        # ── Queries ────────────────────────────────────────────────────────
+        orders     = Order.objects
+        quotes     = QuoteRequest.objects
+
+        # Total Orders
+        total_cur  = orders.filter(created_at__gte=period_start, created_at__lte=period_end).count()
+        total_prev = orders.filter(created_at__gte=prev_start,   created_at__lt=prev_end).count()
+
+        # Active Orders  (paid or pending_payment — money is moving)
+        active_statuses = [Order.Status.PAID, Order.Status.PENDING_PAYMENT]
+        active_cur  = orders.filter(
+            status__in=active_statuses,
+            created_at__gte=period_start, created_at__lte=period_end
+        ).count()
+        active_prev = orders.filter(
+            status__in=active_statuses,
+            created_at__gte=prev_start, created_at__lt=prev_end
+        ).count()
+
+        # Pending Requests  (unresponded quote requests)
+        pending_cur  = quotes.filter(
+            status=QuoteRequest.Status.PENDING,
+            created_at__gte=period_start, created_at__lte=period_end
+        ).count()
+        pending_prev = quotes.filter(
+            status=QuoteRequest.Status.PENDING,
+            created_at__gte=prev_start, created_at__lt=prev_end
+        ).count()
+
+        # Completed Transactions
+        completed_cur  = orders.filter(
+            status=Order.Status.FULFILLED,
+            created_at__gte=period_start, created_at__lte=period_end
+        ).count()
+        completed_prev = orders.filter(
+            status=Order.Status.FULFILLED,
+            created_at__gte=prev_start, created_at__lt=prev_end
+        ).count()
+
+        return Response({
+            "period": {
+                "from": period_start.date().isoformat(),
+                "to":   period_end.date().isoformat(),
+            },
+            "stats": [
+                card("Total Orders",            total_cur,     total_prev),
+                card("Active Orders",           active_cur,    active_prev),
+                card("Pending Requests",        pending_cur,   pending_prev),
+                card("Completed Transactions",  completed_cur, completed_prev),
+            ],
+        })
