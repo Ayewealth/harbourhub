@@ -1,4 +1,5 @@
-from datetime import timedelta, timezone
+from datetime import timedelta
+from django.utils import timezone
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework import generics
 from rest_framework.generics import get_object_or_404

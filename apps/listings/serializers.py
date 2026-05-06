@@ -113,8 +113,11 @@ class ListingListSerializer(serializers.ModelSerializer):
     def get_primary_image(self, obj):
         primary_image = obj.images.filter(is_primary=True).first()
         if primary_image:
-            request = self.context.get("request")
-            return request.build_absolute_uri(primary_image.image.url) if request else primary_image.image.url
+            try:
+                request = self.context.get("request")
+                return request.build_absolute_uri(primary_image.image.url) if request else primary_image.image.url
+            except Exception:
+                return None
         return None
 
     @extend_schema_field(serializers.CharField())
@@ -391,8 +394,11 @@ class MyListingSerializer(serializers.ModelSerializer):
     def get_primary_image(self, obj):
         primary_image = obj.images.filter(is_primary=True).first()
         if primary_image:
-            request = self.context.get("request")
-            return request.build_absolute_uri(primary_image.image.url) if request else primary_image.image.url
+            try:
+                request = self.context.get("request")
+                return request.build_absolute_uri(primary_image.image.url) if request else primary_image.image.url
+            except Exception:
+                return None
         return None
 
     @extend_schema_field(serializers.IntegerField())
