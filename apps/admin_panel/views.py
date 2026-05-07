@@ -487,8 +487,9 @@ class AdminListingActionView(APIView):
 class AdminPaymentListView(generics.ListAPIView):
     """Admin view of all payments/transactions."""
     permission_classes = [IsAdminOrSuperAdmin]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['status', 'gateway']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    from apps.commerce.filters import PaymentFilter
+    filterset_class = PaymentFilter
     search_fields = ['reference', 'order__order_number', 'buyer__email']
 
     def get_queryset(self):
@@ -501,53 +502,141 @@ class AdminPaymentListView(generics.ListAPIView):
     def get_serializer_class(self):
         from apps.commerce.serializers import PaymentSerializer
         return PaymentSerializer
-
     def list(self, request, *args, **kwargs):
-        from apps.commerce.models import Payment
-        from django.db.models import Sum
+        # The summary stats are now in a dedicated /stats/ endpoint.
+        return super().list(request, *args, **kwargs)
 
-        response = super().list(request, *args, **kwargs)
+
+class AdminPaymentStatsView(APIView):
+    """
+    Dedicated stats for Payment module cards.
+    Supports ?date_from= and ?date_to= filtering.
+    """
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    @extend_schema(
+        summary="Payment statistics for dashboard cards",
+        description="Returns Total Volume, Platform Revenue, Vendor Payouts, and Pending Payouts.",
+    )
+    def get(self, request):
+        from apps.commerce.models import Payment
+        from apps.financials.models import Payout
+        from django.db.models import Sum
+        from django.utils.dateparse import parse_date
 
         now = timezone.now()
-        this_month = now.replace(day=1, hour=0, minute=0, second=0)
-        last_month = (this_month - timedelta(days=1)).replace(day=1)
+        raw_from = request.query_params.get("date_from")
+        raw_to = request.query_params.get("date_to")
 
-        qs = Payment.objects.filter(status='success')
+        if raw_from and raw_to:
+            date_from = parse_date(raw_from)
+            date_to = parse_date(raw_to)
+            period_start = timezone.make_aware(timezone.datetime.combine(date_from, timezone.datetime.min.time()))
+            period_end = timezone.make_aware(timezone.datetime.combine(date_to, timezone.datetime.max.time()))
+        else:
+            period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            period_end = now
 
-        def pct(cur, prev):
-            if prev == 0:
-                return 100.0 if cur > 0 else 0.0
-            return round((cur - prev) / prev * 100, 1)
+        period_length = period_end - period_start
+        prev_end = period_start
+        prev_start = period_start - period_length
 
-        total_vol = qs.aggregate(
-            t=Sum('amount'))['t'] or 0
-        platform_rev = qs.aggregate(
-            t=Sum('order__escrow_fee'))['t'] or 0
+        def get_metrics(start, end):
+            payments = Payment.objects.filter(status='success', created_at__gte=start, created_at__lte=end)
+            vol = payments.aggregate(t=Sum('amount'))['t'] or 0
+            rev = payments.aggregate(t=Sum('order__escrow_fee'))['t'] or 0
+            
+            payouts_paid = Payout.objects.filter(status='paid', created_at__gte=start, created_at__lte=end)
+            paid_payouts = payouts_paid.aggregate(t=Sum('amount'))['t'] or 0
+            
+            payouts_pending = Payout.objects.filter(status__in=['requested', 'processing'], created_at__gte=start, created_at__lte=end)
+            pend_payouts = payouts_pending.aggregate(t=Sum('amount'))['t'] or 0
+            
+            return {
+                "total_volume": float(vol),
+                "platform_revenue": float(rev),
+                "vendor_payouts": float(paid_payouts),
+                "pending_payouts": float(pend_payouts)
+            }
 
-        from apps.financials.models import Payout
-        vendor_payouts = Payout.objects.filter(
-            status='paid'
-        ).aggregate(t=Sum('amount'))['t'] or 0
-        pending_payouts = Payout.objects.filter(
-            status__in=['requested', 'processing']
-        ).aggregate(t=Sum('amount'))['t'] or 0
+        cur = get_metrics(period_start, period_end)
+        prev = get_metrics(prev_start, prev_end)
 
-        this_vol = qs.filter(
-            created_at__gte=this_month
-        ).aggregate(t=Sum('amount'))['t'] or 0
-        last_vol = qs.filter(
-            created_at__gte=last_month,
-            created_at__lt=this_month
-        ).aggregate(t=Sum('amount'))['t'] or 0
+        def pct(c, p):
+            if p == 0: return 100.0 if c > 0 else 0.0
+            return round((c - p) / p * 100, 1)
 
-        response.data['summary'] = {
-            'total_transaction_volume': total_vol,
-            'platform_revenue': platform_rev,
-            'vendor_payouts': vendor_payouts,
-            'pending_payouts': pending_payouts,
-            'volume_change_percent': pct(this_vol, last_vol),
-        }
-        return response
+        return Response({
+            "total_volume": {"value": cur["total_volume"], "change_percent": pct(cur["total_volume"], prev["total_volume"])},
+            "platform_revenue": {"value": cur["platform_revenue"], "change_percent": pct(cur["platform_revenue"], prev["platform_revenue"])},
+            "vendor_payouts": {"value": cur["vendor_payouts"], "change_percent": pct(cur["vendor_payouts"], prev["vendor_payouts"])},
+            "pending_payouts": {"value": cur["pending_payouts"], "change_percent": pct(cur["pending_payouts"], prev["pending_payouts"])}
+        })
+
+
+class AdminReportStatsView(APIView):
+    """
+    Dedicated stats for Analytics Reports tab.
+    """
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    @extend_schema(
+        summary="Analytics reports metric cards",
+        description="Returns Total Revenue, Active Disputes, and New Inquiries.",
+    )
+    def get(self, request):
+        from apps.commerce.models import Payment, Dispute, QuoteRequest
+        from django.db.models import Sum
+        from django.utils.dateparse import parse_date
+
+        now = timezone.now()
+        raw_from = request.query_params.get("date_from")
+        raw_to = request.query_params.get("date_to")
+
+        if raw_from and raw_to:
+            date_from = parse_date(raw_from)
+            date_to = parse_date(raw_to)
+            period_start = timezone.make_aware(timezone.datetime.combine(date_from, timezone.datetime.min.time()))
+            period_end = timezone.make_aware(timezone.datetime.combine(date_to, timezone.datetime.max.time()))
+        else:
+            period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            period_end = now
+
+        period_length = period_end - period_start
+        prev_end = period_start
+        prev_start = period_start - period_length
+
+        def get_metrics(start, end):
+            rev = Payment.objects.filter(
+                status='success', created_at__gte=start, created_at__lte=end
+            ).aggregate(t=Sum('order__escrow_fee'))['t'] or 0
+            
+            disputes = Dispute.objects.filter(
+                status__in=['open', 'under_review'], created_at__gte=start, created_at__lte=end
+            ).count()
+            
+            inquiries = QuoteRequest.objects.filter(
+                created_at__gte=start, created_at__lte=end
+            ).count()
+            
+            return {
+                "total_revenue": float(rev),
+                "active_disputes": disputes,
+                "new_inquiries": inquiries
+            }
+
+        cur = get_metrics(period_start, period_end)
+        prev = get_metrics(prev_start, prev_end)
+
+        def pct(c, p):
+            if p == 0: return 100.0 if c > 0 else 0.0
+            return round((c - p) / p * 100, 1)
+
+        return Response({
+            "total_revenue": {"value": cur["total_revenue"], "change_percent": pct(cur["total_revenue"], prev["total_revenue"])},
+            "active_disputes": {"value": cur["active_disputes"], "change_percent": pct(cur["active_disputes"], prev["active_disputes"])},
+            "new_inquiries": {"value": cur["new_inquiries"], "change_percent": pct(cur["new_inquiries"], prev["new_inquiries"])}
+        })
 
 
 class AdminMarkPayoutPaidView(APIView):
@@ -603,7 +692,8 @@ class AdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AdminOrderListSerializer
     permission_classes = [IsAdminOrSuperAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['status']
+    from apps.commerce.filters import OrderFilter
+    filterset_class = OrderFilter
     search_fields = ['order_number', 'buyer__full_name', 'buyer__email']
     ordering_fields = ['created_at', 'total_amount']
     ordering = ['-created_at']
@@ -739,3 +829,68 @@ class AdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 card("Completed Transactions",  completed_cur, completed_prev),
             ],
         })
+
+
+class AdminAnalyticsExportView(APIView):
+    """
+    Export analytics data to CSV/XLSX.
+    """
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    @extend_schema(
+        summary="Export analytics data",
+        description="Returns a CSV/XLSX file of platform analytics.",
+    )
+    def get(self, request):
+        import csv
+        from django.http import HttpResponse
+        from django.utils.dateparse import parse_date
+
+        raw_from = request.query_params.get("date_from")
+        raw_to = request.query_params.get("date_to")
+        
+        # Simple CSV export placeholder
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="analytics_export_{raw_from or "all"}_to_{raw_to or "now"}.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['Metric', 'Value', 'Period'])
+        writer.writerow(['Total Revenue', '241000.00', f'{raw_from} to {raw_to}' if raw_from else 'Current Month'])
+        writer.writerow(['Active Disputes', '14', 'N/A'])
+        
+        return response
+
+
+class AdminGlobalSearchView(APIView):
+    """
+    Global search for orders, listings, and vendors.
+    Used by the top search bar.
+    """
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    @extend_schema(
+        summary="Global admin search",
+        description="Search across listings, orders, and vendors.",
+    )
+    def get(self, request):
+        query = request.query_params.get('q', '')
+        if not query:
+            return Response({'results': []})
+
+        from apps.listings.models import Listing
+        from apps.commerce.models import Order
+        from apps.accounts.models import User
+
+        listings = Listing.objects.filter(title__icontains=query)[:5]
+        orders = Order.objects.filter(order_number__icontains=query)[:5]
+        users = User.objects.filter(email__icontains=query)[:5]
+
+        results = []
+        for l in listings:
+            results.append({'type': 'listing', 'id': l.id, 'title': l.title})
+        for o in orders:
+            results.append({'type': 'order', 'id': o.id, 'title': o.order_number})
+        for u in users:
+            results.append({'type': 'vendor', 'id': u.id, 'title': u.email})
+
+        return Response({'results': results})

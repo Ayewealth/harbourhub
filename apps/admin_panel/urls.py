@@ -12,6 +12,10 @@ from .views import (
     AdminMarkPayoutPaidView,
     AdminActivityViewSet,
     AdminOrderViewSet,
+    AdminPaymentStatsView,
+    AdminReportStatsView,
+    AdminAnalyticsExportView,
+    AdminGlobalSearchView,
 )
 from .dashboard_views import (
     RolesMatrixView,
@@ -58,6 +62,14 @@ urlpatterns = router.urls + [
 
     # Payments
     path('payments/', AdminPaymentListView.as_view()),
+    path('payments/stats/', AdminPaymentStatsView.as_view()),
     path('payments/payouts/<int:pk>/mark-paid/',
          AdminMarkPayoutPaidView.as_view()),
+
+    # Reports/Analytics
+    path('reports/stats/', AdminReportStatsView.as_view()),
+    path('analytics/export/', AdminAnalyticsExportView.as_view()),
+
+    # Search
+    path('search/', AdminGlobalSearchView.as_view()),
 ]

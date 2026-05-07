@@ -56,3 +56,16 @@ class OrderFilter(django_filters.FilterSet):
             Q(placed_at__date__lte=value)
             | Q(placed_at__isnull=True, created_at__date__lte=value)
         )
+
+class PaymentFilter(django_filters.FilterSet):
+    status = django_filters.CharFilter(
+        field_name="status", lookup_expr="iexact")
+    date_from = django_filters.DateFilter(
+        field_name="created_at", lookup_expr="date__gte")
+    date_to = django_filters.DateFilter(
+        field_name="created_at", lookup_expr="date__lte")
+
+    class Meta:
+        from .models import Payment
+        model = Payment
+        fields = ["status"]

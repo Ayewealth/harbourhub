@@ -223,9 +223,16 @@ class PlatformConfigView(APIView):
 
     def get(self, request):
         if not can_edit_dashboard_matrix(request.user):
-            return Response(status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "Permission denied. Super Admin role required for platform configuration."},
+                status=status.HTTP_403_FORBIDDEN
+            )
         config = PlatformConfig.get()
-        return Response(PlatformConfigSerializer(config).data)
+        # Explicitly save if it's the first time to ensure defaults are persisted
+        if not config.pk:
+            config.save()
+        serializer = PlatformConfigSerializer(config)
+        return Response(serializer.data)
 
     def patch(self, request):
         if not can_edit_dashboard_matrix(request.user):
