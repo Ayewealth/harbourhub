@@ -412,3 +412,26 @@ class MyListingSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.CharField())
     def get_currency_symbol(self, obj):
         return CURRENCY_SYMBOLS.get(obj.currency, obj.currency)
+
+class PublicRecentSaleSerializer(serializers.Serializer):
+    """Minimal order info for public hero page."""
+    id = serializers.IntegerField(read_only=True)
+    listing_id = serializers.IntegerField(source="listing.id", read_only=True)
+    listing_title = serializers.CharField(source="listing.title", read_only=True)
+    store_name = serializers.CharField(source="store.name", read_only=True)
+    store_slug = serializers.CharField(source="store.slug", read_only=True)
+    order_type = serializers.CharField(read_only=True)
+    total_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    currency = serializers.CharField(read_only=True)
+    placed_at = serializers.DateTimeField(read_only=True)
+    primary_image = serializers.SerializerMethodField()
+
+    def get_primary_image(self, obj):
+        primary = obj.listing.images.filter(is_primary=True).first()
+        if primary:
+            try:
+                request = self.context.get("request")
+                return request.build_absolute_uri(primary.image.url) if request else primary.image.url
+            except Exception:
+                return None
+        return None

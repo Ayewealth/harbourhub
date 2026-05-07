@@ -21,7 +21,8 @@ from rest_framework.views import APIView
 from .models import Listing, ListingView, SavedItem
 from .serializers import (
     ListingListSerializer, ListingDetailSerializer,
-    ListingCreateUpdateSerializer, MyListingSerializer
+    ListingCreateUpdateSerializer, MyListingSerializer,
+    PublicRecentSaleSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -590,3 +591,26 @@ class SavedItemToggleView(APIView):
             {'error': 'Listing was not in your saved items'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+@extend_schema_view(
+    get=extend_schema(
+        summary="Recent global sales",
+        description=(
+            "Returns a list of the most recent successful transactions across the platform. "
+            "Publicly accessible for hero page social proof."
+        ),
+    ),
+)
+class PublicRecentSalesView(generics.ListAPIView):
+    serializer_class = PublicRecentSaleSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
+    filter_backends = []
+
+    def get_queryset(self):
+        from apps.commerce.models import Order
+        return Order.objects.filter(
+            status__in=[Order.Status.PAID, Order.Status.FULFILLED]
+        ).select_related(
+            "listing", "store"
+        ).order_by("-placed_at", "-created_at")[:10]

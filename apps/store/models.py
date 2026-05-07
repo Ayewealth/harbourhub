@@ -59,6 +59,14 @@ class Store(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def sales_count(self):
+        """Total number of successful orders (paid or fulfilled)."""
+        from apps.commerce.models import Order
+        return self.orders.filter(
+            status__in=[Order.Status.PAID, Order.Status.FULFILLED]
+        ).count()
+
 
 class StoreActivity(models.Model):
     store = models.ForeignKey(

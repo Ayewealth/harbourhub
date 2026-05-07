@@ -109,8 +109,14 @@ class StoreRatingStatsMixin(serializers.Serializer):
         return int(v) if v is not None else 0
 
 
+class StoreOrderStatsMixin(serializers.Serializer):
+    """Aggregate order stats for the store."""
+    sales_count = serializers.IntegerField(read_only=True)
+
+
 class StoreListSerializer(
     StoreRatingStatsMixin,
+    StoreOrderStatsMixin,
     StoreDirectoryListingPreviewMixin,
     serializers.ModelSerializer,
 ):
@@ -137,6 +143,7 @@ class StoreListSerializer(
             "is_published",
             "rating_average",
             "review_count",
+            "sales_count",
             "listing_count",
             "listings",
             "created_at",
@@ -165,6 +172,7 @@ class StoreUpdateSerializer(serializers.ModelSerializer):
 
 class StoreDetailSerializer(
     StoreRatingStatsMixin,
+    StoreOrderStatsMixin,
     StoreDirectoryListingPreviewMixin,
     serializers.ModelSerializer,
 ):
@@ -199,6 +207,7 @@ class StoreDetailSerializer(
             "is_published",
             "rating_average",
             "review_count",
+            "sales_count",
             "listing_count",
             "listings",
             "created_at",
