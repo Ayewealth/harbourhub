@@ -95,6 +95,13 @@ class Order(models.Model):
         DRAFT = "draft", _("Draft")
         PENDING_PAYMENT = "pending_payment", _("Pending payment")
         PAID = "paid", _("Paid")
+        ORDER_CONFIRMED = "order_confirmed", _("Order Confirmed")
+        ITEM_DISPATCHED = "item_dispatched", _("Item Dispatched")
+        IN_TRANSIT = "in_transit", _("In Transit")
+        DELIVERED = "delivered", _("Delivered")
+        ACTIVE_HIRE = "active_hire", _("Active Hire")
+        HIRE_ENDED = "hire_ended", _("Hire Ended")
+        ITEM_RETURNED = "item_returned", _("Item Returned")
         FULFILLED = "fulfilled", _("Fulfilled")
         CANCELLED = "cancelled", _("Cancelled")
 
@@ -207,6 +214,7 @@ class OrderActivity(models.Model):
     """Timeline events for an order."""
 
     class EventType(models.TextChoices):
+        # Existing choices
         ORDER_PLACED = 'order_placed', _('Order Placed')
         PAYMENT_CONFIRMED = 'payment_confirmed', _('Payment Confirmed')
         RENTAL_APPROVED = 'rental_approved', _('Rental Approved')
@@ -214,16 +222,26 @@ class OrderActivity(models.Model):
         SHIPPED = 'shipped', _('Shipped')
         IN_TRANSIT = 'in_transit', _('In Transit')
         DELIVERED = 'delivered', _('Delivered')
-        RENTAL_PERIOD_ACTIVE = 'rental_period_active', _(
-            'Rental Period Active')
-        RENTAL_PERIOD_ENDING = 'rental_period_ending', _(
-            'Rental Period Ending Soon')
+        RENTAL_PERIOD_ACTIVE = 'rental_period_active', _('Rental Period Active')
+        RENTAL_PERIOD_ENDING = 'rental_period_ending', _('Rental Period Ending Soon')
         RENTAL_EXTENDED = 'rental_extended', _('Rental Extended')
         EQUIPMENT_COLLECTED = 'equipment_collected', _('Equipment Collected')
-        VENDOR_CONFIRMED_RETURN = 'vendor_confirmed_return', _(
-            'Vendor Confirmed Return')
+        VENDOR_CONFIRMED_RETURN = 'vendor_confirmed_return', _('Vendor Confirmed Return')
         ORDER_COMPLETED = 'order_completed', _('Order Completed')
         ORDER_CANCELLED = 'order_cancelled', _('Order Cancelled')
+        
+        # New choices from Section 7.5
+        PAYMENT_RECEIVED = 'payment_received', _('Payment Received')
+        ORDER_CONFIRMED = 'order_confirmed', _('Order Confirmed')
+        ITEM_DISPATCHED = 'item_dispatched', _('Item Dispatched')
+        HIRE_STARTED = 'hire_started', _('Rental Started')
+        HIRE_ENDED = 'hire_ended', _('Rental Ended')
+        ITEM_RETURNED = 'item_returned', _('Item Returned')
+        ORDER_FULFILLED = 'order_fulfilled', _('Order Fulfilled')
+        DISPUTE_OPENED = 'dispute_opened', _('Dispute Opened')
+        DISPUTE_RESOLVED = 'dispute_resolved', _('Dispute Resolved')
+        ORDER_REFUNDED = 'order_refunded', _('Order Refunded')
+        OTHER = 'other', _('Other Event')
 
     order = models.ForeignKey(
         Order,

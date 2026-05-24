@@ -10,6 +10,10 @@ class ListingFilter(filters.FilterSet):
     # Price
     price_min = filters.NumberFilter(field_name="price", lookup_expr="gte")
     price_max = filters.NumberFilter(field_name="price", lookup_expr="lte")
+    min_price = filters.NumberFilter(field_name="price", lookup_expr="gte")
+    max_price = filters.NumberFilter(field_name="price", lookup_expr="lte")
+    condition = filters.CharFilter(field_name="condition", lookup_expr="iexact")
+    vendor_verified = filters.BooleanFilter(method="filter_vendor_verified")
     price_range = filters.RangeFilter(field_name="price")
 
     # Year
@@ -136,3 +140,8 @@ class ListingFilter(filters.FilterSet):
             | Q(model__icontains=v)
             | Q(location__icontains=v)
         )
+
+    def filter_vendor_verified(self, queryset, name, value):
+        if value:
+            return queryset.filter(store__is_verified=True)
+        return queryset

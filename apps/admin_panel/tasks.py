@@ -48,3 +48,35 @@ def send_verification_decision_email(verification_id):
                   [verification.user.email])
     except VerificationRequest.DoesNotExist:
         pass
+
+
+@shared_task
+def send_admin_invite_email(user_id, token):
+    """
+    Sends invite email to the newly invited admin user with the custom FRONTEND_URL format.
+    """
+    from apps.accounts.models import User
+    try:
+        user = User.objects.get(pk=user_id)
+        frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
+        invite_link = f"{frontend_url}/admin-setup?token={token}"
+
+        subject = "💼 Invitation to join Harbour Hub as Admin"
+        message = (
+            f"Hello,\n\n"
+            f"You have been invited to join the Harbour Hub team as an administrator.\n\n"
+            f"Please click the link below to set up your account and password:\n"
+            f"{invite_link}\n\n"
+            f"This link is secure and unique to you.\n\n"
+            f"Best regards,\n"
+            f"The Harbour Hub Team"
+        )
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=True,
+        )
+    except User.DoesNotExist:
+        pass

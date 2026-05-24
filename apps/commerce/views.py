@@ -9,7 +9,7 @@ from django.db.models import Avg, Count, Q
 from django.utils.dateparse import parse_date
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, exceptions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.generics import get_object_or_404
@@ -46,6 +46,8 @@ from .serializers import (
     QuoteRequestVendorUpdateSerializer,
     DisputeSerializer,
     DisputeResolutionSerializer,
+    OrderTrackingDetailSerializer,
+    OrderListTrackingSummarySerializer,
 )
 
 
@@ -879,3 +881,173 @@ class RecentSalesView(generics.ListAPIView):
         ).select_related(
             "buyer", "listing"
         ).order_by("-created_at")[:10]  # Return top 10 recent sales
+
+
+class OrderTrackingDetailView(generics.RetrieveUpdateAPIView):
+    """
+    Returns the current status of the order plus the full chronological activity timeline.
+    Accessible only to the buyer of that order, the seller, or any admin.
+    Can be PATCHed by the seller to update tracking details.
+    """
+    serializer_class = OrderTrackingDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        pk_or_num = self.kwargs.get("pk_or_num")
+        if str(pk_or_num).isdigit():
+            order = get_object_or_404(Order, pk=pk_or_num)
+        else:
+            order = get_object_or_404(Order, order_number=pk_or_num)
+        
+        user = self.request.user
+        is_buyer = order.buyer == user
+        is_seller = order.seller == user or (order.store and order.store.user == user)
+        is_admin = getattr(user, 'is_admin_user', False) or user.is_staff
+
+        if not (is_buyer or is_seller or is_admin):
+            raise exceptions.PermissionDenied("You do not have permission to access this order's tracking details.")
+        return order
+
+    def patch(self, request, *args, **kwargs):
+        order = self.get_object()
+        user = request.user
+        is_seller = order.seller == user or (order.store and order.store.user == user)
+        if not is_seller:
+            raise exceptions.PermissionDenied("Only the seller of this order can update the tracking details.")
+
+        tracking_id = request.data.get("tracking_id")
+        carrier = request.data.get("carrier")
+
+        if tracking_id is not None:
+            order.tracking_id = tracking_id
+        if carrier is not None:
+            order.delivery_carrier = carrier
+            if not isinstance(order.extra, dict):
+                order.extra = {}
+            order.extra["carrier"] = carrier
+
+        order.save()
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class BuyerMyOrdersListView(generics.ListAPIView):
+    """
+    Returns all orders placed by the authenticated buyer, with a lightweight tracking summary per order.
+    """
+    serializer_class = OrderListTrackingSummarySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Order.objects.filter(buyer=self.request.user).order_by("-created_at")
+
+
+class SellerStoreOrdersListView(generics.ListAPIView):
+    """
+    Returns all orders where the purchased listing belongs to the authenticated user's store.
+    """
+    serializer_class = OrderListTrackingSummarySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Order.objects.filter(
+            Q(seller=self.request.user) | Q(store__user=self.request.user)
+        ).distinct().order_by("-created_at")
+
+
+class OrderTrackingUpdateView(generics.CreateAPIView):
+    """
+    Allows the seller to advance the order status and append an OrderActivity event.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = OrderTrackingDetailSerializer
+
+    def post(self, request, pk_or_num):
+        if str(pk_or_num).isdigit():
+            order = get_object_or_404(Order, pk=pk_or_num)
+        else:
+            order = get_object_or_404(Order, order_number=pk_or_num)
+
+        user = request.user
+        is_seller = order.seller == user or (order.store and order.store.user == user)
+        if not is_seller:
+            raise exceptions.PermissionDenied("Only the seller of this order can update the tracking status.")
+
+        event = request.data.get("event")
+        note = request.data.get("note", "")
+
+        # Validate event is a valid seller event
+        seller_events = [
+            'order_confirmed', 'item_dispatched', 'in_transit',
+            'delivered', 'item_returned', 'order_fulfilled', 'order_cancelled'
+        ]
+        if event not in seller_events:
+            return Response(
+                {"error": f"Invalid seller-triggered tracking event. Allowed events are: {', '.join(seller_events)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Enforce state machine rules
+        VALID_TRANSITIONS = {
+            "pending_payment": [("order_cancelled", "cancelled")],
+            "paid": [("order_confirmed", "order_confirmed")],
+            "order_confirmed": [("item_dispatched", "item_dispatched")],
+            "item_dispatched": [("in_transit", "in_transit")],
+            "in_transit": [("delivered", "delivered")],
+            "delivered": [("order_fulfilled", "fulfilled")],
+            "hire_ended": [("item_returned", "item_returned")],
+            "item_returned": [("order_fulfilled", "fulfilled")],
+        }
+
+        transitions = VALID_TRANSITIONS.get(order.status, [])
+        allowed_matches = [t for t in transitions if t[0] == event]
+        if not allowed_matches:
+            return Response(
+                {"error": f"Invalid status transition from current status '{order.status}' via event '{event}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        next_status = allowed_matches[0][1]
+
+        with transaction.atomic():
+            order.status = next_status
+            order.save(update_fields=['status'])
+
+            # Log order activity
+            OrderActivity.objects.create(
+                order=order,
+                event_type=event,
+                message=note or f"Order advanced to {next_status.replace('_', ' ')}."
+            )
+
+            # Trigger notification
+            from apps.notifications.utils import dispatch_tracking_notification
+            dispatch_tracking_notification(event, order)
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class BuyerSentQuotesView(generics.ListAPIView):
+    """
+    Returns all QuoteRequest objects where buyer = request.user, paginated, ordered by most recent first.
+    """
+    serializer_class = QuoteRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return QuoteRequest.objects.filter(buyer=self.request.user).order_by("-created_at")
+
+
+class SellerReceivedQuotesView(generics.ListAPIView):
+    """
+    Returns all QuoteRequest objects where the associated listing belongs to request.user's store, paginated, ordered by most recent first.
+    """
+    serializer_class = QuoteRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return QuoteRequest.objects.filter(
+            Q(store__user=self.request.user) | Q(listing__store__user=self.request.user)
+        ).distinct().order_by("-created_at")

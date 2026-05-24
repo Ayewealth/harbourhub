@@ -107,3 +107,68 @@ class UserSearchHistoryView(APIView):
         from apps.core.models import UserSearch
         UserSearch.objects.filter(user=request.user).delete()
         return Response({'message': 'Search history cleared'})
+
+
+from rest_framework.throttling import SimpleRateThrottle
+from apps.core.models import Feedback
+
+class FeedbackThrottle(SimpleRateThrottle):
+    scope = 'feedback'
+    rate = '10/min'
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': self.get_ident(request)
+        }
+
+
+class FeedbackView(APIView):
+    """
+    POST /api/feedback/
+    Submit page feedback (Helpful / Not Helpful) from static pages.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [FeedbackThrottle]
+
+    def post(self, request):
+        topic = request.data.get("topic")
+        feedback_val = request.data.get("feedback")
+
+        if not topic:
+            return Response(
+                {"error": "topic field is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not feedback_val:
+            return Response(
+                {"error": "feedback field is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Normalize feedback
+        feedback_val = str(feedback_val).strip().lower()
+        if feedback_val not in ["helpful", "not_helpful"]:
+            return Response(
+                {"error": "Invalid feedback value. Must be 'helpful' or 'not_helpful'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get IP Address
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+
+        user = request.user if request.user.is_authenticated else None
+
+        Feedback.objects.create(
+            topic=topic,
+            feedback=feedback_val,
+            user=user,
+            ip_address=ip
+        )
+
+        return Response({"status": "received"}, status=status.HTTP_201_CREATED)

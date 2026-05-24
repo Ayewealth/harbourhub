@@ -1,5 +1,6 @@
 # harbour_hub/urls.py
 from django.urls import path, include
+from apps.commerce.views import BuyerSentQuotesView, SellerReceivedQuotesView
 
 urlpatterns = [
     # Authentication
@@ -23,5 +24,12 @@ urlpatterns = [
     path('analytics/', include('apps.analytics.urls')),
 
     # Global Search
-    path('search/', include('apps.core.urls'))
+    path('search/', include('apps.core.urls')),
+
+    # Public Careers / Job Openings
+    path('careers/', include('apps.admin_panel.public_careers_urls')),
+
+    # Quote Endpoints
+    path('quotes/sent/', BuyerSentQuotesView.as_view(), name='api-quotes-sent'),
+    path('quotes/received/', SellerReceivedQuotesView.as_view(), name='api-quotes-received'),
 ]

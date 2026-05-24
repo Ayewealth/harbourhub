@@ -7,6 +7,7 @@ from drf_spectacular.utils import extend_schema_field
 from .models import Listing, ListingImage, ListingDocument, ListingView
 from apps.categories.models import Category
 from apps.accounts.models import User
+from apps.core.currency import CurrencyConverterMixin
 
 
 CURRENCY_SYMBOLS = {
@@ -74,7 +75,9 @@ class ListingDocumentSerializer(serializers.ModelSerializer):
         return value
 
 
-class ListingListSerializer(serializers.ModelSerializer):
+class ListingListSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["price"]
+
     category_name = serializers.CharField(
         source="category.name", read_only=True)
     category_full_name = serializers.CharField(
@@ -142,7 +145,9 @@ class ListingListSerializer(serializers.ModelSerializer):
         return int(v) if v is not None else 0
 
 
-class ListingDetailSerializer(serializers.ModelSerializer):
+class ListingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["price"]
+
     category_name = serializers.CharField(
         source="category.name", read_only=True)
     store_name = serializers.CharField(
@@ -373,7 +378,9 @@ class ListingStatusUpdateSerializer(serializers.ModelSerializer):
         return instance
 
 
-class MyListingSerializer(serializers.ModelSerializer):
+class MyListingSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["price"]
+
     category_name = serializers.CharField(
         source="category.name", read_only=True)
     primary_image = serializers.SerializerMethodField()

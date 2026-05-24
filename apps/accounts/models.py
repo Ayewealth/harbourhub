@@ -385,6 +385,7 @@ class UserPreference(models.Model):
         choices=Language.choices,
         default=Language.ENGLISH_US
     )
+    preferred_currency = models.CharField(max_length=10, default="NGN")
     # Shopping category interests (list of category IDs)
     interested_categories = models.JSONField(default=list, blank=True)
 

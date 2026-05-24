@@ -131,3 +131,10 @@ class AdminActionLogSerializer(serializers.ModelSerializer):
             'description', 'timestamp', 'extra_data'
         )
         read_only_fields = ('id', 'timestamp')
+
+
+class JobListingSerializer(serializers.ModelSerializer):
+    class Meta:
+        from .models import JobListing
+        model = JobListing
+        fields = "__all__"

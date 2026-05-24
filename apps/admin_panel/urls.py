@@ -16,6 +16,10 @@ from .views import (
     AdminReportStatsView,
     AdminAnalyticsExportView,
     AdminGlobalSearchView,
+    AdminOrderTrackingView,
+    AdminConversationListView,
+    AdminConversationMessageHistoryView,
+    AdminJobListingViewSet,
 )
 from .dashboard_views import (
     RolesMatrixView,
@@ -34,6 +38,7 @@ router.register(r'verifications', VerificationAdminViewSet,
                 basename='admin-verifications')
 router.register(r'activity', AdminActivityViewSet, basename='admin-activity')
 router.register(r'orders', AdminOrderViewSet, basename='admin-orders')
+router.register(r'careers', AdminJobListingViewSet, basename='admin-careers')
 
 urlpatterns = router.urls + [
     # Dashboard settings
@@ -72,4 +77,9 @@ urlpatterns = router.urls + [
 
     # Search
     path('search/', AdminGlobalSearchView.as_view()),
+
+    # Order Tracking & Chat Monitoring
+    path('orders/<str:pk_or_num>/tracking/', AdminOrderTrackingView.as_view(), name='admin-order-tracking'),
+    path('conversations/', AdminConversationListView.as_view(), name='admin-conversations-list'),
+    path('conversations/<int:pk>/messages/', AdminConversationMessageHistoryView.as_view(), name='admin-conversation-messages'),
 ]

@@ -2,6 +2,7 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
 from .models import Store
+from apps.core.currency import CurrencyConverterMixin
 from apps.accounts.serializers import UserProfileSerializer
 from apps.listings.models import Listing, ListingImage
 
@@ -15,14 +16,16 @@ class ListingImageMiniSerializer(serializers.ModelSerializer):
         )
 
 
-class StoreListingMiniSerializer(serializers.ModelSerializer):
+class StoreListingMiniSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["price"]
+
     price_display = serializers.CharField(read_only=True)
     primary_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
         fields = (
-            "id",
+            "id", 
             "title",
             "slug",
             "listing_type",
@@ -215,3 +218,13 @@ class StoreDetailSerializer(
         )
         read_only_fields = ("user", "is_verified", "is_active",
                             "is_published", "created_at", "updated_at")
+
+
+class ShippingProfileSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["flat_rate_cost", "free_shipping_threshold"]
+
+    class Meta:
+        from .models import ShippingProfile
+        model = ShippingProfile
+        fields = "__all__"
+        read_only_fields = ("store",)

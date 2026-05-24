@@ -219,6 +219,21 @@ Once the server is running, access the API documentation at:
 
 - `GET /api/v1/search/` - Global search
 
+#### Commerce & Orders
+
+- `POST /api/v1/checkout/` - Multi-vendor cart checkout (initiates Paystack transaction)
+- `GET /api/v1/orders/my-orders/` - List orders placed by the authenticated buyer
+- `GET /api/v1/orders/store-orders/` - List incoming orders for the seller's store
+- `GET /api/v1/orders/{id}/tracking/` - Retrieve real-time status and activity timeline for an order
+- `PATCH /api/v1/orders/{id}/tracking/` - Seller updates order tracking ID and carrier info
+- `POST /api/v1/orders/{id}/tracking/update/` - Seller updates status and appends custom timeline events
+- `GET /api/v1/quotes/sent/` - List quote requests sent by the buyer
+- `GET /api/v1/quotes/received/` - List quote requests received by the seller's store
+
+#### Page Feedback
+
+- `POST /api/v1/feedback/` - Capture Helpful/Not Helpful feedback from static pages (Legal, FAQ)
+
 ## 🎯 User Roles & Permissions
 
 ### User Types
@@ -394,7 +409,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For support and questions:
 
-- **Email**: support@harbourhub.com
+- **Email**: support@harbourhubglobal.com
 - **Documentation**: Check the API docs at `/api/docs/`
 - **Issues**: Use GitHub Issues for bug reports
 
@@ -404,10 +419,10 @@ For support and questions:
 
 - [ ] Mobile application (React Native)
 - [ ] Advanced analytics dashboard
-- [ ] Payment integration
+- [x] Payment integration (Paystack checkout verified and fully operational)
 - [ ] Multi-language support
-- [ ] Advanced search filters
-- [ ] Real-time notifications
+- [x] Advanced search filters (Listings price, condition, type, verification, and vendor rating/location filters fully operational)
+- [x] Real-time notifications (Email triggers and hourly Celery beat background services operational)
 - [ ] API rate limiting dashboard
 
 ---

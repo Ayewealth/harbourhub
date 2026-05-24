@@ -1,12 +1,12 @@
-from .models import Cart, CartItem, OrderActivity, Order, Payment
 import uuid
 
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.core.currency import CurrencyConverterMixin
 from apps.listings.models import Listing
 
-from .models import Order, QuoteRequest
+from .models import Cart, CartItem, Order, OrderActivity, Payment, QuoteRequest
 
 
 class QuoteRequestCreateSerializer(serializers.ModelSerializer):
@@ -101,13 +101,16 @@ class OrderActivitySerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'order', 'created_at')
 
 
-class OrderSerializer(serializers.ModelSerializer):
+class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["subtotal", "delivery_fee", "escrow_fee", "total_amount"]
+
     activities = OrderActivitySerializer(many=True, read_only=True)
     rental_days_total = serializers.IntegerField(read_only=True)
     rental_days_elapsed = serializers.IntegerField(read_only=True)
     rental_progress_percentage = serializers.FloatField(read_only=True)
     store_name = serializers.CharField(source="store.name", read_only=True)
     store_slug = serializers.CharField(source="store.slug", read_only=True)
+    carrier = serializers.CharField(source="delivery_carrier", read_only=True)
 
     class Meta:
         model = Order
@@ -134,6 +137,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "delivery_contact_name",
             "delivery_contact_phone",
             "delivery_carrier",
+            "carrier",
             "rental_start_date",
             "rental_end_date",
             "pickup_scheduled_date",
@@ -148,7 +152,9 @@ class OrderSerializer(serializers.ModelSerializer):
         read_only_fields = ("order_number", "created_at", "updated_at")
 
 
-class OrderCreateSerializer(serializers.ModelSerializer):
+class OrderCreateSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["total_amount"]
+
     order_type = serializers.ChoiceField(
         choices=Order.OrderType.choices
     )
@@ -191,7 +197,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
-class CartItemSerializer(serializers.ModelSerializer):
+class CartItemSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["listing_price", "unit_price", "subtotal"]
+
     listing_title = serializers.CharField(
         source='listing.title', read_only=True)
     listing_price = serializers.DecimalField(
@@ -279,7 +287,9 @@ class CartItemCreateSerializer(serializers.ModelSerializer):
         return item
 
 
-class CartSerializer(serializers.ModelSerializer):
+class CartSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["total"]
+
     items = CartItemSerializer(many=True, read_only=True)
     total = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True)
@@ -383,3 +393,217 @@ class DisputeResolutionSerializer(serializers.Serializer):
     """Admin-only: resolve or refund a dispute."""
     action = serializers.ChoiceField(choices=['resolve', 'refund'])
     resolution_notes = serializers.CharField(required=True)
+
+
+# ─── Order Tracking & Timelines Serializers ──────────────────────────────────
+from apps.core.currency import CurrencyConverterMixin
+
+
+class OrderTrackingTimelineSerializer(serializers.ModelSerializer):
+    event = serializers.CharField(source="event_type")
+    label = serializers.CharField(source="get_event_type_display")
+    description = serializers.CharField(source="message")
+    actor = serializers.SerializerMethodField()
+    actor_name = serializers.SerializerMethodField()
+    timestamp = serializers.DateTimeField(source="created_at")
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderActivity
+        fields = (
+            "event",
+            "label",
+            "description",
+            "actor",
+            "actor_name",
+            "timestamp",
+            "is_current",
+        )
+
+    def get_actor(self, obj):
+        evt = obj.event_type
+        if evt in ['order_placed', 'dispute_opened', 'item_returned']:
+            return "buyer"
+        elif evt in ['order_confirmed', 'item_dispatched', 'in_transit', 'delivered']:
+            return "seller"
+        elif evt in ['dispute_resolved', 'order_refunded']:
+            return "admin"
+        else:
+            return "system"
+
+    def get_actor_name(self, obj):
+        actor = self.get_actor(obj)
+        if actor == "buyer":
+            return obj.order.buyer.full_name or obj.order.buyer.email
+        elif actor == "seller":
+            return obj.order.store.name if obj.order.store else (obj.order.seller.full_name or obj.order.seller.email)
+        elif actor == "admin":
+            return "Platform Admin"
+        return None
+
+    def get_is_current(self, obj):
+        # We set this dynamically in the view to true for the most recent timeline entry only
+        return getattr(obj, "is_current", False)
+
+
+class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["total_amount", "subtotal", "delivery_fee", "escrow_fee"]
+
+    order_id = serializers.CharField(source="order_number")
+    listing_title = serializers.CharField(source="listing.title", default="")
+    buyer = serializers.SerializerMethodField()
+    seller = serializers.SerializerMethodField()
+    rental_start = serializers.DateField(source="rental_start_date", allow_null=True)
+    rental_end = serializers.DateField(source="rental_end_date", allow_null=True)
+    dispute = serializers.SerializerMethodField()
+    timeline = serializers.SerializerMethodField()
+    carrier = serializers.CharField(source="delivery_carrier", read_only=True)
+    estimated_delivery = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = (
+            "order_id",
+            "status",
+            "order_type",
+            "listing_title",
+            "buyer",
+            "seller",
+            "created_at",
+            "estimated_delivery",
+            "rental_start",
+            "rental_end",
+            "dispute",
+            "timeline",
+            "tracking_id",
+            "delivery_carrier",
+            "carrier",
+        )
+
+    def get_buyer(self, obj):
+        return {
+            "name": obj.buyer.full_name or obj.buyer.username,
+            "email": obj.buyer.email
+        }
+
+    def get_seller(self, obj):
+        return {
+            "name": obj.store.name if obj.store else (obj.seller.full_name or obj.seller.username),
+            "store_slug": obj.store.slug if obj.store else ""
+        }
+
+    def get_dispute(self, obj):
+        disp = obj.disputes.first()
+        if disp:
+            return {
+                "id": disp.id,
+                "status": disp.status,
+                "opened_at": disp.created_at
+            }
+        return None
+
+    def get_timeline(self, obj):
+        activities = list(obj.activities.all().order_by("created_at"))
+        if activities:
+            # Mark the last one as current
+            for act in activities:
+                act.is_current = False
+            activities[-1].is_current = True
+        return OrderTrackingTimelineSerializer(activities, many=True).data
+
+    def get_estimated_delivery(self, obj):
+        from datetime import timedelta
+        if obj.created_at:
+            return obj.created_at + timedelta(days=7)
+        return None
+
+
+class AdminOrderTrackingSerializer(OrderTrackingDetailSerializer):
+    escrow_status = serializers.SerializerMethodField()
+    vendor_earning_status = serializers.SerializerMethodField()
+    dispute_detail = serializers.SerializerMethodField()
+    internal_notes = serializers.SerializerMethodField()
+
+    class Meta(OrderTrackingDetailSerializer.Meta):
+        fields = OrderTrackingDetailSerializer.Meta.fields + (
+            "escrow_status",
+            "vendor_earning_status",
+            "dispute_detail",
+            "internal_notes",
+        )
+
+    def get_escrow_status(self, obj):
+        disp = obj.disputes.first()
+        if disp:
+            if disp.status in ['resolved', 'refunded']:
+                return "released"
+            return "held"
+        if obj.status == Order.Status.FULFILLED:
+            return "released"
+        return "held"
+
+    def get_vendor_earning_status(self, obj):
+        if hasattr(obj, "earning"):
+            return obj.earning.status
+        return "pending"
+
+    def get_dispute_detail(self, obj):
+        disp = obj.disputes.first()
+        if disp:
+            return {
+                "id": disp.id,
+                "status": disp.status,
+                "reason": disp.reason,
+                "opened_by": disp.buyer.full_name or disp.buyer.email,
+                "opened_at": disp.created_at,
+                "resolution": disp.resolution_notes or None,
+            }
+        return None
+
+    def get_internal_notes(self, obj):
+        # Admin can add notes, let's return from disputes or order activities
+        notes = []
+        disp = obj.disputes.first()
+        if disp and disp.resolution_notes:
+            notes.append(f"Dispute resolution note: {disp.resolution_notes}")
+        return notes
+
+
+class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
+    order_id = serializers.CharField(source="order_number")
+    listing_title = serializers.CharField(source="listing.title", default="")
+    seller_name = serializers.CharField(source="store.name", default="")
+    buyer_name = serializers.CharField(source="buyer.full_name", default="")
+    last_event = serializers.SerializerMethodField()
+    last_event_at = serializers.SerializerMethodField()
+    carrier = serializers.CharField(source="delivery_carrier", read_only=True)
+
+    class Meta:
+        model = Order
+        fields = (
+            "order_id",
+            "listing_title",
+            "seller_name",
+            "buyer_name",
+            "order_type",
+            "status",
+            "last_event",
+            "last_event_at",
+            "created_at",
+            "tracking_id",
+            "delivery_carrier",
+            "carrier",
+        )
+
+    def get_last_event(self, obj):
+        last_act = obj.activities.all().order_by("-created_at").first()
+        if last_act:
+            return last_act.message
+        return "Order Placed"
+
+    def get_last_event_at(self, obj):
+        last_act = obj.activities.all().order_by("-created_at").first()
+        if last_act:
+            return last_act.created_at
+        return obj.created_at
+

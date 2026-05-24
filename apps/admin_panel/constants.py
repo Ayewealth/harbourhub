@@ -25,6 +25,8 @@ class AdminModule(models.TextChoices):
     COMPLIANCE_CONTRACTS = "compliance_contracts", _("Compliance & Contracts")
     SUPPORTS = "supports", _("Supports")
     ANALYTICS = "analytics", _("Analytics")
+    MESSAGES_MONITORING = "messages_monitoring", _("Messages Monitoring")
+    CAREERS = "careers", _("Careers")
 
 
 # Default matrix from product spec (VIEW / MANAGE per module per role).
@@ -39,6 +41,8 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.COMPLIANCE_CONTRACTS: (True, True),
         AdminModule.SUPPORTS: (True, True),
         AdminModule.ANALYTICS: (True, True),
+        AdminModule.MESSAGES_MONITORING: (True, True),
+        AdminModule.CAREERS: (True, True),
     },
     StaffRole.OPERATIONS_ADMIN: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -49,6 +53,8 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.COMPLIANCE_CONTRACTS: (False, False),
         AdminModule.SUPPORTS: (True, False),
         AdminModule.ANALYTICS: (True, False),
+        AdminModule.MESSAGES_MONITORING: (True, False),
+        AdminModule.CAREERS: (True, True),
     },
     StaffRole.FINANCE_ADMIN: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -59,6 +65,8 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.COMPLIANCE_CONTRACTS: (True, True),
         AdminModule.SUPPORTS: (True, True),
         AdminModule.ANALYTICS: (True, True),
+        AdminModule.MESSAGES_MONITORING: (False, False),
+        AdminModule.CAREERS: (False, False),
     },
     StaffRole.SUPPORT_ADMIN: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -69,6 +77,8 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.COMPLIANCE_CONTRACTS: (False, False),
         AdminModule.SUPPORTS: (True, True),
         AdminModule.ANALYTICS: (True, True),
+        AdminModule.MESSAGES_MONITORING: (True, False),
+        AdminModule.CAREERS: (False, False),
     },
     StaffRole.COMPLIANCE_ADMIN: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -79,6 +89,8 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.COMPLIANCE_CONTRACTS: (True, True),
         AdminModule.SUPPORTS: (True, True),
         AdminModule.ANALYTICS: (True, True),
+        AdminModule.MESSAGES_MONITORING: (False, False),
+        AdminModule.CAREERS: (False, False),
     },
     StaffRole.READ_ONLY: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -89,5 +101,7 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.COMPLIANCE_CONTRACTS: (False, False),
         AdminModule.SUPPORTS: (False, False),
         AdminModule.ANALYTICS: (False, False),
+        AdminModule.MESSAGES_MONITORING: (False, False),
+        AdminModule.CAREERS: (False, False),
     },
 }

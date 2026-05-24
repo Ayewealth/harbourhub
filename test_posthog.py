@@ -22,4 +22,4 @@ capture_event(
 )
 
 posthog.flush()
-print("✅ Event sent! Check your PostHog dashboard (Activity tab).")
+print("SUCCESS: Event sent! Check your PostHog dashboard (Activity tab).")

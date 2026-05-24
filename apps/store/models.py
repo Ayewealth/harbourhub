@@ -80,3 +80,25 @@ class StoreActivity(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class ShippingProfile(models.Model):
+    """Sellers configure custom shipping zones, carriers, and rates for their stores."""
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE,
+        related_name="shipping_profiles"
+    )
+    zone_name = models.CharField(max_length=255)
+    carrier_name = models.CharField(max_length=255)
+    delivery_time_min = models.PositiveIntegerField()
+    delivery_time_max = models.PositiveIntegerField()
+    flat_rate_cost = models.DecimalField(max_digits=14, decimal_places=2)
+    free_shipping_threshold = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "shipping_profiles"
+
+    def __str__(self):
+        return f"{self.zone_name} - {self.carrier_name} ({self.store.name})"

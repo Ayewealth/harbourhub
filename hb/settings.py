@@ -6,8 +6,8 @@ import os
 import ssl
 from pathlib import Path
 from datetime import timedelta
-from decouple import config, Csv
-from celery.schedules import crontab
+from decouple import config, Csv  # type: ignore
+from celery.schedules import crontab  # type: ignore
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -30,6 +30,7 @@ USE_X_FORWARDED_PORT = True
 
 SITE_URL = config("SITE_URL", default="http://localhost:8000")
 SITE_NAME = config("SITE_NAME", default="Harbour Hub")
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
 
 # =============================================================================
 # APPLICATIONS
@@ -150,7 +151,7 @@ WSGI_APPLICATION = "hb.wsgi.application"
 DATABASE_URL = config("DATABASE_URL", default=None)
 
 if DATABASE_URL:
-    import dj_database_url
+    import dj_database_url  # type: ignore
 
     DATABASES = {"default": dj_database_url.parse(DATABASE_URL)}
 else:
@@ -173,13 +174,33 @@ AUTH_USER_MODEL = "accounts.User"
 # =============================================================================
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-        "OPTIONS": {"min_length": config("PASSWORD_MIN_LENGTH", default=8, cast=int)},
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "UserAttributeSimilarityValidator"
+        )
     },
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "MinimumLengthValidator"
+        ),
+        "OPTIONS": {
+            "min_length": config("PASSWORD_MIN_LENGTH", default=8, cast=int)
+        },
+    },
+    {
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "CommonPasswordValidator"
+        )
+    },
+    {
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "NumericPasswordValidator"
+        )
+    },
 ]
 
 # =============================================================================
@@ -208,7 +229,10 @@ if USE_S3:
 
     AWS_S3_CUSTOM_DOMAIN = config(
         "AWS_S3_CUSTOM_DOMAIN",
-        default=f"{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com"
+        default=(
+            f"{AWS_STORAGE_BUCKET_NAME}.s3."
+            f"{AWS_S3_REGION_NAME}.amazonaws.com"
+        )
     )
 
     AWS_S3_OBJECT_PARAMETERS = {
@@ -289,7 +313,7 @@ DEFAULT_FROM_EMAIL = config(
     "DEFAULT_FROM_EMAIL", default="noreply@harbourhub.com")
 SERVER_EMAIL = config("SERVER_EMAIL", default="server@harbourhub.com")
 ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@harbourhub.com")
-SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@harbourhub.com")
+SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@harbourhubglobal.com")
 SECURITY_EMAIL = config("SECURITY_EMAIL", default="security@harbourhub.com")
 SEND_WELCOME_EMAIL = config("SEND_WELCOME_EMAIL", default=True, cast=bool)
 # DRF
@@ -302,7 +326,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_PAGINATION_CLASS": (
+        "rest_framework.pagination.PageNumberPagination"
+    ),
     "PAGE_SIZE": config("DEFAULT_PAGE_SIZE", default=20, cast=int),
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
@@ -326,11 +352,15 @@ REST_FRAMEWORK = {
 # =============================================================================
 SPECTACULAR_SETTINGS = {
     "TITLE": config("API_TITLE", default="Harbour Hub API"),
-    "DESCRIPTION": config("API_DESCRIPTION", default="Oil & Gas / Marine Equipment Marketplace API"),
+    "DESCRIPTION": config(
+        "API_DESCRIPTION",
+        default="Oil & Gas / Marine Equipment Marketplace API"
+    ),
     "VERSION": config("API_VERSION", default="1.0.0"),
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
-    "ENUM_GENERATE_CHOICE_DESCRIPTION": True,   # ← shows enum values in description
+    # Shows enum values in description
+    "ENUM_GENERATE_CHOICE_DESCRIPTION": True,
     "ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE": False,
 }
 
@@ -340,9 +370,15 @@ SPECTACULAR_SETTINGS = {
 # =============================================================================
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=config("JWT_ACCESS_TOKEN_LIFETIME_HOURS", default=24, cast=int)),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=config("JWT_REFRESH_TOKEN_LIFETIME_DAYS", default=7, cast=int)),
-    "ROTATE_REFRESH_TOKENS": config("JWT_ROTATE_REFRESH_TOKENS", default=True, cast=bool),
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        hours=config("JWT_ACCESS_TOKEN_LIFETIME_HOURS", default=24, cast=int)
+    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(
+        days=config("JWT_REFRESH_TOKEN_LIFETIME_DAYS", default=7, cast=int)
+    ),
+    "ROTATE_REFRESH_TOKENS": config(
+        "JWT_ROTATE_REFRESH_TOKENS", default=True, cast=bool
+    ),
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
     "ALGORITHM": "HS256",
@@ -389,23 +425,45 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "verbose": {"format": "{levelname} {asctime} {module} {message}", "style": "{"},
-        "simple": {"format": "{levelname} {message}", "style": "{"},
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {message}",
+            "style": "{",
+        },
+        "simple": {
+            "format": "{levelname} {message}",
+            "style": "{",
+        },
     },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": LOG_FILE_PATH,
-            "maxBytes": config("LOG_MAX_SIZE_MB", default=100, cast=int) * 1024 * 1024,
+            "maxBytes": config(
+                "LOG_MAX_SIZE_MB", default=100, cast=int
+            ) * 1024 * 1024,
             "backupCount": config("LOG_BACKUP_COUNT", default=5, cast=int),
             "formatter": "verbose",
         },
     },
-    "root": {"handlers": ["console", "file"], "level": LOG_LEVEL},
+    "root": {
+        "handlers": ["console", "file"],
+        "level": LOG_LEVEL,
+    },
     "loggers": {
-        "django": {"handlers": ["console", "file"], "level": LOG_LEVEL, "propagate": False},
-        "harbour_hub": {"handlers": ["console", "file"], "level": LOG_LEVEL, "propagate": False},
+        "django": {
+            "handlers": ["console", "file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "harbour_hub": {
+            "handlers": ["console", "file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
     },
 }
 
@@ -470,6 +528,10 @@ CELERY_BEAT_SCHEDULE = {
     },
     "release-pending-earnings-every-hour": {
         "task": "apps.financials.tasks.release_pending_earnings_task",
+        "schedule": crontab(minute=0, hour="*/1"),
+    },
+    "advance-rental-order-statuses-every-hour": {
+        "task": "apps.commerce.tasks.advance_rental_order_statuses_task",
         "schedule": crontab(minute=0, hour="*/1"),
     },
     "update-compliance-statuses-daily": {

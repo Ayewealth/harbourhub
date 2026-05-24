@@ -474,6 +474,7 @@ class UserPreferenceSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'language',
+            'preferred_currency',
             'interested_categories',
             'email_newsletter',
             'email_promotions',

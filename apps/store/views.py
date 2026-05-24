@@ -5,7 +5,7 @@ from django.db.models import Avg, Count, FloatField, Q, Value
 from django.db.models.functions import Coalesce
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import filters, generics, permissions, status
+from rest_framework import filters, generics, permissions, status, viewsets
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
@@ -333,3 +333,38 @@ class StoreActivityListView(generics.ListAPIView):
     def get_queryset(self):
         store = get_object_or_404(Store, user=self.request.user)
         return store.activities.all()
+
+
+from .serializers import ShippingProfileSerializer
+from .models import ShippingProfile
+
+class BuyerShippingOptionsView(generics.ListAPIView):
+    """
+    Returns all active shipping profiles for a given store slug.
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = ShippingProfileSerializer
+
+    def get_queryset(self):
+        slug = self.kwargs.get("slug")
+        store = get_object_or_404(Store, slug=slug)
+        return ShippingProfile.objects.filter(store=store, is_active=True)
+
+
+class SellerShippingProfileViewSet(viewsets.ModelViewSet):
+    """
+    CRUD viewset for sellers to manage shipping profiles of their own store.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ShippingProfileSerializer
+
+    def get_store(self):
+        return get_object_or_404(Store, user=self.request.user)
+
+    def get_queryset(self):
+        store = self.get_store()
+        return ShippingProfile.objects.filter(store=store)
+
+    def perform_create(self, serializer):
+        store = self.get_store()
+        serializer.save(store=store)

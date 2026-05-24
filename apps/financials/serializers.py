@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import BankAccount, VendorEarning, Payout, VendorWallet, WalletTransaction
+from apps.core.currency import CurrencyConverterMixin
 
 
 class BankAccountSerializer(serializers.ModelSerializer):
@@ -26,7 +27,9 @@ class BankAccountSetDefaultSerializer(serializers.Serializer):
     pass  # no body needed
 
 
-class VendorEarningSerializer(serializers.ModelSerializer):
+class VendorEarningSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ['gross_amount', 'commission_amount', 'net_amount']
+
     listing_title = serializers.CharField(
         source='listing.title', read_only=True)
     listing_thumbnail = serializers.SerializerMethodField()
@@ -56,7 +59,9 @@ class VendorEarningSerializer(serializers.ModelSerializer):
         return None
 
 
-class PayoutSerializer(serializers.ModelSerializer):
+class PayoutSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ['amount']
+
     bank_account_details = BankAccountSerializer(
         source='bank_account', read_only=True)
     destination = serializers.CharField(
@@ -111,7 +116,9 @@ class PayoutCreateSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class EarningsSummarySerializer(serializers.Serializer):
+class EarningsSummarySerializer(CurrencyConverterMixin, serializers.Serializer):
+    monetary_fields = ['total_revenue', 'pending_balance', 'available_balance', 'total_paid_out']
+
     total_revenue = serializers.DecimalField(max_digits=14, decimal_places=2)
     pending_balance = serializers.DecimalField(
         max_digits=14, decimal_places=2)
@@ -124,7 +131,9 @@ class EarningsSummarySerializer(serializers.Serializer):
     currency = serializers.CharField()
 
 
-class WalletTransactionSerializer(serializers.ModelSerializer):
+class WalletTransactionSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ['amount']
+
     transaction_type_display = serializers.CharField(
         source='get_transaction_type_display', read_only=True)
 
@@ -136,7 +145,9 @@ class WalletTransactionSerializer(serializers.ModelSerializer):
         )
 
 
-class VendorWalletSerializer(serializers.ModelSerializer):
+class VendorWalletSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ['pending_balance', 'available_balance', 'total_withdrawn']
+
     transactions = WalletTransactionSerializer(many=True, read_only=True)
 
     class Meta:

@@ -17,11 +17,19 @@ from .views import (
     DisputeDetailView,
     DisputeActionView,
     RecentSalesView,
+    OrderTrackingDetailView,
+    BuyerMyOrdersListView,
+    SellerStoreOrdersListView,
+    OrderTrackingUpdateView,
+    BuyerSentQuotesView,
+    SellerReceivedQuotesView,
 )
 from .webhooks import PaystackWebhookView
 
 urlpatterns = [
     path("quotes/", QuoteRequestListCreateView.as_view(), name="quote-list-create"),
+    path("quotes/sent/", BuyerSentQuotesView.as_view(), name="quotes-sent"),
+    path("quotes/received/", SellerReceivedQuotesView.as_view(), name="quotes-received"),
     path("quotes/<int:pk>/", QuoteRequestDetailView.as_view(), name="quote-detail"),
     path("quotes/<int:pk>/<str:action>/",
          QuoteRequestActionView.as_view(), name="quote-action"),
@@ -32,6 +40,8 @@ urlpatterns = [
 
     # Orders
     path("orders/", OrderListCreateView.as_view(), name="order-list-create"),
+    path("orders/my-orders/", BuyerMyOrdersListView.as_view(), name="buyer-my-orders"),
+    path("orders/store-orders/", SellerStoreOrdersListView.as_view(), name="seller-store-orders"),
     path("orders/recent-sales/", RecentSalesView.as_view(), name="recent-sales"),
     path("orders/<int:pk>/", OrderDetailView.as_view(), name="order-detail"),
     path("orders/<int:pk>/cancel/", OrderDetailView.as_view(), name="order-cancel"),
@@ -41,6 +51,8 @@ urlpatterns = [
          OrderActivityListView.as_view(), name="order-activity"),
     path("orders/<int:pk>/ship/", OrderMarkShippedView.as_view(),
          name="mark-order-as-shipped"),
+    path("orders/<str:pk_or_num>/tracking/", OrderTrackingDetailView.as_view(), name="order-tracking-detail"),
+    path("orders/<str:pk_or_num>/tracking/update/", OrderTrackingUpdateView.as_view(), name="order-tracking-update"),
 
     # Cart
     path("cart/", CartView.as_view(), name="cart"),

@@ -311,3 +311,134 @@ def notify_rental_reminder(order, days_left: int):
         related_object_type='order',
         related_object_id=order.id,
     )
+
+
+def dispatch_tracking_notification(event_type: str, order):
+    """
+    Dispatch order tracking notifications to stakeholders according to Section 7.7 triggers.
+    """
+    from django.db.models import Q
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    buyer = order.buyer
+    seller = order.seller or (order.store.user if order.store else None)
+
+    # Resolve notification config
+    notify_buyer = False
+    notify_seller = False
+    notify_admin = False
+
+    title = f"Order #{order.order_number} Update"
+    message = f"Your order status is now: {event_type.replace('_', ' ').title()}"
+
+    if event_type == 'order_placed':
+        notify_buyer = True
+        notify_seller = True
+        title = "Order Placed"
+        message = f"Order #{order.order_number} has been placed successfully."
+    elif event_type == 'payment_received':
+        notify_buyer = True
+        notify_seller = True
+        title = "Payment Confirmed"
+        message = f"Payment for order #{order.order_number} was successfully received."
+    elif event_type == 'order_confirmed':
+        notify_buyer = True
+        title = "Order Confirmed"
+        message = f"Your order #{order.order_number} has been confirmed by the seller."
+    elif event_type == 'item_dispatched':
+        notify_buyer = True
+        title = "Item Dispatched"
+        message = f"Your order #{order.order_number} has been dispatched."
+    elif event_type == 'in_transit':
+        notify_buyer = True
+        title = "In Transit"
+        message = f"Your order #{order.order_number} is in transit."
+    elif event_type == 'delivered':
+        notify_buyer = True
+        notify_seller = True
+        title = "Order Delivered"
+        message = f"Order #{order.order_number} has been marked as delivered."
+    elif event_type == 'order_fulfilled':
+        notify_buyer = True
+        notify_seller = True
+        title = "Order Fulfilled"
+        message = f"Order #{order.order_number} has been completed and marked as fulfilled."
+    elif event_type == 'dispute_opened':
+        notify_buyer = True
+        notify_seller = True
+        notify_admin = True
+        title = "Dispute Opened"
+        message = f"A dispute has been opened for order #{order.order_number}."
+    elif event_type == 'dispute_resolved':
+        notify_buyer = True
+        notify_seller = True
+        title = "Dispute Resolved"
+        message = f"The dispute for order #{order.order_number} has been resolved."
+    elif event_type == 'order_refunded':
+        notify_buyer = True
+        notify_seller = True
+        title = "Order Refunded"
+        message = f"Your order #{order.order_number} has been refunded."
+    elif event_type == 'order_cancelled':
+        notify_buyer = True
+        notify_seller = True
+        title = "Order Cancelled"
+        message = f"Order #{order.order_number} has been cancelled."
+    elif event_type == 'hire_started':
+        notify_buyer = True
+        notify_seller = True
+        title = "Rental Period Started"
+        message = f"The rental period for order #{order.order_number} has started."
+    elif event_type == 'hire_ended':
+        notify_buyer = True
+        notify_seller = True
+        title = "Rental Period Ended"
+        message = f"The rental period for order #{order.order_number} has ended. Please arrange return."
+    elif event_type == 'item_returned':
+        notify_seller = True
+        title = "Item Returned"
+        message = f"The buyer has returned the item for order #{order.order_number}."
+
+    # Send notifications
+    if notify_buyer and buyer:
+        create_notification(
+            recipient=buyer,
+            notification_type=event_type,
+            title=title,
+            message=message,
+            priority='high',
+            action_url=f"/orders/{order.id}/tracking",
+            action_label="Track Order",
+            related_object_type='order',
+            related_object_id=order.id,
+        )
+
+    if notify_seller and seller:
+        create_notification(
+            recipient=seller,
+            notification_type=event_type,
+            title=title,
+            message=message,
+            priority='high',
+            action_url=f"/vendor/orders/{order.id}/tracking",
+            action_label="Track Order",
+            related_object_type='order',
+            related_object_id=order.id,
+        )
+
+    if notify_admin:
+        # Get all admins
+        admins = User.objects.filter(Q(role__in=['admin', 'super_admin']) | Q(is_staff=True))
+        for adm in admins:
+            create_notification(
+                recipient=adm,
+                notification_type=event_type,
+                title=f"Admin: {title}",
+                message=message,
+                priority='high',
+                action_url=f"/admin/orders/{order.id}/tracking",
+                action_label="Review Order",
+                related_object_type='order',
+                related_object_id=order.id,
+            )

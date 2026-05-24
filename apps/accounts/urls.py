@@ -36,6 +36,7 @@ from .views import (
     SellerOnboardingStep3View,
     OnboardingStatusView,
 )
+from .social_auth import GoogleSocialLoginView, AppleSocialLoginView
 
 router = DefaultRouter()
 router.register(r'register', UserRegistrationViewSet, basename='register')
@@ -104,4 +105,8 @@ urlpatterns = [
          name='onboarding-step-2'),
     path('onboarding/step-3/', SellerOnboardingStep3View.as_view(),
          name='onboarding-step-3'),
+
+    # Social logins
+    path("social/google/", GoogleSocialLoginView.as_view(), name="social-google"),
+    path("social/apple/", AppleSocialLoginView.as_view(), name="social-apple"),
 ]

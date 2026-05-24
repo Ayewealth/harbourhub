@@ -894,3 +894,184 @@ class AdminGlobalSearchView(APIView):
             results.append({'type': 'vendor', 'id': u.id, 'title': u.email})
 
         return Response({'results': results})
+
+
+# ─── Admin Order Tracking ─────────────────────────────────────────────────────
+from apps.commerce.serializers import AdminOrderTrackingSerializer
+
+class AdminOrderTrackingView(generics.RetrieveAPIView):
+    """
+    Admin-only order tracking detail view with escrow and dispute highlights.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = AdminOrderTrackingSerializer
+
+    def get_object(self):
+        pk_or_num = self.kwargs.get("pk_or_num")
+        from apps.commerce.models import Order
+        if str(pk_or_num).isdigit():
+            order = get_object_or_404(Order, pk=pk_or_num)
+        else:
+            order = get_object_or_404(Order, order_number=pk_or_num)
+        
+        user = self.request.user
+        is_admin = getattr(user, 'is_admin_user', False) or user.is_staff
+        if not is_admin:
+            from rest_framework import exceptions
+            raise exceptions.PermissionDenied("You do not have permission to access the admin order tracking view.")
+        return order
+
+
+# ─── Admin Chat Monitoring Serializers & Views ─────────────────────────────────
+from rest_framework import serializers
+
+class AdminConversationListSerializer(serializers.ModelSerializer):
+    buyer_name = serializers.CharField(source="buyer.full_name")
+    buyer_email = serializers.CharField(source="buyer.email")
+    seller_name = serializers.SerializerMethodField()
+    seller_email = serializers.CharField(source="vendor.email")
+    listing_title = serializers.CharField(source="listing.title", default="")
+    last_message = serializers.CharField(source="last_message_preview", default="")
+
+    class Meta:
+        from apps.messaging.models import Conversation
+        model = Conversation
+        fields = (
+            "id",
+            "buyer_name",
+            "buyer_email",
+            "seller_name",
+            "seller_email",
+            "listing_title",
+            "last_message",
+            "last_message_at",
+        )
+
+    def get_seller_name(self, obj):
+        if obj.store:
+            return obj.store.name
+        return obj.vendor.full_name or obj.vendor.username or obj.vendor.email
+
+
+class AdminMessageSerializer(serializers.ModelSerializer):
+    sender_role = serializers.CharField(source="sender.role")
+    sender_name = serializers.CharField(source="sender.full_name")
+    text = serializers.CharField(source="body")
+    timestamp = serializers.DateTimeField(source="created_at")
+    attachments = serializers.SerializerMethodField()
+
+    class Meta:
+        from apps.messaging.models import Message
+        model = Message
+        fields = (
+            "id",
+            "sender_role",
+            "sender_name",
+            "text",
+            "timestamp",
+            "attachments",
+        )
+
+    def get_attachments(self, obj):
+        return []
+
+
+class AdminConversationListView(generics.ListAPIView):
+    """
+    Returns a paginated list of all active buyer-seller chat threads across the platform.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        if not has_admin_module_permission(request.user, "messages_monitoring", require_manage=False):
+            return Response(
+                {"error": "You do not have permission to monitor messages."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        from apps.messaging.models import Conversation
+        queryset = Conversation.objects.all().select_related("buyer", "vendor", "store", "listing")
+
+        # Full-text search
+        search_query = request.query_params.get("search", "")
+        if search_query:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(buyer__email__icontains=search_query) |
+                Q(buyer__first_name__icontains=search_query) |
+                Q(buyer__last_name__icontains=search_query) |
+                Q(vendor__email__icontains=search_query) |
+                Q(vendor__first_name__icontains=search_query) |
+                Q(vendor__last_name__icontains=search_query) |
+                Q(store__name__icontains=search_query)
+            )
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = AdminConversationListSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = AdminConversationListSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+class AdminConversationMessageHistoryView(generics.ListAPIView):
+    """
+    Returns the full paginated, chronologically ordered message history for a specific conversation.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk, *args, **kwargs):
+        if not has_admin_module_permission(request.user, "messages_monitoring", require_manage=False):
+            return Response(
+                {"error": "You do not have permission to monitor messages."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        from apps.messaging.models import Conversation, Message
+        conv = get_object_or_404(Conversation, pk=pk)
+        queryset = Message.objects.filter(conversation=conv).order_by("created_at")
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = AdminMessageSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = AdminMessageSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+# ─── Careers Module ───────────────────────────────────────────────────────────
+from .serializers import JobListingSerializer
+
+class PublicJobListingViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Public viewset to list active job openings and retrieve a single job opening.
+    """
+    permission_classes = [] # Public
+    authentication_classes = []
+    serializer_class = JobListingSerializer
+
+    def get_queryset(self):
+        from .models import JobListing
+        return JobListing.objects.filter(is_active=True).order_by("-created_at")
+
+
+class AdminJobListingViewSet(viewsets.ModelViewSet):
+    """
+    Admin management viewset for Job Listings.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = JobListingSerializer
+
+    def get_queryset(self):
+        from .models import JobListing
+        return JobListing.objects.all().order_by("-created_at")
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        if not has_admin_module_permission(request.user, "careers", require_manage=True):
+            self.permission_denied(
+                request,
+                message="You do not have permission to manage careers."
+            )

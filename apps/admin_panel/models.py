@@ -241,3 +241,23 @@ class PlatformConfig(models.Model):
 
     def __str__(self):
         return "Platform Configuration"
+
+
+class JobListing(models.Model):
+    """Model for careers job listings with external application URLs."""
+    title = models.CharField(max_length=255)
+    department = models.CharField(max_length=100, blank=True, null=True)
+    location = models.CharField(max_length=100, blank=True, null=True)
+    employment_type = models.CharField(max_length=100, blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    application_url = models.URLField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "job_listings"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title
