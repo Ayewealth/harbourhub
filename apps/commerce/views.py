@@ -1051,3 +1051,286 @@ class SellerReceivedQuotesView(generics.ListAPIView):
         return QuoteRequest.objects.filter(
             Q(store__user=self.request.user) | Q(listing__store__user=self.request.user)
         ).distinct().order_by("-created_at")
+
+
+class OrderInvoicePDFView(APIView):
+    """
+    Generates and returns a beautifully-styled PDF invoice for a specific order.
+    Access restricted to buyer, seller, or admin/staff.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk, *args, **kwargs):
+        import io
+        from django.http import HttpResponse
+        from django.shortcuts import get_object_or_404
+        from rest_framework.exceptions import PermissionDenied
+        
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+
+        order = get_object_or_404(Order, pk=pk)
+
+        # Access check: Buyer, Seller, or Admin
+        if not (request.user == order.buyer or request.user == order.seller or request.user.is_staff or request.user.is_superuser):
+            raise PermissionDenied("You do not have permission to access this invoice.")
+
+        # Create memory buffer
+        buffer = io.BytesIO()
+
+        # Create ReportLab Document setup
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=36,
+            leftMargin=36,
+            topMargin=36,
+            bottomMargin=36
+        )
+
+        story = []
+
+        # Styles setup
+        styles = getSampleStyleSheet()
+        
+        title_style = ParagraphStyle(
+            'InvoiceTitle',
+            parent=styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=22,
+            leading=26,
+            textColor=colors.HexColor('#002B49')
+        )
+        
+        company_style = ParagraphStyle(
+            'CompanyHeader',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=16,
+            leading=20,
+            textColor=colors.HexColor('#002B49')
+        )
+        
+        header_style = ParagraphStyle(
+            'InvoiceHeader',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=9,
+            leading=12,
+            textColor=colors.HexColor('#555555')
+        )
+        
+        body_style = ParagraphStyle(
+            'InvoiceBody',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=9,
+            leading=13,
+            textColor=colors.HexColor('#333333')
+        )
+        
+        table_header_style = ParagraphStyle(
+            'TableHeader',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=9,
+            leading=11,
+            textColor=colors.white
+        )
+
+        # 1. Page Header (Branding & Title side-by-side)
+        header_data = [
+            [
+                Paragraph("HARBOUR HUB", company_style),
+                Paragraph("INVOICE", ParagraphStyle('InvoiceText', parent=title_style, alignment=2)) # Align Right
+            ],
+            [
+                Paragraph("Email: support@harbourhubglobal.com<br/>Web: www.harbourhubglobal.com", body_style),
+                Paragraph(f"<b>Invoice #:</b> {order.order_number}<br/><b>Date:</b> {(order.placed_at or order.created_at).strftime('%Y-%m-%d %H:%M') if (order.placed_at or order.created_at) else 'N/A'}", ParagraphStyle('InvoiceMetaText', parent=body_style, alignment=2))
+            ]
+        ]
+        
+        header_table = Table(header_data, colWidths=[3.5*inch, 3.5*inch])
+        header_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(header_table)
+        story.append(Spacer(1, 15))
+
+        # Divider line
+        divider_data = [[""]]
+        divider = Table(divider_data, colWidths=[7.0*inch])
+        divider.setStyle(TableStyle([
+            ('LINEABOVE', (0,0), (-1,-1), 1.5, colors.HexColor('#002B49')),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+        ]))
+        story.append(divider)
+        story.append(Spacer(1, 15))
+
+        # 2. Transaction Information Block (Order Type, Status)
+        txn_data = [
+            [
+                Paragraph("<b>Transaction Type:</b>", header_style),
+                Paragraph("<b>Order Status:</b>", header_style),
+                Paragraph("<b>Payment Currency:</b>", header_style),
+            ],
+            [
+                Paragraph(order.get_order_type_display(), body_style),
+                Paragraph(order.get_status_display(), body_style),
+                Paragraph(order.currency, body_style),
+            ]
+        ]
+        txn_table = Table(txn_data, colWidths=[2.33*inch, 2.33*inch, 2.34*inch])
+        txn_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#EEEEEE')),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F9F9F9')),
+        ]))
+        story.append(txn_table)
+        story.append(Spacer(1, 15))
+
+        # 3. Buyer & Seller Information Block
+        billing_data = [
+            [
+                Paragraph("<b>Billed To (Buyer):</b>", header_style),
+                Paragraph("<b>Sold By (Seller):</b>", header_style),
+            ],
+            [
+                Paragraph(f"{order.buyer.full_name or 'N/A'}<br/>{order.buyer.email}<br/>Phone: {order.buyer.phone or 'N/A'}", body_style),
+                Paragraph(f"{order.store.name if order.store else order.seller.company or order.seller.full_name or 'N/A'}<br/>{order.seller.email}<br/>Phone: {order.seller.phone or 'N/A'}", body_style),
+            ]
+        ]
+        billing_table = Table(billing_data, colWidths=[3.5*inch, 3.5*inch])
+        billing_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(billing_table)
+        story.append(Spacer(1, 15))
+
+        # 4. Delivery Address block (if available)
+        if order.delivery_address:
+            delivery_data = [
+                [Paragraph("<b>Delivery Information:</b>", header_style)],
+                [Paragraph(f"Contact Name: {order.delivery_contact_name or 'N/A'}<br/>Contact Phone: {order.delivery_contact_phone or 'N/A'}<br/>Address: {order.delivery_address}", body_style)]
+            ]
+            delivery_table = Table(delivery_data, colWidths=[7.0*inch])
+            delivery_table.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(delivery_table)
+            story.append(Spacer(1, 15))
+
+        # 5. Rental Period details (if Hire or Lease)
+        if order.order_type in [Order.OrderType.HIRE, Order.OrderType.LEASE] and order.rental_start_date:
+            rental_data = [
+                [
+                    Paragraph("<b>Rental Start Date:</b>", header_style),
+                    Paragraph("<b>Rental End Date:</b>", header_style),
+                    Paragraph("<b>Total Rental Days:</b>", header_style),
+                ],
+                [
+                    Paragraph(order.rental_start_date.strftime('%Y-%m-%d'), body_style),
+                    Paragraph(order.rental_end_date.strftime('%Y-%m-%d') if order.rental_end_date else 'N/A', body_style),
+                    Paragraph(str(order.rental_days_total) if order.rental_days_total else 'N/A', body_style),
+                ]
+            ]
+            rental_table = Table(rental_data, colWidths=[2.33*inch, 2.33*inch, 2.34*inch])
+            rental_table.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#EEEEEE')),
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F9F9F9')),
+            ]))
+            story.append(rental_table)
+            story.append(Spacer(1, 15))
+
+        # 6. Itemized Marketplace Table
+        item_table_data = [
+            [
+                Paragraph("Item Description / Listing", table_header_style),
+                Paragraph("Transaction", table_header_style),
+                Paragraph("Amount", table_header_style)
+            ],
+            [
+                Paragraph(order.listing.title if order.listing else "Marketplace Item / Order Transaction", body_style),
+                Paragraph(order.get_order_type_display(), body_style),
+                Paragraph(f"{order.currency} {order.subtotal or order.total_amount:,.2f}", body_style)
+            ]
+        ]
+        item_table = Table(item_table_data, colWidths=[4.0*inch, 1.2*inch, 1.8*inch])
+        item_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#002B49')),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,0), 6),
+            ('TOPPADDING', (0,0), (-1,0), 6),
+            ('BOTTOMPADDING', (0,1), (-1,-1), 6),
+            ('TOPPADDING', (0,1), (-1,-1), 6),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#DDDDDD')),
+        ]))
+        story.append(item_table)
+        story.append(Spacer(1, 15))
+
+        # 7. Financial Breakdown Table
+        summary_data = [
+            [Paragraph("Subtotal:", header_style), Paragraph(f"{order.currency} {order.subtotal or 0.00:,.2f}", body_style)],
+            [Paragraph("Escrow Fee:", header_style), Paragraph(f"{order.currency} {order.escrow_fee or 0.00:,.2f}", body_style)],
+            [Paragraph("Delivery Fee:", header_style), Paragraph(f"{order.currency} {order.delivery_fee or 0.00:,.2f}", body_style)],
+            [
+                Paragraph("<b>Total Amount:</b>", ParagraphStyle('TotalLabel', parent=header_style, fontSize=10)),
+                Paragraph(f"<b>{order.currency} {order.total_amount:,.2f}</b>", ParagraphStyle('TotalVal', parent=body_style, fontSize=10))
+            ]
+        ]
+        summary_table = Table(summary_data, colWidths=[1.5*inch, 2.0*inch], hAlign='RIGHT')
+        summary_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ('TOPPADDING', (0,0), (-1,-1), 3),
+            ('LINEBELOW', (0,-1), (-1,-1), 1, colors.HexColor('#002B49')),
+            ('LINEABOVE', (0,-1), (-1,-1), 1, colors.HexColor('#002B49')),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 30))
+
+        # 8. Footer Notes
+        footer_style = ParagraphStyle(
+            'InvoiceFooter',
+            parent=styles['Normal'],
+            fontName='Helvetica-Oblique',
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor('#777777'),
+            alignment=1 # Center
+        )
+        story.append(Paragraph("Thank you for choosing Harbour Hub. Your digital marketplace for industrial equipment.", footer_style))
+        story.append(Spacer(1, 5))
+        story.append(Paragraph("This is a system generated document. No signature is required.", footer_style))
+
+        # Build PDF
+        doc.build(story)
+
+        # Get value and write to response
+        pdf = buffer.getvalue()
+        buffer.close()
+
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="invoice_{order.order_number}.pdf"'
+        return response

@@ -45,3 +45,4 @@ requests
 pyotp
 qrcode[pil]
 posthog
+reportlab==4.1.0
