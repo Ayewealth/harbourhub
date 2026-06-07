@@ -20,6 +20,8 @@ from .views import (
     AdminConversationListView,
     AdminConversationMessageHistoryView,
     AdminJobListingViewSet,
+    AdminUserListView,
+    AdminUserActionView,
 )
 from .dashboard_views import (
     RolesMatrixView,
@@ -82,4 +84,8 @@ urlpatterns = router.urls + [
     path('orders/<str:pk_or_num>/tracking/', AdminOrderTrackingView.as_view(), name='admin-order-tracking'),
     path('conversations/', AdminConversationListView.as_view(), name='admin-conversations-list'),
     path('conversations/<int:pk>/messages/', AdminConversationMessageHistoryView.as_view(), name='admin-conversation-messages'),
+
+    # Users
+    path('users/', AdminUserListView.as_view(), name='admin-users-list'),
+    path('users/<int:pk>/<str:action>/', AdminUserActionView.as_view(), name='admin-user-action'),
 ]

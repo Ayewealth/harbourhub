@@ -27,6 +27,7 @@ class AdminModule(models.TextChoices):
     ANALYTICS = "analytics", _("Analytics")
     MESSAGES_MONITORING = "messages_monitoring", _("Messages Monitoring")
     CAREERS = "careers", _("Careers")
+    USERS_MANAGEMENT = "users_management", _("Users Management")
 
 
 # Default matrix from product spec (VIEW / MANAGE per module per role).
@@ -43,6 +44,7 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.ANALYTICS: (True, True),
         AdminModule.MESSAGES_MONITORING: (True, True),
         AdminModule.CAREERS: (True, True),
+        AdminModule.USERS_MANAGEMENT: (True, True),
     },
     StaffRole.OPERATIONS_ADMIN: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -55,6 +57,7 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.ANALYTICS: (True, False),
         AdminModule.MESSAGES_MONITORING: (True, False),
         AdminModule.CAREERS: (True, True),
+        AdminModule.USERS_MANAGEMENT: (True, True),
     },
     StaffRole.FINANCE_ADMIN: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -67,6 +70,7 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.ANALYTICS: (True, True),
         AdminModule.MESSAGES_MONITORING: (False, False),
         AdminModule.CAREERS: (False, False),
+        AdminModule.USERS_MANAGEMENT: (False, False),
     },
     StaffRole.SUPPORT_ADMIN: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -79,6 +83,7 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.ANALYTICS: (True, True),
         AdminModule.MESSAGES_MONITORING: (True, False),
         AdminModule.CAREERS: (False, False),
+        AdminModule.USERS_MANAGEMENT: (True, False),
     },
     StaffRole.COMPLIANCE_ADMIN: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -91,6 +96,7 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.ANALYTICS: (True, True),
         AdminModule.MESSAGES_MONITORING: (False, False),
         AdminModule.CAREERS: (False, False),
+        AdminModule.USERS_MANAGEMENT: (False, False),
     },
     StaffRole.READ_ONLY: {
         AdminModule.OVERVIEW_DASHBOARD: (True, True),
@@ -103,5 +109,6 @@ DEFAULT_ROLE_MATRIX: dict[str, dict[str, tuple[bool, bool]]] = {
         AdminModule.ANALYTICS: (False, False),
         AdminModule.MESSAGES_MONITORING: (False, False),
         AdminModule.CAREERS: (False, False),
+        AdminModule.USERS_MANAGEMENT: (False, False),
     },
 }

@@ -20,6 +20,7 @@ from .serializers import (
     AdminOrderListSerializer
 )
 from .permissions import IsAdminOrSuperAdmin
+from .auth import has_admin_module_permission, HasAdminModulePermission
 from .tasks import send_verification_decision_email
 
 from apps.accounts.models import VerificationRequest
@@ -980,65 +981,34 @@ class AdminConversationListView(generics.ListAPIView):
     """
     Returns a paginated list of all active buyer-seller chat threads across the platform.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasAdminModulePermission]
+    admin_module = "messages_monitoring"
+    serializer_class = AdminConversationListSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    search_fields = [
+        'buyer__email', 'buyer__first_name', 'buyer__last_name',
+        'vendor__email', 'vendor__first_name', 'vendor__last_name',
+        'store__name',
+    ]
 
-    def get(self, request, *args, **kwargs):
-        if not has_admin_module_permission(request.user, "messages_monitoring", require_manage=False):
-            return Response(
-                {"error": "You do not have permission to monitor messages."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
+    def get_queryset(self):
         from apps.messaging.models import Conversation
-        queryset = Conversation.objects.all().select_related("buyer", "vendor", "store", "listing")
-
-        # Full-text search
-        search_query = request.query_params.get("search", "")
-        if search_query:
-            from django.db.models import Q
-            queryset = queryset.filter(
-                Q(buyer__email__icontains=search_query) |
-                Q(buyer__first_name__icontains=search_query) |
-                Q(buyer__last_name__icontains=search_query) |
-                Q(vendor__email__icontains=search_query) |
-                Q(vendor__first_name__icontains=search_query) |
-                Q(vendor__last_name__icontains=search_query) |
-                Q(store__name__icontains=search_query)
-            )
-
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = AdminConversationListSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = AdminConversationListSerializer(queryset, many=True)
-        return Response(serializer.data)
+        return Conversation.objects.all().select_related("buyer", "vendor", "store", "listing")
 
 
 class AdminConversationMessageHistoryView(generics.ListAPIView):
     """
     Returns the full paginated, chronologically ordered message history for a specific conversation.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasAdminModulePermission]
+    admin_module = "messages_monitoring"
+    serializer_class = AdminMessageSerializer
 
-    def get(self, request, pk, *args, **kwargs):
-        if not has_admin_module_permission(request.user, "messages_monitoring", require_manage=False):
-            return Response(
-                {"error": "You do not have permission to monitor messages."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
+    def get_queryset(self):
         from apps.messaging.models import Conversation, Message
+        pk = self.kwargs.get("pk")
         conv = get_object_or_404(Conversation, pk=pk)
-        queryset = Message.objects.filter(conversation=conv).order_by("created_at")
-
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = AdminMessageSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = AdminMessageSerializer(queryset, many=True)
-        return Response(serializer.data)
+        return Message.objects.filter(conversation=conv).order_by("created_at")
 
 
 # ─── Careers Module ───────────────────────────────────────────────────────────
@@ -1075,3 +1045,77 @@ class AdminJobListingViewSet(viewsets.ModelViewSet):
                 request,
                 message="You do not have permission to manage careers."
             )
+
+
+# ─── Admin User Management ────────────────────────────────────────────────────
+
+class AdminUserListView(generics.ListAPIView):
+    """Admin view of all platform users (buyers, sellers, service providers)."""
+    permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = None  # set in __init__ to avoid circular imports
+    search_fields = ['email', 'full_name', 'phone', 'company']
+    ordering_fields = ['created_at', 'email', 'full_name', 'last_login']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        return User.objects.filter(
+            role__in=['buyer', 'seller', 'service_provider']
+        ).order_by('-created_at')
+
+    def get_serializer_class(self):
+        from apps.accounts.serializers import UserListSerializer
+        return UserListSerializer
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.filterset_class is None:
+            from .filters import AdminUserFilter
+            self.filterset_class = AdminUserFilter
+
+
+class AdminUserActionView(APIView):
+    """Suspend or resume a platform user."""
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def post(self, request, pk, action):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = get_object_or_404(User, pk=pk)
+
+        if user.role in ['admin', 'super_admin']:
+            return Response(
+                {'error': 'Cannot suspend or resume admin users.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        reason = request.data.get('reason', '')
+
+        if action == 'suspend':
+            user.is_active = False
+            user.save(update_fields=['is_active'])
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.USER_BANNED,
+                description=f"Suspended user: {user.email}. Reason: {reason}",
+            )
+            return Response({'message': 'User suspended successfully.'})
+
+        elif action == 'resume':
+            user.is_active = True
+            user.save(update_fields=['is_active'])
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.USER_UNBANNED,
+                description=f"Resumed user: {user.email}.",
+            )
+            return Response({'message': 'User resumed successfully.'})
+
+        return Response(
+            {'error': 'Invalid action.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
