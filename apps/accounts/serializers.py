@@ -391,14 +391,22 @@ class UserListSerializer(serializers.ModelSerializer):
         )
 
     def get_listings_count(self, obj):
-        """Get user's listing count (guard if related_name missing)"""
-        return getattr(obj, 'listings', obj).__class__.objects.filter(user=obj).count() if hasattr(obj, 'listings') else 0
+        if hasattr(obj, 'listings'):
+            return obj.listings.count()
+        from apps.listings.models import Listing
+        return Listing.objects.filter(user=obj).count()
 
     def get_inquiries_sent_count(self, obj):
-        return getattr(obj, 'sent_inquiries', obj).__class__.objects.filter(sender=obj).count() if hasattr(obj, 'sent_inquiries') else 0
+        if hasattr(obj, 'sent_inquiries'):
+            return obj.sent_inquiries.count()
+        from apps.inquiries.models import Inquiry
+        return Inquiry.objects.filter(sender=obj).count()
 
     def get_inquiries_received_count(self, obj):
-        return getattr(obj, 'received_inquiries', obj).__class__.objects.filter(recipient=obj).count() if hasattr(obj, 'received_inquiries') else 0
+        if hasattr(obj, 'received_inquiries'):
+            return obj.received_inquiries.count()
+        from apps.inquiries.models import Inquiry
+        return Inquiry.objects.filter(recipient=obj).count()
 
 
 class UserRoleUpdateSerializer(serializers.ModelSerializer):
