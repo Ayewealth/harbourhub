@@ -300,17 +300,17 @@ class AdminVendorActionView(APIView):
         duration = request.data.get('duration', 'indefinite')
 
         if action == 'approve':
-            store.is_verified = True
-            # store.is_published = True
-            store.save(update_fields=['is_verified'])
-
-            # Approve verification request
             vr = VerificationRequest.objects.filter(
-                user=store.user,
-                status='pending'
+                user=store.user
             ).first()
+
             if vr:
                 vr.approve(admin_user=request.user, notes=notes)
+            else:
+                store.is_verified = True
+                store.save(update_fields=['is_verified'])
+                store.user.is_verified = True
+                store.user.save(update_fields=['is_verified'])
 
             from apps.notifications.utils import notify_verification_approved
             notify_verification_approved(store.user)
@@ -324,11 +324,12 @@ class AdminVendorActionView(APIView):
 
         elif action == 'reject':
             store.is_verified = False
-            store.save(update_fields=['is_verified',])
+            store.save(update_fields=['is_verified'])
+            store.user.is_verified = False
+            store.user.save(update_fields=['is_verified'])
 
             vr = VerificationRequest.objects.filter(
-                user=store.user,
-                status='pending'
+                user=store.user
             ).first()
             if vr:
                 vr.reject(admin_user=request.user, notes=reason)
