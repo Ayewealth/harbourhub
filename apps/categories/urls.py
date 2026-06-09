@@ -1,6 +1,6 @@
 # categories/urls.py
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import DefaultRouter, SimpleRouter
 from .views import CategoryViewSet, CategoryAdminViewSet
 
 # Public (read-only)
@@ -8,7 +8,7 @@ public_router = DefaultRouter()
 public_router.register(r'', CategoryViewSet, basename='category')
 
 # Admin (CRUD)
-admin_router = DefaultRouter()
+admin_router = SimpleRouter()
 admin_router.register(r'admin', CategoryAdminViewSet,
                       basename='category-admin')
 
