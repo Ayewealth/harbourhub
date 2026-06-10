@@ -6,6 +6,7 @@ from .views import (
     StoreDashboardMetricsView,
     StoreDashboardTrendView,
     StoreListCreateView,
+    StoreMeView,
     StoreRetrieveUpdateDestroyView,
     TopVendorsListView,
     StorePublishView,
@@ -21,6 +22,8 @@ urlpatterns = [
     # Shipping profiles
     path("me/shipping/", SellerShippingProfileViewSet.as_view({'get': 'list', 'post': 'create'}), name="seller-shipping-list"),
     path("me/shipping/<int:pk>/", SellerShippingProfileViewSet.as_view({'patch': 'partial_update', 'delete': 'destroy'}), name="seller-shipping-detail"),
+
+    path("me/", StoreMeView.as_view(), name="store-me"),
 
     path("<slug:slug>/", StoreRetrieveUpdateDestroyView.as_view(), name="store-detail"),
     path("<slug:slug>/publish/", StorePublishView.as_view(), name="store-publish"),

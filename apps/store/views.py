@@ -247,6 +247,23 @@ class StoreUnpublishView(APIView):
         )
 
 
+class StoreMeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        store = get_object_or_404(Store, user=request.user)
+        serializer = StoreDetailSerializer(store, context={'request': request})
+        return Response(serializer.data)
+
+    def patch(self, request):
+        store = get_object_or_404(Store, user=request.user)
+        serializer = StoreUpdateSerializer(
+            store, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
 class StoreChecklistView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
