@@ -155,11 +155,12 @@ class ListingViewSet(viewsets.ModelViewSet):
         listing = serializer.save(user=user)
         track_listing_created(user, listing)
 
-        log_store_activity(
-            listing.store,
-            "listing_created",
-            f"{listing.title} was just created"
-        )
+        if listing.store:
+            log_store_activity(
+                listing.store,
+                "listing_created",
+                f"{listing.title} was just created"
+            )
 
         return listing
 

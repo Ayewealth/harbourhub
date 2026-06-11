@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
-from .models import Store
+from .models import Store, StoreActivity
 from apps.core.currency import CurrencyConverterMixin
 from apps.accounts.serializers import UserProfileSerializer
 from apps.listings.models import Listing, ListingImage
@@ -228,3 +228,9 @@ class ShippingProfileSerializer(CurrencyConverterMixin, serializers.ModelSeriali
         model = ShippingProfile
         fields = "__all__"
         read_only_fields = ("store",)
+
+
+class StoreActivitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StoreActivity
+        fields = ["id", "action", "message", "created_at"]

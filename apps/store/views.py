@@ -22,6 +22,7 @@ from .serializers import (
     StoreUpdateSerializer,
     StoreDetailSerializer,
     StoreListSerializer,
+    StoreActivitySerializer,
 )
 
 
@@ -270,24 +271,36 @@ class StoreChecklistView(APIView):
     def get(self, request):
         store = get_object_or_404(Store, user=request.user)
 
-        checks = {
-            "has_name": bool(store.name),
-            "has_description": bool(store.description),
-            "has_logo": bool(store.logo),
-            "has_banner": bool(store.banner_image),
-            "has_category": store.categories.exists(),
-            "has_listing": store.listings.exists(),
-            "is_published": store.is_published,
-        }
+        tasks = [
+            {
+                "id": 1,
+                "title": "Create your store",
+                "completed": bool(store.name),
+            },
+            {
+                "id": 2,
+                "title": "Setup store profile",
+                "completed": (
+                    bool(store.name) and
+                    bool(store.description) and
+                    bool(store.logo) and
+                    bool(store.banner_image) and
+                    store.categories.exists()
+                ),
+            },
+            {
+                "id": 3,
+                "title": "Upload first product",
+                "completed": store.listings.exists(),
+            },
+            {
+                "id": 4,
+                "title": "Setup payment",
+                "completed": request.user.bank_accounts.exists(),
+            },
+        ]
 
-        progress = int(
-            (sum(checks.values()) / len(checks)) * 100
-        )
-
-        return Response({
-            "checks": checks,
-            "progress": progress
-        })
+        return Response({"tasks": tasks})
 
 class StoreDashboardMetricsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -346,6 +359,7 @@ class StoreDashboardTrendView(APIView):
 
 class StoreActivityListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = StoreActivitySerializer
 
     def get_queryset(self):
         store = get_object_or_404(Store, user=self.request.user)
