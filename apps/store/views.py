@@ -297,6 +297,11 @@ class StoreChecklistView(APIView):
                 "title": "Setup payment",
                 "completed": request.user.bank_accounts.exists(),
             },
+            {
+                "id": 5,
+                "title": "Add shipping method",
+                "completed": store.shipping_profiles.exists(),
+            },
         ]
 
         return Response({"tasks": tasks})
