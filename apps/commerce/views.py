@@ -8,8 +8,8 @@ from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.utils.dateparse import parse_date
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample
-from rest_framework import generics, permissions, status, exceptions
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer
+from rest_framework import generics, permissions, status, exceptions, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.generics import get_object_or_404
