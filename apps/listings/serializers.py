@@ -86,6 +86,7 @@ class ListingListSerializer(CurrencyConverterMixin, serializers.ModelSerializer)
         source="store.name", read_only=True)
     store_slug = serializers.CharField(
         source="store.slug", read_only=True)
+    store_logo = serializers.SerializerMethodField()
     owner_name = serializers.CharField(
         source="user.get_full_name", read_only=True)
     owner_company = serializers.CharField(
@@ -107,6 +108,7 @@ class ListingListSerializer(CurrencyConverterMixin, serializers.ModelSerializer)
             "status", "featured", "views_count", "inquiries_count",
             "rating_average", "review_count",
             "owner_name", "owner_company", "primary_image",
+            "store_logo",
             "created_at", "updated_at", "published_at",
         )
         read_only_fields = ("views_count", "inquiries_count",
@@ -119,6 +121,16 @@ class ListingListSerializer(CurrencyConverterMixin, serializers.ModelSerializer)
             try:
                 request = self.context.get("request")
                 return request.build_absolute_uri(primary_image.image.url) if request else primary_image.image.url
+            except Exception:
+                return None
+        return None
+
+    @extend_schema_field(serializers.URLField(allow_null=True))
+    def get_store_logo(self, obj):
+        if obj.store and obj.store.logo:
+            try:
+                request = self.context.get("request")
+                return request.build_absolute_uri(obj.store.logo.url) if request else obj.store.logo.url
             except Exception:
                 return None
         return None
@@ -154,6 +166,7 @@ class ListingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerialize
         source="store.name", read_only=True)
     store_slug = serializers.CharField(
         source="store.slug", read_only=True)
+    store_logo = serializers.SerializerMethodField()
     category_full_name = serializers.CharField(
         source="category.get_full_name", read_only=True)
     owner = serializers.SerializerMethodField()
@@ -165,7 +178,7 @@ class ListingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerialize
     class Meta:
         model = Listing
         fields = (
-            "id", "title", "description", "category", "store", "store_name", "store_slug", "category_name", "category_full_name",
+            "id", "title", "description", "category", "store", "store_name", "store_slug", "store_logo", "category_name", "category_full_name",
             "listing_type", "price", "currency", "currency_symbol", "price_unit", "negotiable",
             "location", "location_display", "country", "state_province", "city",
             "contact_name", "contact_email", "contact_phone",
@@ -196,6 +209,16 @@ class ListingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerialize
     @extend_schema_field(serializers.CharField())
     def get_currency_symbol(self, obj):
         return CURRENCY_SYMBOLS.get(obj.currency, obj.currency)
+
+    @extend_schema_field(serializers.URLField(allow_null=True))
+    def get_store_logo(self, obj):
+        if obj.store and obj.store.logo:
+            try:
+                request = self.context.get("request")
+                return request.build_absolute_uri(obj.store.logo.url) if request else obj.store.logo.url
+            except Exception:
+                return None
+        return None
 
 
 class ListingCreateUpdateSerializer(serializers.ModelSerializer):

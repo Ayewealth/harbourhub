@@ -58,7 +58,7 @@ class ListingViewSet(viewsets.ModelViewSet):
     """CRUD operations for listings"""
 
     queryset = Listing.objects.select_related(
-        'category', 'user').prefetch_related('images')
+        'category', 'user', 'store').prefetch_related('images')
     permission_classes = [IsOwnerOrAdminOrReadOnly, CanCreateListing]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     filter_backends = [DjangoFilterBackend,
