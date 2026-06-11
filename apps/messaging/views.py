@@ -75,16 +75,25 @@ class StartConversationView(APIView):
             'initial_message', '')
 
         # Get or create conversation
-        lookup = {'buyer': request.user, 'vendor': vendor}
         if listing:
-            lookup['listing'] = listing
-
-        conversation, created = Conversation.objects.get_or_create(
-            **lookup,
-            defaults={
-                'store': getattr(vendor, 'store', None),
-            }
-        )
+            conversation, created = Conversation.objects.get_or_create(
+                buyer=request.user, vendor=vendor, listing=listing,
+                defaults={
+                    'store': getattr(vendor, 'store', None),
+                }
+            )
+        else:
+            conversation = Conversation.objects.filter(
+                buyer=request.user, vendor=vendor, listing__isnull=True
+            ).first()
+            if conversation:
+                created = False
+            else:
+                conversation = Conversation.objects.create(
+                    buyer=request.user, vendor=vendor,
+                    store=getattr(vendor, 'store', None),
+                )
+                created = True
 
         # Send initial message if provided
         if initial_message and created:
