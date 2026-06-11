@@ -284,7 +284,6 @@ class StoreChecklistView(APIView):
                     bool(store.name) and
                     bool(store.description) and
                     bool(store.logo) and
-                    bool(store.banner_image) and
                     store.categories.exists()
                 ),
             },
