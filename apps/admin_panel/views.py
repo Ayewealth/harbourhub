@@ -169,6 +169,8 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
 
         notes = request.data.get("admin_notes", "")
         verification.approve(admin_user=request.user, notes=notes)
+        verification.user.is_verified = True
+        verification.user.save(update_fields=['is_verified'])
         send_verification_decision_email.delay(verification.id)
 
         # Log admin action
@@ -309,8 +311,6 @@ class AdminVendorActionView(APIView):
             else:
                 store.is_verified = True
                 store.save(update_fields=['is_verified'])
-                store.user.is_verified = True
-                store.user.save(update_fields=['is_verified'])
 
             from apps.notifications.utils import notify_verification_approved
             notify_verification_approved(store.user)
@@ -325,8 +325,6 @@ class AdminVendorActionView(APIView):
         elif action == 'reject':
             store.is_verified = False
             store.save(update_fields=['is_verified'])
-            store.user.is_verified = False
-            store.user.save(update_fields=['is_verified'])
 
             vr = VerificationRequest.objects.filter(
                 user=store.user

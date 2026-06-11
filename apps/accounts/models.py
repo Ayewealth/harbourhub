@@ -264,10 +264,6 @@ class VerificationRequest(models.Model):
         self.admin_notes = notes
         self.save()
 
-        # Update user verification status
-        self.user.is_verified = True
-        self.user.save(update_fields=['is_verified'])
-
         # Update store verification status
         if hasattr(self.user, 'store'):
             self.user.store.is_verified = True

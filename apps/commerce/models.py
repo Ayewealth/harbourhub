@@ -50,6 +50,7 @@ class QuoteRequest(models.Model):
         blank=True,
     )
     preferred_delivery_date = models.DateField(null=True, blank=True)
+    duration_days = models.PositiveIntegerField(null=True, blank=True)
     delivery_location = models.CharField(max_length=500, blank=True)
     notes = models.TextField(blank=True)
     vendor_price = models.DecimalField(
@@ -158,6 +159,7 @@ class Order(models.Model):
     # Rental tracking (for hire/lease orders)
     rental_start_date = models.DateField(null=True, blank=True)
     rental_end_date = models.DateField(null=True, blank=True)
+    rental_duration_days = models.PositiveIntegerField(null=True, blank=True)
     pickup_scheduled_date = models.DateField(null=True, blank=True)
 
     # Delivery info

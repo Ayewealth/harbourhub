@@ -234,7 +234,7 @@ class MoveQuoteToCartView(APIView):
                 'quantity': quote.quantity,
                 'unit_price': quoted_price,
                 'store': quote.store,
-                'duration_days': None,
+                'duration_days': quote.duration_days,
             }
         )
 
@@ -350,14 +350,28 @@ class OrderDetailView(generics.RetrieveAPIView):
 
 
 @extend_schema_view(
-    post=extend_schema(summary="Extend order rental period"),
+    post=extend_schema(
+        summary="Extend order rental period",
+        request=inline_serializer(
+            name="ExtendRentalRequest",
+            fields={
+                "new_end_date": serializers.DateField(
+                    help_text="New rental end date (YYYY-MM-DD)"),
+                "duration_days": serializers.IntegerField(
+                    required=False,
+                    help_text="Alternative: number of days to extend from current end date"),
+            },
+        ),
+    ),
     examples=[
         OpenApiExample(
-            "Extend order",
-            value={
-                "new_end_date": "2026-04-20T10:00:00Z"
-            }
-        )
+            "Extend by date",
+            value={"new_end_date": "2026-04-20"}
+        ),
+        OpenApiExample(
+            "Extend by days",
+            value={"duration_days": 7}
+        ),
     ]
 )
 class OrderExtendRentalView(APIView):
@@ -372,20 +386,34 @@ class OrderExtendRentalView(APIView):
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=404)
 
-        new_end_date = request.data.get('new_end_date')
-        if not new_end_date:
-            return Response({'error': 'new_end_date is required'}, status=400)
-
         from django.utils.dateparse import parse_date
-        parsed = parse_date(new_end_date)
-        if not parsed:
-            return Response({'error': 'Invalid date format. Use YYYY-MM-DD'}, status=400)
+        from datetime import timedelta
+
+        duration_days = request.data.get('duration_days')
+        new_end_date = request.data.get('new_end_date')
+
+        if duration_days:
+            try:
+                duration_days = int(duration_days)
+            except (TypeError, ValueError):
+                return Response({'error': 'duration_days must be an integer'}, status=400)
+            if duration_days <= 0:
+                return Response({'error': 'duration_days must be positive'}, status=400)
+            base_date = order.rental_end_date or timezone.now().date()
+            parsed = base_date + timedelta(days=duration_days)
+        elif new_end_date:
+            parsed = parse_date(new_end_date)
+            if not parsed:
+                return Response({'error': 'Invalid date format. Use YYYY-MM-DD'}, status=400)
+        else:
+            return Response({'error': 'new_end_date or duration_days is required'}, status=400)
 
         if order.rental_end_date and parsed <= order.rental_end_date:
             return Response({'error': 'New end date must be after current end date'}, status=400)
 
         order.rental_end_date = parsed
-        order.save(update_fields=['rental_end_date'])
+        order.rental_duration_days = (parsed - order.rental_start_date).days if order.rental_start_date else None
+        order.save(update_fields=['rental_end_date', 'rental_duration_days'])
 
         OrderActivity.objects.create(
             order=order,
@@ -639,6 +667,14 @@ class CheckoutView(APIView):
                 delivery_contact_name=delivery_contact_name,
                 delivery_contact_phone=delivery_contact_phone,
             )
+
+            if first_item.purchase_type in [CartItem.PurchaseType.RENT, CartItem.PurchaseType.LEASE]:
+                rental_start = first_item.quote_request.preferred_delivery_date if first_item.quote_request_id and first_item.quote_request and first_item.quote_request.preferred_delivery_date else timezone.now().date()
+                order.rental_start_date = rental_start
+                if first_item.duration_days:
+                    order.rental_end_date = rental_start + timedelta(days=first_item.duration_days)
+                    order.rental_duration_days = first_item.duration_days
+                order.save(update_fields=['rental_start_date', 'rental_end_date', 'rental_duration_days'])
 
             OrderActivity.objects.create(
                 order=order,

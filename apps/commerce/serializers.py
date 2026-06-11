@@ -27,6 +27,7 @@ class QuoteRequestCreateSerializer(serializers.ModelSerializer):
             "purchase_type",
             "quantity",
             "duration_bucket",
+            "duration_days",
             "preferred_delivery_date",
             "delivery_location",
             "notes",
@@ -140,6 +141,7 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             "carrier",
             "rental_start_date",
             "rental_end_date",
+            "rental_duration_days",
             "pickup_scheduled_date",
             "rental_days_total",
             "rental_days_elapsed",
@@ -455,6 +457,7 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
     seller = serializers.SerializerMethodField()
     rental_start = serializers.DateField(source="rental_start_date", allow_null=True)
     rental_end = serializers.DateField(source="rental_end_date", allow_null=True)
+    rental_duration = serializers.IntegerField(source="rental_duration_days", read_only=True, allow_null=True)
     dispute = serializers.SerializerMethodField()
     timeline = serializers.SerializerMethodField()
     carrier = serializers.CharField(source="delivery_carrier", read_only=True)
@@ -473,6 +476,7 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
             "estimated_delivery",
             "rental_start",
             "rental_end",
+            "rental_duration",
             "dispute",
             "timeline",
             "tracking_id",
