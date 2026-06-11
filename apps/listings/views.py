@@ -71,14 +71,24 @@ class ListingViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
 
         if self.action == 'list':
-            # Show only published listings for list view
-            return queryset.filter(status=Listing.Status.PUBLISHED)
+            return queryset.filter(
+                status=Listing.Status.PUBLISHED,
+                store__is_published=True,
+                store__is_active=True,
+            )
         elif self.action in ['retrieve']:
-            # Show published or user's own listings for detail view
             user = self.request.user
             if user and user.is_authenticated:
-                return queryset.filter(Q(status=Listing.Status.PUBLISHED) | Q(user=user))
-            return queryset.filter(status=Listing.Status.PUBLISHED)
+                return queryset.filter(
+                    Q(status=Listing.Status.PUBLISHED) | Q(user=user),
+                    store__is_published=True,
+                    store__is_active=True,
+                )
+            return queryset.filter(
+                status=Listing.Status.PUBLISHED,
+                store__is_published=True,
+                store__is_active=True,
+            )
 
         return queryset
 
@@ -472,7 +482,11 @@ class TopDealsListView(generics.ListAPIView):
         limit = min(max(limit, 1), 50)
 
         return (
-            Listing.objects.filter(status=Listing.Status.PUBLISHED)
+            Listing.objects.filter(
+                status=Listing.Status.PUBLISHED,
+                store__is_published=True,
+                store__is_active=True,
+            )
             .select_related("category", "user", "store")
             .prefetch_related("images")
             .annotate(
@@ -510,7 +524,11 @@ class BestReviewedListView(generics.ListAPIView):
         limit = min(max(limit, 1), 50)
 
         return (
-            Listing.objects.filter(status=Listing.Status.PUBLISHED)
+            Listing.objects.filter(
+                status=Listing.Status.PUBLISHED,
+                store__is_published=True,
+                store__is_active=True,
+            )
             .select_related("category", "user", "store")
             .prefetch_related("images")
             .annotate(
@@ -541,7 +559,11 @@ class SavedItemListView(generics.ListAPIView):
         ).values_list('listing_id', flat=True)
 
         return (
-            Listing.objects.filter(id__in=saved_listing_ids)
+            Listing.objects.filter(
+                id__in=saved_listing_ids,
+                store__is_published=True,
+                store__is_active=True,
+            )
             .select_related('category', 'user', 'store')
             .prefetch_related('images')
         )
@@ -553,7 +575,8 @@ class SavedItemToggleView(APIView):
     def post(self, request, pk):
         """Save a listing"""
         listing = get_object_or_404(
-            Listing, pk=pk, status=Listing.Status.PUBLISHED)
+            Listing, pk=pk, status=Listing.Status.PUBLISHED,
+            store__is_published=True, store__is_active=True)
 
         if listing.user == request.user:
             return Response(

@@ -65,8 +65,10 @@ class GlobalSearchView(APIView):
             | Q(manufacturer__icontains=query) | Q(model__icontains=query)
             | Q(location__icontains=query)
         ).filter(
-            status=Listing.Status.PUBLISHED
-        ).select_related('category', 'user').prefetch_related('images')[:10]
+            status=Listing.Status.PUBLISHED,
+            store__is_published=True,
+            store__is_active=True,
+        ).select_related('category', 'user', 'store').prefetch_related('images')[:10]
 
         categories_qs = Category.objects.filter(
             Q(name__icontains=query) | Q(description__icontains=query)
