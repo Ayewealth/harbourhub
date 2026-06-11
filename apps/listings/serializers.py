@@ -256,6 +256,15 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
             if documents:
                 attrs['documents_data'] = documents
 
+        images_data = attrs.get('images_data', [])
+        existing_count = self.instance.images.count() if self.instance else 0
+        max_images = 5
+        if existing_count + len(images_data) > max_images:
+            raise serializers.ValidationError(
+                f'A listing can have a maximum of {max_images} images. '
+                f'You currently have {existing_count}, trying to add {len(images_data)}.'
+            )
+
         if self.instance:
             if "featured" in attrs and request.user != self.instance.user:
                 raise serializers.ValidationError(

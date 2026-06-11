@@ -27,6 +27,10 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+MAX_IMAGES = 5
+ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+
 
 @extend_schema_view(
     list=extend_schema(
@@ -393,6 +397,26 @@ class ListingViewSet(viewsets.ModelViewSet):
         if not images:
             return Response({'error': 'No images provided'}, status=400)
 
+        current_count = listing.images.count()
+        if current_count + len(images) > MAX_IMAGES:
+            return Response(
+                {'error': f'A listing can have a maximum of {MAX_IMAGES} images. '
+                           f'You currently have {current_count}, trying to add {len(images)}.'},
+                status=400
+            )
+
+        for image in images:
+            if image.size > MAX_IMAGE_SIZE:
+                return Response(
+                    {'error': f'{image.name} exceeds the {MAX_IMAGE_SIZE // (1024*1024)}MB limit.'},
+                    status=400
+                )
+            if hasattr(image, 'content_type') and image.content_type not in ALLOWED_IMAGE_TYPES:
+                return Response(
+                    {'error': f'{image.name} is not an allowed image type (JPEG, PNG, WebP only).'},
+                    status=400
+                )
+
         start_order = listing.images.count()
         has_primary = listing.images.filter(is_primary=True).exists()
         for i, image in enumerate(images):
@@ -448,6 +472,30 @@ class ListingViewSet(viewsets.ModelViewSet):
         image.save(update_fields=['is_primary'])
 
         return Response({'message': f'Image {image_id} set as primary successfully'})
+
+    @extend_schema(
+        summary="Delete image",
+        description="Delete an individual image from a listing. If the deleted image was primary, the next image becomes primary.",
+        responses={200: inline_serializer(
+            name="DeleteImageResponse",
+            fields={"message": serializers.CharField()},
+        )},
+    )
+    @action(detail=True, methods=['delete'], url_path=r'images/(?P<image_id>[^/.]+)')
+    def delete_image(self, request, pk=None, image_id=None):
+        listing = self.get_object()
+        image = get_object_or_404(ListingImage, pk=image_id, listing=listing)
+
+        was_primary = image.is_primary
+        image.delete()
+
+        if was_primary:
+            remaining = listing.images.first()
+            if remaining:
+                remaining.is_primary = True
+                remaining.save(update_fields=['is_primary'])
+
+        return Response({'message': 'Image deleted successfully.'})
 
     def get_client_ip(self, request):
         """Get client IP address"""
