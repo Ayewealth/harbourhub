@@ -202,6 +202,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'email': self.user.email,
                 'full_name': self.user.full_name,
                 'role': self.user.role,
+                'staff_role': getattr(getattr(self.user, 'admin_profile', None), 'staff_role', None),
                 'company': self.user.company,
                 'phone': self.user.phone,
                 'location': self.user.location,
@@ -220,6 +221,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['user_id'] = user.id
         token['email'] = user.email
         token['role'] = user.role
+        token['staff_role'] = getattr(getattr(user, 'admin_profile', None), 'staff_role', None)
         token['username'] = user.username
 
         return token
@@ -449,12 +451,34 @@ class VerificationRequestSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source='user.email', read_only=True)
     reviewed_by_email = serializers.EmailField(
         source='reviewed_by.email', read_only=True)
+    business_license_url = serializers.SerializerMethodField()
+    government_id_url = serializers.SerializerMethodField()
+    insurance_certificate_url = serializers.SerializerMethodField()
 
     class Meta:
         model = VerificationRequest
         fields = '__all__'
         read_only_fields = ('id', 'user', 'status',
                             'created_at', 'reviewed_at')
+
+    def _get_absolute_url(self, obj, field_name):
+        file_field = getattr(obj, field_name, None)
+        if file_field:
+            request = self.context.get('request')
+            try:
+                return request.build_absolute_uri(file_field.url) if request else file_field.url
+            except Exception:
+                return None
+        return None
+
+    def get_business_license_url(self, obj):
+        return self._get_absolute_url(obj, 'business_license')
+
+    def get_government_id_url(self, obj):
+        return self._get_absolute_url(obj, 'government_id')
+
+    def get_insurance_certificate_url(self, obj):
+        return self._get_absolute_url(obj, 'insurance_certificate')
 
 
 class DeliveryDetailSerializer(serializers.ModelSerializer):
@@ -746,9 +770,9 @@ class SellerOnboardingStep3Serializer(serializers.Serializer):
         vr, _ = VerificationRequest.objects.update_or_create(
             user=user,
             defaults={
-                'business_license': self.validated_data[
-                    'proof_of_registration'],
+                'business_license': self.validated_data['proof_of_registration'],
                 'additional_info': self.validated_data['business_type'],
+                'government_id': self.validated_data.get('government_id'),
             }
         )
 

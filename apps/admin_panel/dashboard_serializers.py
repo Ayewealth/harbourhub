@@ -84,19 +84,25 @@ class InviteAdminSerializer(serializers.Serializer):
 
         # Get existing user or create new one
         user = User.objects.filter(email__iexact=email).first()
+        staff_role = validated_data["staff_role"]
+        is_super = staff_role == StaffRole.SUPER_ADMIN
+
         if user:
             # Promote existing user to admin
-            user.role = User.Role.ADMIN
+            user.role = User.Role.SUPER_ADMIN if is_super else User.Role.ADMIN
             user.is_staff = True
-            user.save(update_fields=['role', 'is_staff'])
+            if is_super:
+                user.is_superuser = True
+            user.save(update_fields=['role', 'is_staff', 'is_superuser'])
         else:
             # Create brand new user
             user = User(
                 email=email,
                 username=email[:150],
                 full_name=validated_data["full_name"],
-                role=User.Role.ADMIN,
+                role=User.Role.SUPER_ADMIN if is_super else User.Role.ADMIN,
                 is_staff=True,
+                is_superuser=is_super,
                 is_active=True,
             )
             user.set_unusable_password()
@@ -141,6 +147,11 @@ class AcceptAdminInviteSerializer(serializers.Serializer):
         user = self._profile.user
         user.set_password(self.validated_data['password'])
         user.save(update_fields=['password'])
+
+        if self._profile.staff_role == StaffRole.SUPER_ADMIN:
+            user.is_superuser = True
+            user.role = User.Role.SUPER_ADMIN
+            user.save(update_fields=['is_superuser', 'role'])
 
         self._profile.invite_status = AdminProfile.InviteStatus.ACTIVE
         self._profile.invite_token = ''  # invalidate so it can't be reused

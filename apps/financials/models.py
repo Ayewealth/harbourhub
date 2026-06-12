@@ -156,6 +156,7 @@ class Payout(models.Model):
         PROCESSING = 'processing', _('Processing')
         PAID = 'paid', _('Paid')
         FAILED = 'failed', _('Failed')
+        FROZEN = 'frozen', _('Frozen')
 
     vendor = models.ForeignKey(
         settings.AUTH_USER_MODEL,

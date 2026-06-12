@@ -62,3 +62,10 @@ class SupportTicketSummarySerializer(serializers.Serializer):
     avg_resolution_time_hours = serializers.FloatField()
     open_change_percent = serializers.FloatField()
     disputes_change_percent = serializers.FloatField()
+
+
+class ContactSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255)
+    email = serializers.EmailField()
+    subject = serializers.CharField(max_length=255)
+    message = serializers.CharField()

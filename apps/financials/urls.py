@@ -6,6 +6,8 @@ from .views import (
     EarningsListView,
     EarningsSummaryView,
     PayoutListCreateView,
+    PayoutFreezeView,
+    PayoutUnfreezeView,
     BankListView,
     ResolveAccountView,
     VendorWalletView,
@@ -32,6 +34,8 @@ urlpatterns = [
 
     # Payouts
     path('payouts/', PayoutListCreateView.as_view(), name='payout-list-create'),
+    path('payouts/<int:pk>/freeze/', PayoutFreezeView.as_view(), name='payout-freeze'),
+    path('payouts/<int:pk>/unfreeze/', PayoutUnfreezeView.as_view(), name='payout-unfreeze'),
 
     # Wallet
     path('wallet/', VendorWalletView.as_view(), name='wallet-detail'),

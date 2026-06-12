@@ -214,6 +214,11 @@ class VerificationRequest(models.Model):
         upload_to='verification/insurance/',
         help_text=_('Insurance certificate')
     )
+    government_id = models.FileField(
+        upload_to='verification/government_ids/',
+        null=True, blank=True,
+        help_text=_('Government-issued ID document')
+    )
     certifications = models.TextField(
         blank=True,
         help_text=_('Industry certifications and qualifications')

@@ -283,6 +283,13 @@ class AdminUserEditView(APIView):
         if new_role and new_role in [c[0] for c in StaffRole.choices]:
             profile.staff_role = new_role
             profile.save(update_fields=['staff_role'])
+            if new_role == StaffRole.SUPER_ADMIN:
+                user.role = User.Role.SUPER_ADMIN
+                user.is_superuser = True
+            else:
+                user.role = User.Role.ADMIN
+                user.is_superuser = False
+            user.save(update_fields=['role', 'is_superuser'])
 
         if new_status == 'disabled':
             profile.invite_status = AdminProfile.InviteStatus.REVOKED

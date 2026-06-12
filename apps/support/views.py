@@ -15,6 +15,7 @@ from .serializers import (
     SupportTicketCreateSerializer,
     MarkResolvedSerializer,
     SupportTicketSummarySerializer,
+    ContactSerializer,
 )
 
 
@@ -175,3 +176,26 @@ class SupportTicketSummaryView(APIView):
             'open_change_percent': pct(open_this, open_last),
             'disputes_change_percent': pct(disputes_this, disputes_last),
         })
+
+
+class ContactView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = ContactSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+        from django.core.mail import send_mail
+        from django.conf import settings
+
+        body = f"Name: {data['name']}\nEmail: {data['email']}\n\n{data['message']}"
+        send_mail(
+            subject=f"[Contact] {data['subject']}",
+            message=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[settings.SUPPORT_EMAIL],
+            fail_silently=False,
+        )
+
+        return Response({'message': 'Message sent successfully.'}, status=status.HTTP_201_CREATED)

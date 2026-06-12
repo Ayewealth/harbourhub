@@ -17,6 +17,9 @@ def process_payout_task(self, payout_id):
     except Payout.DoesNotExist:
         return
 
+    if payout.status == Payout.Status.FROZEN:
+        return
+
     try:
         import requests
         from django.conf import settings

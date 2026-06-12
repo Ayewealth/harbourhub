@@ -4,9 +4,11 @@ from .views import (
     SupportTicketDetailView,
     MarkTicketResolvedView,
     SupportTicketSummaryView,
+    ContactView,
 )
 
 urlpatterns = [
+    path('contact/', ContactView.as_view(), name='contact'),
     path('', SupportTicketListCreateView.as_view(),
          name='ticket-list-create'),
     path('summary/', SupportTicketSummaryView.as_view(),

@@ -24,6 +24,8 @@ from .serializers import (
     WalletTransactionSerializer,
 )
 from .models import BankAccount, VendorEarning, Payout, VendorWallet, WalletTransaction
+from apps.admin_panel.permissions import IsAdminOrSuperAdmin
+from apps.admin_panel.models import AdminActionLog
 
 
 class BankAccountListCreateView(generics.ListCreateAPIView):
@@ -223,4 +225,65 @@ class WalletTransactionListView(generics.ListAPIView):
     def get_queryset(self):
         wallet, _ = VendorWallet.objects.get_or_create(user=self.request.user)
         return wallet.transactions.all()
+
+
+class PayoutFreezeView(APIView):
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def post(self, request, pk):
+        payout = get_object_or_404(Payout, pk=pk)
+
+        if payout.status == Payout.Status.FROZEN:
+            return Response({'error': 'Payout is already frozen.'}, status=status.HTTP_400_BAD_REQUEST)
+        if payout.status in [Payout.Status.PAID, Payout.Status.FAILED]:
+            return Response(
+                {'error': f'Cannot freeze a {payout.status} payout.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        reason = request.data.get('reason', '')
+        payout.status = Payout.Status.FROZEN
+        payout.failure_reason = reason or 'Frozen by admin'
+        payout.save(update_fields=['status', 'failure_reason'])
+
+        VendorEarning.objects.filter(
+            payout=payout, status=VendorEarning.Status.PROCESSING
+        ).update(status=VendorEarning.Status.PENDING)
+
+        AdminActionLog.log_action(
+            admin_user=request.user,
+            action_type=AdminActionLog.ActionType.USER_BANNED,
+            description=f"Froze payout #{payout.id} ({payout.amount}). Reason: {reason}",
+        )
+
+        return Response({
+            'message': 'Payout frozen successfully.',
+            'status': payout.status,
+        })
+
+
+class PayoutUnfreezeView(APIView):
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def post(self, request, pk):
+        payout = get_object_or_404(Payout, pk=pk)
+
+        if payout.status != Payout.Status.FROZEN:
+            return Response({'error': 'Payout is not frozen.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        payout.status = Payout.Status.REQUESTED
+        payout.save(update_fields=['status'])
+
+        process_payout_task.delay(payout.id)
+
+        AdminActionLog.log_action(
+            admin_user=request.user,
+            action_type=AdminActionLog.ActionType.USER_UNBANNED,
+            description=f"Unfroze payout #{payout.id} ({payout.amount}).",
+        )
+
+        return Response({
+            'message': 'Payout unfrozen successfully.',
+            'status': payout.status,
+        })
 
