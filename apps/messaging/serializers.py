@@ -11,10 +11,11 @@ class ParticipantSerializer(serializers.ModelSerializer):
         source='get_full_name', read_only=True)
     store_name = serializers.SerializerMethodField()
     store_slug = serializers.SerializerMethodField()
+    profile_image = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ('id', 'full_name', 'email', 'store_name', 'store_slug')
+        fields = ('id', 'full_name', 'email', 'store_name', 'store_slug', 'profile_image')
 
     def get_store_name(self, obj):
         store = getattr(obj, 'store', None)
@@ -23,6 +24,15 @@ class ParticipantSerializer(serializers.ModelSerializer):
     def get_store_slug(self, obj):
         store = getattr(obj, 'store', None)
         return store.slug if store else None
+
+    def get_profile_image(self, obj):
+        if obj.profile_image:
+            request = self.context.get('request')
+            try:
+                return request.build_absolute_uri(obj.profile_image.url) if request else obj.profile_image.url
+            except Exception:
+                return None
+        return None
 
 
 class QuoteSnippetSerializer(serializers.Serializer):
@@ -138,6 +148,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
         source='store.name', read_only=True, default=None)
     store_slug = serializers.CharField(
         source='store.slug', read_only=True, default=None)
+    store_avatar = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     last_message_preview = serializers.CharField(read_only=True)
     last_message_at = serializers.DateTimeField(read_only=True)
@@ -152,6 +163,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'store',
             'store_name',
             'store_slug',
+            'store_avatar',
             'unread_count',
             'last_message_preview',
             'last_message_at',
@@ -170,6 +182,15 @@ class ConversationListSerializer(serializers.ModelSerializer):
         if request:
             return obj.unread_count_for(request.user)
         return 0
+
+    def get_store_avatar(self, obj):
+        if obj.store and obj.store.logo:
+            request = self.context.get('request')
+            try:
+                return request.build_absolute_uri(obj.store.logo.url) if request else obj.store.logo.url
+            except Exception:
+                return None
+        return None
 
 
 class ConversationDetailSerializer(ConversationListSerializer):
