@@ -7,8 +7,7 @@ User = get_user_model()
 
 
 class ParticipantSerializer(serializers.ModelSerializer):
-    full_name = serializers.CharField(
-        source='get_full_name', read_only=True)
+    full_name = serializers.CharField(read_only=True)
     store_name = serializers.SerializerMethodField()
     store_slug = serializers.SerializerMethodField()
     profile_image = serializers.SerializerMethodField()
@@ -144,6 +143,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
     other_participant = serializers.SerializerMethodField()
     listing_title = serializers.CharField(
         source='listing.title', read_only=True, default=None)
+    listing_image = serializers.SerializerMethodField()
     store_name = serializers.CharField(
         source='store.name', read_only=True, default=None)
     store_slug = serializers.CharField(
@@ -160,6 +160,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'other_participant',
             'listing',
             'listing_title',
+            'listing_image',
             'store',
             'store_name',
             'store_slug',
@@ -190,6 +191,17 @@ class ConversationListSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.store.logo.url) if request else obj.store.logo.url
             except Exception:
                 return None
+        return None
+
+    def get_listing_image(self, obj):
+        if obj.listing:
+            primary = obj.listing.images.filter(is_primary=True).first()
+            if primary:
+                request = self.context.get('request')
+                try:
+                    return request.build_absolute_uri(primary.image.url) if request else primary.image.url
+                except Exception:
+                    return None
         return None
 
 
