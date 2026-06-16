@@ -189,6 +189,13 @@ class QuoteRequestActionView(APIView):
                 return Response({'error': 'Only pending quotes can be cancelled'}, status=400)
             quote.status = QuoteRequest.Status.CANCELLED
 
+        elif action == 'decline':
+            if request.user != quote.buyer:
+                return Response({'error': 'Only buyer can decline'}, status=403)
+            if quote.status not in [QuoteRequest.Status.PENDING, QuoteRequest.Status.RESPONDED]:
+                return Response({'error': 'Cannot decline this quote'}, status=400)
+            quote.status = QuoteRequest.Status.CANCELLED
+
         elif action == 'respond':
             if request.user != quote.listing.user:
                 return Response({'error': 'Only listing owner can respond'}, status=403)
