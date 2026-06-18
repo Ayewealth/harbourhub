@@ -451,9 +451,9 @@ class VerificationRequestSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source='user.email', read_only=True)
     reviewed_by_email = serializers.EmailField(
         source='reviewed_by.email', read_only=True)
-    business_license_url = serializers.SerializerMethodField()
-    government_id_url = serializers.SerializerMethodField()
-    insurance_certificate_url = serializers.SerializerMethodField()
+    business_license = serializers.SerializerMethodField()
+    government_id = serializers.SerializerMethodField()
+    insurance_certificate = serializers.SerializerMethodField()
 
     class Meta:
         model = VerificationRequest
@@ -471,13 +471,13 @@ class VerificationRequestSerializer(serializers.ModelSerializer):
                 return None
         return None
 
-    def get_business_license_url(self, obj):
+    def get_business_license(self, obj):
         return self._get_absolute_url(obj, 'business_license')
 
-    def get_government_id_url(self, obj):
+    def get_government_id(self, obj):
         return self._get_absolute_url(obj, 'government_id')
 
-    def get_insurance_certificate_url(self, obj):
+    def get_insurance_certificate(self, obj):
         return self._get_absolute_url(obj, 'insurance_certificate')
 
 

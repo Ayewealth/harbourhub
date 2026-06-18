@@ -32,12 +32,12 @@ urlpatterns = [
     path("quotes/sent/", BuyerSentQuotesView.as_view(), name="quotes-sent"),
     path("quotes/received/", SellerReceivedQuotesView.as_view(), name="quotes-received"),
     path("quotes/<int:pk>/", QuoteRequestDetailView.as_view(), name="quote-detail"),
-    path("quotes/<int:pk>/<str:action>/",
-         QuoteRequestActionView.as_view(), name="quote-action"),
-    path("quotes/<int:pk>/move-to-cart/",
-         MoveQuoteToCartView.as_view(), name="quote-move-to-cart"),
     path("quotes/<int:pk>/vendor-update/",
          QuoteRequestVendorUpdateView.as_view()),
+    path("quotes/<int:pk>/move-to-cart/",
+         MoveQuoteToCartView.as_view(), name="quote-move-to-cart"),
+    path("quotes/<int:pk>/<str:action>/",
+         QuoteRequestActionView.as_view(), name="quote-action"),
 
     # Orders
     path("orders/", OrderListCreateView.as_view(), name="order-list-create"),
