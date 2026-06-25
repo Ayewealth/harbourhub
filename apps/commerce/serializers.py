@@ -13,11 +13,6 @@ class QuoteRequestCreateSerializer(serializers.ModelSerializer):
     purchase_type = serializers.ChoiceField(
         choices=QuoteRequest.PurchaseType.choices
     )
-    duration_bucket = serializers.ChoiceField(
-        choices=QuoteRequest.DurationBucket.choices,
-        required=False,
-        allow_blank=True,
-    )
 
     class Meta:
         model = QuoteRequest
@@ -26,7 +21,6 @@ class QuoteRequestCreateSerializer(serializers.ModelSerializer):
             "store",
             "purchase_type",
             "quantity",
-            "duration_bucket",
             "duration_days",
             "preferred_delivery_date",
             "delivery_location",
@@ -63,7 +57,7 @@ class QuoteRequestSerializer(serializers.ModelSerializer):
             "store_slug",
             "purchase_type",
             "quantity",
-            "duration_bucket",
+            "duration_days",
             "preferred_delivery_date",
             "delivery_location",
             "notes",

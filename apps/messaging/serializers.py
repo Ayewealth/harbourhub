@@ -119,15 +119,7 @@ class RequestQuoteInChatSerializer(serializers.Serializer):
     purchase_type = serializers.ChoiceField(
         choices=[('buy', 'Buy'), ('rent', 'Rent')])
     quantity = serializers.IntegerField(min_value=1, default=1)
-    duration_bucket = serializers.ChoiceField(
-        choices=[
-            ('1_50_days', '1-50 days'),
-            ('50_100_days', '50-100 days'),
-            ('100_150_days', '100-150 days'),
-        ],
-        required=False,
-        allow_blank=True
-    )
+    duration_days = serializers.IntegerField(required=False, allow_null=True)
     preferred_delivery_date = serializers.DateField(required=False)
     delivery_location = serializers.CharField(
         required=False, allow_blank=True)

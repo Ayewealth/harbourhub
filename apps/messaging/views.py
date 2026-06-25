@@ -270,8 +270,7 @@ class RequestQuoteInChatView(APIView):
             store=conversation.store,
             purchase_type=serializer.validated_data['purchase_type'],
             quantity=serializer.validated_data.get('quantity', 1),
-            duration_bucket=serializer.validated_data.get(
-                'duration_bucket', ''),
+            duration_days=serializer.validated_data.get('duration_days'),
             preferred_delivery_date=serializer.validated_data.get(
                 'preferred_delivery_date'),
             delivery_location=serializer.validated_data.get(

@@ -63,7 +63,6 @@ from .serializers import (
                     "store": 1,
                     "purchase_type": "buy",
                     "quantity": 2,
-                    "duration_bucket": "",
                     "preferred_delivery_date": "2026-04-30",
                     "delivery_location": "Port Harcourt, Rivers, Nigeria",
                     "notes": "Need urgent delivery and installation included."
@@ -77,7 +76,7 @@ from .serializers import (
                     "store": 1,
                     "purchase_type": "rent",
                     "quantity": 1,
-                    "duration_bucket": "50_100_days",
+                    "duration_days": 65,
                     "preferred_delivery_date": "2026-05-05",
                     "delivery_location": "Abuja, FCT, Nigeria",
                     "notes": "Need it for a temporary project site."
