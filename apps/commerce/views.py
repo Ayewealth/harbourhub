@@ -229,16 +229,18 @@ class MoveQuoteToCartView(APIView):
 
         cart, _ = Cart.objects.get_or_create(buyer=request.user)
 
-        # Use vendor's counter-offer price, fallback to listing price
-        quoted_price = request.data.get('quoted_price') or quote.vendor_price or quote.listing.price
+        # vendor_price is the total agreed price for the entire quote
+        total_price = request.data.get('quoted_price') or quote.vendor_price or quote.listing.price
+        qty = quote.quantity or 1
+        per_unit_price = Decimal(str(total_price)) / Decimal(str(qty))
 
         CartItem.objects.update_or_create(
             cart=cart,
             listing=quote.listing,
             purchase_type=quote.purchase_type,
             defaults={
-                'quantity': quote.quantity,
-                'unit_price': quoted_price,
+                'quantity': qty,
+                'unit_price': per_unit_price,
                 'store': quote.store,
                 'duration_days': quote.duration_days,
                 'quote_request': quote,
@@ -253,8 +255,8 @@ class MoveQuoteToCartView(APIView):
             'message': 'Quote moved to cart successfully.',
             'cart_item': {
                 'listing': quote.listing.title,
-                'quantity': quote.quantity,
-                'unit_price': str(quoted_price),
+                'quantity': qty,
+                'unit_price': str(total_price),
             }
         })
 
