@@ -229,8 +229,8 @@ class MoveQuoteToCartView(APIView):
 
         cart, _ = Cart.objects.get_or_create(buyer=request.user)
 
-        # Use quoted price if available, fallback to listing price
-        quoted_price = request.data.get('quoted_price') or quote.listing.price
+        # Use vendor's counter-offer price, fallback to listing price
+        quoted_price = request.data.get('quoted_price') or quote.vendor_price or quote.listing.price
 
         CartItem.objects.update_or_create(
             cart=cart,

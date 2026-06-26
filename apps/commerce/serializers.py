@@ -43,6 +43,7 @@ class QuoteRequestSerializer(serializers.ModelSerializer):
     buyer_email = serializers.EmailField(source="buyer.email", read_only=True)
     store_name = serializers.CharField(source="store.name", read_only=True)
     store_slug = serializers.CharField(source="store.slug", read_only=True)
+    currency = serializers.CharField(source="listing.currency", read_only=True)
 
     class Meta:
         model = QuoteRequest
@@ -63,6 +64,7 @@ class QuoteRequestSerializer(serializers.ModelSerializer):
             "notes",
             "vendor_price",
             "vendor_notes",
+            "currency",
             "status",
             "created_at",
             "updated_at",
