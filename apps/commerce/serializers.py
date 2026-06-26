@@ -37,7 +37,8 @@ class QuoteRequestCreateSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
-class QuoteRequestSerializer(serializers.ModelSerializer):
+class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["vendor_price"]
     listing_title = serializers.CharField(
         source="listing.title", read_only=True)
     buyer_email = serializers.EmailField(source="buyer.email", read_only=True)
