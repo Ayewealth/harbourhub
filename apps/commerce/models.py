@@ -322,6 +322,12 @@ class CartItem(models.Model):
         help_text="For rent/lease orders"
     )
     unit_price = models.DecimalField(max_digits=14, decimal_places=2)
+    quote_request = models.ForeignKey(
+        'QuoteRequest',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='cart_items',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

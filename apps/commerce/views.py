@@ -241,6 +241,7 @@ class MoveQuoteToCartView(APIView):
                 'unit_price': quoted_price,
                 'store': quote.store,
                 'duration_days': quote.duration_days,
+                'quote_request': quote,
             }
         )
 

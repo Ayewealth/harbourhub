@@ -220,7 +220,7 @@ class CartItemSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             'id', 'listing', 'listing_title', 'listing_price',
             'primary_image', 'store', 'store_name',
             'purchase_type', 'quantity', 'duration_days',
-            'unit_price', 'subtotal', 'created_at',
+            'unit_price', 'subtotal', 'quote_request', 'created_at',
         )
         read_only_fields = ('id', 'unit_price', 'subtotal', 'created_at')
 
