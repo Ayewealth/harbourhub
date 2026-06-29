@@ -328,6 +328,10 @@ class CartItem(models.Model):
         null=True, blank=True,
         related_name='cart_items',
     )
+    locked_subtotal = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text=_("Locked contract price from a quote (bypasses unit_price × qty)"),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -336,11 +340,12 @@ class CartItem(models.Model):
 
     @property
     def subtotal(self):
-        if self.purchase_type == self.PurchaseType.BUY:
-            return self.unit_price * self.quantity
-        # For rent/lease multiply by days
-        days = self.duration_days or 1
-        return self.unit_price * self.quantity * days
+        if self.locked_subtotal is not None:
+            return self.locked_subtotal
+        if self.purchase_type in [self.PurchaseType.RENT, self.PurchaseType.LEASE]:
+            days = self.duration_days or 1
+            return self.unit_price * self.quantity * days
+        return self.unit_price * self.quantity
 
     def __str__(self):
         return f"{self.listing.title} in cart"

@@ -229,21 +229,20 @@ class MoveQuoteToCartView(APIView):
 
         cart, _ = Cart.objects.get_or_create(buyer=request.user)
 
-        # vendor_price is the total agreed price for the entire quote
+        # vendor_price is the total agreed contract price for the entire quote
         total_price = request.data.get('quoted_price') or quote.vendor_price or quote.listing.price
-        qty = quote.quantity or 1
-        per_unit_price = Decimal(str(total_price)) / Decimal(str(qty))
 
         CartItem.objects.update_or_create(
             cart=cart,
             listing=quote.listing,
             purchase_type=quote.purchase_type,
             defaults={
-                'quantity': qty,
-                'unit_price': per_unit_price,
+                'quantity': quote.quantity,
+                'unit_price': quote.listing.price,   # ← original listing price, not overwritten
                 'store': quote.store,
                 'duration_days': quote.duration_days,
                 'quote_request': quote,
+                'locked_subtotal': total_price,       # ← locked vendor contract price
             }
         )
 
@@ -255,7 +254,7 @@ class MoveQuoteToCartView(APIView):
             'message': 'Quote moved to cart successfully.',
             'cart_item': {
                 'listing': quote.listing.title,
-                'quantity': qty,
+                'quantity': quote.quantity,
                 'unit_price': str(total_price),
             }
         })
@@ -604,6 +603,56 @@ class CartItemView(APIView):
         return Response({'message': 'Item removed from cart.'})
 
 
+@extend_schema(
+    summary="Checkout and create order(s)",
+    description="Convert cart items into order(s) and initialize Paystack payment.",
+    request=inline_serializer(
+        name="CheckoutRequest",
+        fields={
+            "cart_item_ids": serializers.ListField(
+                child=serializers.IntegerField(),
+                help_text="IDs of cart items to checkout",
+            ),
+            "delivery_detail_id": serializers.IntegerField(
+                help_text="ID of saved delivery address",
+            ),
+            "payment_method": serializers.ChoiceField(
+                choices=[("paystack", "Paystack")],
+                default="paystack",
+            ),
+            "terms_accepted": serializers.BooleanField(),
+        },
+    ),
+    responses={
+        201: inline_serializer(
+            name="CheckoutResponse",
+            fields={
+                "message": serializers.CharField(),
+                "orders": serializers.ListField(
+                    child=inline_serializer(
+                        name="CheckoutOrder",
+                        fields={
+                            "order_id": serializers.IntegerField(),
+                            "order_number": serializers.CharField(),
+                            "total_amount": serializers.CharField(),
+                        },
+                    ),
+                ),
+                "payments": serializers.ListField(
+                    child=inline_serializer(
+                        name="CheckoutPayment",
+                        fields={
+                            "payment_id": serializers.IntegerField(),
+                            "reference": serializers.CharField(),
+                            "authorization_url": serializers.URLField(),
+                            "amount": serializers.CharField(),
+                        },
+                    ),
+                ),
+            },
+        ),
+    },
+)
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
