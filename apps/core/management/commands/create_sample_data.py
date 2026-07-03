@@ -12,7 +12,7 @@ from faker import Faker
 from apps.categories.models import Category
 from apps.listings.models import Listing, ListingImage, SavedItem
 from apps.store.models import Store, StoreActivity
-from apps.commerce.models import Cart, CartItem, Order, OrderActivity, Payment, QuoteRequest, Dispute
+from apps.commerce.models import Cart, CartItem, Order, OrderItem, OrderActivity, Payment, QuoteRequest, Dispute
 from apps.financials.models import VendorWallet, VendorEarning, Payout, BankAccount, WalletTransaction
 from apps.reviews.models import ListingReview, StoreReview
 from apps.accounts.models import VerificationRequest, DeliveryDetail, UserPreference
@@ -377,12 +377,18 @@ class Command(BaseCommand):
                 order_type=order_type_map.get(listing.listing_type, Order.OrderType.BUY),
                 buyer=buyer,
                 seller=listing.user,
-                listing=listing,
                 store=listing.store,
                 total_amount=total,
                 status=random.choice([Order.Status.PAID, Order.Status.FULFILLED, Order.Status.PENDING_PAYMENT]),
-                placed_at=timezone.now() - timedelta(days=random.randint(1, 30)),
-                delivery_address=fake.address()
+                placed_at=timezone.now() - timedelta(days=random.randint(1, 30))
+            )
+
+            OrderItem.objects.create(
+                order=order,
+                purchase_type=order.order_type,
+                listing=listing,
+                quantity=1,
+                unit_price=total
             )
             
             OrderActivity.objects.create(
