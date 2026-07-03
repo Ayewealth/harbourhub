@@ -398,9 +398,18 @@ class Command(BaseCommand):
             )
             
             if order.status in [Order.Status.PAID, Order.Status.FULFILLED]:
+                from apps.commerce.models import CheckoutSession
+                checkout = CheckoutSession.objects.create(
+                    user=buyer,
+                    total_amount=total,
+                    status=CheckoutSession.Status.COMPLETED
+                )
+                order.checkout_session = checkout
+                order.save(update_fields=['checkout_session'])
+                
                 # Create Payment
                 Payment.objects.create(
-                    order=order,
+                    checkout_session=checkout,
                     buyer=buyer,
                     amount=total,
                     reference=f"PAY-{uuid.uuid4().hex[:16].upper()}",
@@ -455,18 +464,21 @@ class Command(BaseCommand):
             bank, _ = BankAccount.objects.get_or_create(
                 user=order.seller,
                 defaults={
-                    'account_name': order.seller.full_name,
-                    'account_number': fake.bban()[:10],
+                    'account_name': order.seller.get_full_name(),
+                    'account_number': f"00{random.randint(10000000, 99999999)}",
                     'bank_name': 'Sample Bank PLC'
                 }
             )
+            
+            first_item = order.items.first()
+            if not first_item: continue
             
             # Create Earning
             earning = VendorEarning.objects.create(
                 vendor=order.seller,
                 store=order.store,
                 order=order,
-                listing=order.listing,
+                listing=first_item.listing,
                 earning_type=order.order_type,
                 gross_amount=order.total_amount,
                 status=VendorEarning.Status.AVAILABLE if order.status == Order.Status.FULFILLED else VendorEarning.Status.PENDING
@@ -484,9 +496,12 @@ class Command(BaseCommand):
             if order.status != Order.Status.FULFILLED:
                 continue
             
+            first_item = order.items.first()
+            if not first_item: continue
+            
             # Listing Review
             ListingReview.objects.get_or_create(
-                listing=order.listing,
+                listing=first_item.listing,
                 reviewer=order.buyer,
                 defaults={
                     'rating': random.randint(3, 5),
