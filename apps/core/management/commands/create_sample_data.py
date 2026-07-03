@@ -33,10 +33,10 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
-        self.stdout.write(self.style.NOTICE("🚀 Starting sample data generation..."))
+        self.stdout.write(self.style.NOTICE("Starting sample data generation..."))
 
         if options["clean"]:
-            self.stdout.write(self.style.WARNING("🧹 Cleaning up existing data..."))
+            self.stdout.write(self.style.WARNING("Cleaning up existing data..."))
             self.clean_data()
 
         # Check if DB is already populated (any core data exists)
@@ -45,7 +45,7 @@ class Command(BaseCommand):
         has_categories = Category.objects.exists()
 
         if (has_users or has_listings or has_categories) and not options["clean"]:
-            self.stdout.write(self.style.WARNING("⚠️ Sample data already exists. Skipping to prevent duplicates."))
+            self.stdout.write(self.style.WARNING("Sample data already exists. Skipping to prevent duplicates."))
             return
 
         # 1. Categories
@@ -91,7 +91,7 @@ class Command(BaseCommand):
         # 13. Notifications
         self.create_notifications(users)
 
-        self.stdout.write(self.style.SUCCESS("\n✅ Successfully created comprehensive sample data!"))
+        self.stdout.write(self.style.SUCCESS("Sample data generation completed successfully!"))
 
     def clean_data(self):
         """Wipe core business data."""
@@ -400,9 +400,8 @@ class Command(BaseCommand):
             if order.status in [Order.Status.PAID, Order.Status.FULFILLED]:
                 from apps.commerce.models import CheckoutSession
                 checkout = CheckoutSession.objects.create(
-                    user=buyer,
-                    total_amount=total,
-                    status=CheckoutSession.Status.COMPLETED
+                    buyer=buyer,
+                    total_amount=total
                 )
                 order.checkout_session = checkout
                 order.save(update_fields=['checkout_session'])
