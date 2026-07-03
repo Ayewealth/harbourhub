@@ -3,6 +3,7 @@ import uuid
 from django.utils import timezone
 from rest_framework import serializers
 
+from drf_spectacular.utils import extend_schema_field, inline_serializer
 from apps.core.currency import CurrencyConverterMixin
 from apps.listings.models import Listing
 
@@ -225,6 +226,7 @@ class CartItemSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'unit_price', 'subtotal', 'created_at')
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_primary_image(self, obj):
         primary = obj.listing.images.filter(is_primary=True).first()
         if primary:
@@ -417,6 +419,7 @@ class OrderTrackingTimelineSerializer(serializers.ModelSerializer):
             "is_current",
         )
 
+    @extend_schema_field(serializers.CharField())
     def get_actor(self, obj):
         evt = obj.event_type
         if evt in ['order_placed', 'dispute_opened', 'item_returned']:
@@ -428,6 +431,7 @@ class OrderTrackingTimelineSerializer(serializers.ModelSerializer):
         else:
             return "system"
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_actor_name(self, obj):
         actor = self.get_actor(obj)
         if actor == "buyer":
@@ -438,6 +442,7 @@ class OrderTrackingTimelineSerializer(serializers.ModelSerializer):
             return "Platform Admin"
         return None
 
+    @extend_schema_field(serializers.BooleanField())
     def get_is_current(self, obj):
         # We set this dynamically in the view to true for the most recent timeline entry only
         return getattr(obj, "is_current", False)
@@ -479,18 +484,21 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
             "carrier",
         )
 
+    @extend_schema_field(inline_serializer(name='OrderBuyer', fields={'name': serializers.CharField(), 'email': serializers.EmailField()}))
     def get_buyer(self, obj):
         return {
             "name": obj.buyer.full_name or obj.buyer.username,
             "email": obj.buyer.email
         }
 
+    @extend_schema_field(inline_serializer(name='OrderSeller', fields={'name': serializers.CharField(), 'store_slug': serializers.CharField()}))
     def get_seller(self, obj):
         return {
             "name": obj.store.name if obj.store else (obj.seller.full_name or obj.seller.username),
             "store_slug": obj.store.slug if obj.store else ""
         }
 
+    @extend_schema_field(inline_serializer(name='OrderDispute', fields={'id': serializers.IntegerField(), 'status': serializers.CharField(), 'opened_at': serializers.DateTimeField(allow_null=True)}, allow_null=True))
     def get_dispute(self, obj):
         disp = obj.disputes.first()
         if disp:
@@ -501,6 +509,7 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
             }
         return None
 
+    @extend_schema_field(OrderTrackingTimelineSerializer(many=True))
     def get_timeline(self, obj):
         activities = list(obj.activities.all().order_by("created_at"))
         if activities:
@@ -510,6 +519,7 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
             activities[-1].is_current = True
         return OrderTrackingTimelineSerializer(activities, many=True).data
 
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_estimated_delivery(self, obj):
         from datetime import timedelta
         if obj.created_at:
@@ -531,6 +541,7 @@ class AdminOrderTrackingSerializer(OrderTrackingDetailSerializer):
             "internal_notes",
         )
 
+    @extend_schema_field(serializers.CharField())
     def get_escrow_status(self, obj):
         disp = obj.disputes.first()
         if disp:
@@ -541,11 +552,13 @@ class AdminOrderTrackingSerializer(OrderTrackingDetailSerializer):
             return "released"
         return "held"
 
+    @extend_schema_field(serializers.CharField())
     def get_vendor_earning_status(self, obj):
         if hasattr(obj, "earning"):
             return obj.earning.status
         return "pending"
 
+    @extend_schema_field(inline_serializer(name='AdminDisputeDetail', fields={'id': serializers.IntegerField(), 'status': serializers.CharField(), 'reason': serializers.CharField(), 'opened_by': serializers.CharField(), 'opened_at': serializers.DateTimeField(), 'resolution': serializers.CharField(allow_null=True)}, allow_null=True))
     def get_dispute_detail(self, obj):
         disp = obj.disputes.first()
         if disp:
@@ -559,6 +572,7 @@ class AdminOrderTrackingSerializer(OrderTrackingDetailSerializer):
             }
         return None
 
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
     def get_internal_notes(self, obj):
         # Admin can add notes, let's return from disputes or order activities
         notes = []
@@ -594,12 +608,14 @@ class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
             "carrier",
         )
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_last_event(self, obj):
         last_act = obj.activities.all().order_by("-created_at").first()
         if last_act:
             return last_act.message
         return "Order Placed"
 
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_last_event_at(self, obj):
         last_act = obj.activities.all().order_by("-created_at").first()
         if last_act:

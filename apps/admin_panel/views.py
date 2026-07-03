@@ -7,8 +7,9 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import IsAdminUser
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiTypes, inline_serializer, OpenApiParameter, extend_schema_field
 from rest_framework.views import APIView
+from rest_framework import serializers
 
 from apps.notifications.utils import notify_verification_approved, notify_verification_rejected
 
@@ -292,6 +293,13 @@ class AdminVendorActionView(APIView):
     """Approve, reject, or suspend a vendor."""
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(
+        request=inline_serializer(name='AdminVendorActionRequest', fields={'reason': serializers.CharField(required=False, allow_blank=True), 'notes': serializers.CharField(required=False, allow_blank=True), 'duration': serializers.CharField(required=False, allow_blank=True)}),
+        responses={
+            200: inline_serializer(name='AdminVendorActionResponse', fields={'message': serializers.CharField()}),
+            400: inline_serializer(name='AdminVendorActionError', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk, action):
         from apps.store.models import Store
         from apps.accounts.models import VerificationRequest
@@ -401,6 +409,13 @@ class AdminListingActionView(APIView):
     """Approve, reject, or deactivate a listing."""
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(
+        request=inline_serializer(name='AdminListingActionRequest', fields={'reason': serializers.CharField(required=False, allow_blank=True), 'notes': serializers.CharField(required=False, allow_blank=True)}),
+        responses={
+            200: inline_serializer(name='AdminListingActionResponse', fields={'message': serializers.CharField()}),
+            400: inline_serializer(name='AdminListingActionError', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk, action):
         from apps.listings.models import Listing
         from apps.notifications.utils import create_notification
@@ -517,6 +532,7 @@ class AdminPaymentStatsView(APIView):
     @extend_schema(
         summary="Payment statistics for dashboard cards",
         description="Returns Total Volume, Platform Revenue, Vendor Payouts, and Pending Payouts.",
+        responses={200: inline_serializer(name='AdminPaymentStatsResponse', fields={'total_volume': serializers.DictField(), 'platform_revenue': serializers.DictField(), 'vendor_payouts': serializers.DictField(), 'pending_payouts': serializers.DictField()})}
     )
     def get(self, request):
         from apps.commerce.models import Payment
@@ -583,6 +599,7 @@ class AdminReportStatsView(APIView):
     @extend_schema(
         summary="Analytics reports metric cards",
         description="Returns Total Revenue, Active Disputes, and New Inquiries.",
+        responses={200: inline_serializer(name='AdminReportStatsResponse', fields={'total_revenue': serializers.DictField(), 'active_disputes': serializers.DictField(), 'new_inquiries': serializers.DictField()})}
     )
     def get(self, request):
         from apps.commerce.models import Payment, Dispute, QuoteRequest
@@ -643,6 +660,13 @@ class AdminMarkPayoutPaidView(APIView):
     """Admin manually marks a payout as paid."""
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(
+        request=None,
+        responses={
+            200: inline_serializer(name='AdminMarkPayoutPaidResponse', fields={'message': serializers.CharField()}),
+            400: inline_serializer(name='AdminMarkPayoutPaidError', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk):
         from apps.financials.models import Payout, VendorEarning
 
@@ -711,20 +735,8 @@ class AdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
             "Defaults to the current calendar month vs the previous month."
         ),
         parameters=[
-            {
-                "name": "date_from",
-                "in": "query",
-                "required": False,
-                "schema": {"type": "string", "format": "date"},
-                "description": "Start of the period (YYYY-MM-DD)",
-            },
-            {
-                "name": "date_to",
-                "in": "query",
-                "required": False,
-                "schema": {"type": "string", "format": "date"},
-                "description": "End of the period (YYYY-MM-DD)",
-            },
+            OpenApiParameter(name="date_from", type=OpenApiTypes.DATE, location=OpenApiParameter.QUERY, description="Start of the period (YYYY-MM-DD)", required=False),
+            OpenApiParameter(name="date_to", type=OpenApiTypes.DATE, location=OpenApiParameter.QUERY, description="End of the period (YYYY-MM-DD)", required=False),
         ],
     )
     @action(detail=False, methods=["get"], url_path="stats", url_name="stats")
@@ -840,6 +852,7 @@ class AdminAnalyticsExportView(APIView):
     @extend_schema(
         summary="Export analytics data",
         description="Returns a CSV/XLSX file of platform analytics.",
+        responses={200: OpenApiTypes.BINARY}
     )
     def get(self, request):
         import csv
@@ -871,6 +884,8 @@ class AdminGlobalSearchView(APIView):
     @extend_schema(
         summary="Global admin search",
         description="Search across listings, orders, and vendors.",
+        parameters=[OpenApiParameter(name='q', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Search query', required=False)],
+        responses={200: inline_serializer(name='AdminGlobalSearchResponse', fields={'results': serializers.ListField(child=serializers.DictField())})}
     )
     def get(self, request):
         query = request.query_params.get('q', '')
@@ -947,6 +962,7 @@ class AdminConversationListSerializer(serializers.ModelSerializer):
             "last_message_at",
         )
 
+    @extend_schema_field(serializers.CharField())
     def get_seller_name(self, obj):
         if obj.store:
             return obj.store.name
@@ -972,6 +988,7 @@ class AdminMessageSerializer(serializers.ModelSerializer):
             "attachments",
         )
 
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
     def get_attachments(self, obj):
         return []
 
@@ -1005,6 +1022,8 @@ class AdminConversationMessageHistoryView(generics.ListAPIView):
 
     def get_queryset(self):
         from apps.messaging.models import Conversation, Message
+        if getattr(self, "swagger_fake_view", False):
+            return Message.objects.none()
         pk = self.kwargs.get("pk")
         conv = get_object_or_404(Conversation, pk=pk)
         return Message.objects.filter(conversation=conv).order_by("created_at")
@@ -1079,6 +1098,14 @@ class AdminUserActionView(APIView):
     """Suspend or resume a platform user."""
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(
+        request=inline_serializer(name='AdminUserActionRequest', fields={'reason': serializers.CharField(required=False, allow_blank=True)}),
+        responses={
+            200: inline_serializer(name='AdminUserActionResponse', fields={'message': serializers.CharField()}),
+            400: inline_serializer(name='AdminUserActionError', fields={'error': serializers.CharField()}),
+            403: inline_serializer(name='AdminUserActionForbidden', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk, action):
         from django.contrib.auth import get_user_model
         User = get_user_model()

@@ -12,7 +12,7 @@ from django.db.models import Avg, Count, FloatField, Q, Value
 from django.db.models.functions import Coalesce
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from drf_spectacular.utils import extend_schema, extend_schema_view,  OpenApiExample, inline_serializer
+from drf_spectacular.utils import extend_schema, extend_schema_view,  OpenApiExample, inline_serializer, OpenApiParameter
 from rest_framework import filters, generics, permissions, status, viewsets, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -476,6 +476,7 @@ class ListingViewSet(viewsets.ModelViewSet):
     @extend_schema(
         summary="Delete image",
         description="Delete an individual image from a listing. If the deleted image was primary, the next image becomes primary.",
+        parameters=[OpenApiParameter("image_id", type=int, location=OpenApiParameter.PATH)],
         responses={200: inline_serializer(
             name="DeleteImageResponse",
             fields={"message": serializers.CharField()},
@@ -602,6 +603,8 @@ class SavedItemListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Listing.objects.none()
         saved_listing_ids = SavedItem.objects.filter(
             user=self.request.user
         ).values_list('listing_id', flat=True)
@@ -620,6 +623,14 @@ class SavedItemListView(generics.ListAPIView):
 class SavedItemToggleView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=None, 
+        responses={
+            200: inline_serializer(name='SavedItemToggleResponse', fields={'message': serializers.CharField(), 'saved': serializers.BooleanField()}),
+            201: inline_serializer(name='SavedItemToggleCreated', fields={'message': serializers.CharField(), 'saved': serializers.BooleanField()}),
+            400: inline_serializer(name='SavedItemToggleError', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk):
         """Save a listing"""
         listing = get_object_or_404(
@@ -647,6 +658,12 @@ class SavedItemToggleView(APIView):
             status=status.HTTP_200_OK
         )
 
+    @extend_schema(
+        responses={
+            200: inline_serializer(name='SavedItemDeleteResponse', fields={'message': serializers.CharField(), 'saved': serializers.BooleanField()}),
+            404: inline_serializer(name='SavedItemDeleteError', fields={'error': serializers.CharField()})
+        }
+    )
     def delete(self, request, pk):
         """Unsave a listing"""
         listing = get_object_or_404(Listing, pk=pk)

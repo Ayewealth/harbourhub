@@ -8,7 +8,8 @@ from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.utils.dateparse import parse_date
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer, OpenApiParameter
+from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, permissions, status, exceptions, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -86,6 +87,10 @@ from .serializers import (
         ],
     ),
 )
+@extend_schema_view(
+    post=extend_schema(operation_id="commerce_quotes_create"),
+    get=extend_schema(operation_id="commerce_quotes_list"),
+)
 class QuoteRequestListCreateView(generics.ListCreateAPIView):
     filter_backends = [DjangoFilterBackend]
     filterset_class = QuoteRequestFilter
@@ -99,6 +104,8 @@ class QuoteRequestListCreateView(generics.ListCreateAPIView):
         return QuoteRequestSerializer
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return QuoteRequest.objects.none()
         user = self.request.user
         qs = QuoteRequest.objects.select_related(
             "listing", "buyer", "store"
@@ -145,6 +152,10 @@ class QuoteRequestDetailView(generics.RetrieveUpdateAPIView):
 class QuoteRequestVendorUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=QuoteRequestVendorUpdateSerializer,
+        responses={200: QuoteRequestVendorUpdateSerializer}
+    )
     def patch(self, request, pk):
         quote = get_object_or_404(
             QuoteRequest,
@@ -163,29 +174,24 @@ class QuoteRequestVendorUpdateView(APIView):
         return Response(serializer.data)
 
 
-@extend_schema(
-    summary="Quote action",
-    examples=[
-        OpenApiExample(
-            "Respond to quote",
-            value={"action": "respond"},
-            request_only=True,
-        ),
-        OpenApiExample(
-            "Cancel quote",
-            value={"action": "cancel"},
-            request_only=True,
-        ),
-        OpenApiExample(
-            "Convert quote",
-            value={"action": "convert"},
-            request_only=True,
-        ),
-    ],
-)
 class QuoteRequestActionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        summary="Quote action",
+        operation_id="commerce_quote_action_post",
+        request=None,
+        examples=[
+            OpenApiExample("Respond to quote", value={"action": "respond"}, request_only=True),
+            OpenApiExample("Cancel quote", value={"action": "cancel"}, request_only=True),
+            OpenApiExample("Convert quote", value={"action": "convert"}, request_only=True),
+        ],
+        responses={
+            200: inline_serializer(name='QuoteActionResponse', fields={'message': serializers.CharField()}),
+            400: inline_serializer(name='QuoteActionError', fields={'error': serializers.CharField()}),
+            403: inline_serializer(name='QuoteActionForbidden', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk, action):
         qs = QuoteRequest.objects.filter(
             Q(buyer=request.user) | Q(listing__user=request.user)
@@ -229,6 +235,28 @@ class QuoteRequestActionView(APIView):
 class MoveQuoteToCartView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=inline_serializer(
+            name='MoveQuoteToCartRequest',
+            fields={'quoted_price': serializers.DecimalField(max_digits=14, decimal_places=2, required=False)}
+        ),
+        responses={
+            200: inline_serializer(
+                name='MoveQuoteToCartResponse',
+                fields={
+                    'message': serializers.CharField(),
+                    'cart_item': inline_serializer(
+                        name='MoveQuoteCartItem',
+                        fields={
+                            'listing': serializers.CharField(),
+                            'quantity': serializers.IntegerField(),
+                            'unit_price': serializers.CharField(),
+                        }
+                    )
+                }
+            )
+        }
+    )
     @transaction.atomic
     def post(self, request, pk):
         quote = get_object_or_404(
@@ -317,6 +345,10 @@ class MoveQuoteToCartView(APIView):
         ],
     ),
 )
+@extend_schema_view(
+    post=extend_schema(operation_id="commerce_orders_create_new"),
+    get=extend_schema(operation_id="commerce_orders_list"),
+)
 class OrderListCreateView(generics.ListCreateAPIView):
     filter_backends = [DjangoFilterBackend]
     filterset_class = OrderFilter
@@ -328,9 +360,11 @@ class OrderListCreateView(generics.ListCreateAPIView):
         return OrderSerializer
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Order.objects.none()
         user = self.request.user
         qs = Order.objects.select_related(
-            "buyer", "seller", "listing", "store"
+            "buyer", "seller", "store"
         ).order_by("-created_at")
         if user.is_staff and self.request.query_params.get("all") == "true":
             return qs
@@ -342,11 +376,14 @@ class OrderDetailView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Order.objects.none()
         user = self.request.user
         return Order.objects.filter(
             Q(buyer=user) | Q(seller=user)
-        ).select_related("buyer", "seller", "listing", "store")
+        ).select_related("buyer", "seller", "store")
 
+    @extend_schema(operation_id="commerce_orders_cancel_action_post", request=None, responses={200: inline_serializer(name='OrderCancelResponse', fields={'message': serializers.CharField()})})
     def post(self, request, pk=None):
         """Cancel an order"""
         order = self.get_object()
@@ -381,17 +418,22 @@ class OrderDetailView(generics.RetrieveAPIView):
                     help_text="Alternative: number of days to extend from current end date"),
             },
         ),
-    ),
-    examples=[
-        OpenApiExample(
-            "Extend by date",
-            value={"new_end_date": "2026-04-20"}
-        ),
-        OpenApiExample(
-            "Extend by days",
-            value={"duration_days": 7}
-        ),
-    ]
+        examples=[
+            OpenApiExample(
+                "Extend by date",
+                value={"new_end_date": "2026-04-20"}
+            ),
+            OpenApiExample(
+                "Extend by days",
+                value={"duration_days": 7}
+            ),
+        ],
+        responses={
+            200: inline_serializer(name='ExtendRentalResponse', fields={'message': serializers.CharField(), 'new_end_date': serializers.CharField(), 'rental_days_total': serializers.IntegerField()}),
+            400: inline_serializer(name='ExtendRentalError', fields={'error': serializers.CharField()}),
+            404: inline_serializer(name='ExtendRentalNotFound', fields={'error': serializers.CharField()}),
+        }
+    )
 )
 class OrderExtendRentalView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -452,6 +494,8 @@ class OrderActivityListView(generics.ListAPIView):
     serializer_class = OrderActivitySerializer
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return OrderActivity.objects.none()
         order_id = self.kwargs['pk']
         user = self.request.user
         order = get_object_or_404(
@@ -466,6 +510,13 @@ class OrderActivityListView(generics.ListAPIView):
 class OrderMarkShippedView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=None,
+        responses={
+            200: inline_serializer(name='OrderMarkShippedResponse', fields={'message': serializers.CharField()}),
+            400: inline_serializer(name='OrderMarkShippedError', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk):
         order = get_object_or_404(
             Order,
@@ -504,6 +555,18 @@ class MarketplaceBreakdownView(APIView):
     @extend_schema(
         summary="Marketplace breakdown (admin)",
         description="Requires analytics VIEW. Query: date_from, date_to (ISO date).",
+        responses={
+            200: inline_serializer(
+                name='MarketplaceBreakdownResponse',
+                fields={
+                    'buy_transactions': serializers.IntegerField(),
+                    'hire_bookings': serializers.IntegerField(),
+                    'lease_contracts': serializers.IntegerField(),
+                    'avg_order_value': serializers.FloatField(allow_null=True),
+                    'currency': serializers.CharField(),
+                }
+            )
+        }
     )
     def get(self, request):
         if not has_admin_module_permission(
@@ -548,11 +611,13 @@ class CartView(APIView):
     """Get or clear the cart."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: CartSerializer})
     def get(self, request):
         cart, _ = Cart.objects.get_or_create(buyer=request.user)
         serializer = CartSerializer(cart, context={'request': request})
         return Response(serializer.data)
 
+    @extend_schema(responses={200: inline_serializer(name='CartClearResponse', fields={'message': serializers.CharField()})})
     def delete(self, request):
         """Clear entire cart."""
         try:
@@ -563,10 +628,20 @@ class CartView(APIView):
         return Response({'message': 'Cart cleared.'})
 
 
+@extend_schema_view(
+    post=extend_schema(operation_id="commerce_cart_items_add", request=CartItemCreateSerializer, responses={201: CartItemSerializer}),
+    patch=extend_schema(
+        operation_id="commerce_cart_items_update_item",
+        request=inline_serializer(name='CartItemUpdateRequest', fields={'quantity': serializers.IntegerField(required=False), 'duration_days': serializers.IntegerField(required=False)}),
+        responses={200: CartItemSerializer}
+    ),
+    delete=extend_schema(operation_id="commerce_cart_items_remove_item", responses={200: inline_serializer(name='CartItemDeleteResponse', fields={'message': serializers.CharField()})}),
+)
 class CartItemView(APIView):
     """Add, update, or remove cart items."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(operation_id="commerce_cart_items_add_item")
     def post(self, request):
         """Add item to cart."""
         cart, _ = Cart.objects.get_or_create(buyer=request.user)
@@ -584,6 +659,7 @@ class CartItemView(APIView):
             status=status.HTTP_201_CREATED
         )
 
+    @extend_schema(operation_id="commerce_cart_items_update_item_qty")
     def patch(self, request, item_id):
         """Update cart item quantity or duration."""
         cart = get_object_or_404(Cart, buyer=request.user)
@@ -606,6 +682,7 @@ class CartItemView(APIView):
             CartItemSerializer(item, context={'request': request}).data
         )
 
+    @extend_schema(operation_id="commerce_cart_items_remove_item_id")
     def delete(self, request, item_id):
         """Remove specific item from cart."""
         cart = get_object_or_404(Cart, buyer=request.user)
@@ -819,6 +896,12 @@ class CheckoutView(APIView):
 class PaymentVerifyView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        responses={
+            200: inline_serializer(name='PaymentVerifyResponse', fields={'status': serializers.CharField(), 'message': serializers.CharField(), 'order_id': serializers.IntegerField(required=False)}),
+            400: inline_serializer(name='PaymentVerifyError', fields={'status': serializers.CharField(), 'message': serializers.CharField()})
+        }
+    )
     @transaction.atomic
     def get(self, request, reference):
         payment = get_object_or_404(
@@ -876,6 +959,8 @@ class DisputeListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Dispute.objects.none()
         user = self.request.user
         if getattr(user, 'is_admin_user', False):
             return Dispute.objects.all()
@@ -910,6 +995,10 @@ class DisputeActionView(APIView):
     """Admin-only: Resolve or Refund a dispute."""
     permission_classes = [permissions.IsAuthenticated] # Should be IsAdmin
 
+    @extend_schema(
+        request=DisputeResolutionSerializer,
+        responses={200: inline_serializer(name='DisputeActionResponse', fields={'message': serializers.CharField()})}
+    )
     def post(self, request, pk):
         dispute = get_object_or_404(Dispute, pk=pk)
         serializer = DisputeResolutionSerializer(data=request.data)
@@ -986,7 +1075,7 @@ class RecentSalesView(generics.ListAPIView):
             store=user.store,
             status__in=[Order.Status.PAID, Order.Status.FULFILLED]
         ).select_related(
-            "buyer", "listing"
+            "buyer"
         ).order_by("-created_at")[:10]  # Return top 10 recent sales
 
 
@@ -1047,6 +1136,8 @@ class BuyerMyOrdersListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Order.objects.none()
         return Order.objects.filter(buyer=self.request.user).order_by("-created_at")
 
 
@@ -1058,6 +1149,8 @@ class SellerStoreOrdersListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Order.objects.none()
         return Order.objects.filter(
             Q(seller=self.request.user) | Q(store__user=self.request.user)
         ).distinct().order_by("-created_at")
@@ -1144,6 +1237,8 @@ class BuyerSentQuotesView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return QuoteRequest.objects.none()
         return QuoteRequest.objects.filter(buyer=self.request.user).order_by("-created_at")
 
 
@@ -1155,6 +1250,8 @@ class SellerReceivedQuotesView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return QuoteRequest.objects.none()
         return QuoteRequest.objects.filter(
             Q(store__user=self.request.user) | Q(listing__store__user=self.request.user)
         ).distinct().order_by("-created_at")
@@ -1167,6 +1264,7 @@ class OrderInvoicePDFView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: OpenApiTypes.BINARY})
     def get(self, request, pk, *args, **kwargs):
         import io
         from django.http import HttpResponse

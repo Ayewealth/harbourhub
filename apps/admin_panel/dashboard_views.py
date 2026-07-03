@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample
-from rest_framework import generics, permissions, status
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer
+from rest_framework import generics, permissions, status, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -48,7 +48,8 @@ Each entry needs both `view` and `manage` booleans:
   }}
 }}
 ```
-        """
+        """,
+        responses={200: inline_serializer(name='RolesMatrixGetResponse', fields={'matrix': serializers.DictField()})}
     )
     def get(self, request):
         if not can_edit_dashboard_matrix(request.user) and not has_admin_module_permission(
@@ -60,6 +61,7 @@ Each entry needs both `view` and `manage` booleans:
     @extend_schema(
         summary="Update roles & permissions matrix",
         request=RolesMatrixSerializer,
+        responses={200: inline_serializer(name='RolesMatrixPutResponse', fields={'matrix': serializers.DictField()})}
     )
     def put(self, request):
         if not can_edit_dashboard_matrix(request.user):
@@ -75,7 +77,10 @@ class MeDashboardPermissionsView(APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(summary="Current admin dashboard permissions")
+    @extend_schema(
+        summary="Current admin dashboard permissions",
+        responses={200: inline_serializer(name='DashboardPermissionsResponse', fields={'dashboard_staff': serializers.BooleanField(), 'role': serializers.CharField(allow_null=True), 'modules': serializers.DictField()})}
+    )
     def get(self, request):
         from .auth import get_dashboard_staff_role
 
@@ -133,7 +138,8 @@ Invite a new or existing user as a dashboard admin.
 | `support_admin` | Handles support and vendors |
 | `compliance_admin` | Manages compliance and contracts |
 | `read_only` | View-only access to dashboard |
-        """
+        """,
+        responses={201: inline_serializer(name='InviteAdminResponse', fields={'id': serializers.IntegerField(), 'email': serializers.EmailField(), 'invite_status': serializers.CharField()})}
     )
     def post(self, request):
         if not can_edit_dashboard_matrix(request.user):
@@ -169,6 +175,14 @@ class DashboardAdminListView(generics.ListAPIView):
 class DashboardAdminDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=None,
+        responses={
+            200: inline_serializer(name='RevokeAdminResponse', fields={'message': serializers.CharField()}),
+            400: inline_serializer(name='RevokeAdminError', fields={'error': serializers.CharField()}),
+            404: inline_serializer(name='RevokeAdminNotFound', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk=None):
         if not can_edit_dashboard_matrix(request.user):
             return Response(status=status.HTTP_403_FORBIDDEN)
@@ -207,6 +221,7 @@ class AcceptAdminInviteView(APIView):
         summary="Accept admin invite",
         description="Invited admin sets their password and activates their account.",
         request=AcceptAdminInviteSerializer,
+        responses={200: inline_serializer(name='AcceptAdminInviteResponse', fields={'message': serializers.CharField()})}
     )
     def post(self, request):
         serializer = AcceptAdminInviteSerializer(data=request.data)
@@ -221,6 +236,7 @@ class AcceptAdminInviteView(APIView):
 class PlatformConfigView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: PlatformConfigSerializer, 403: inline_serializer(name='PlatformConfigError', fields={'error': serializers.CharField()})})
     def get(self, request):
         if not can_edit_dashboard_matrix(request.user):
             return Response(
@@ -234,6 +250,7 @@ class PlatformConfigView(APIView):
         serializer = PlatformConfigSerializer(config)
         return Response(serializer.data)
 
+    @extend_schema(request=PlatformConfigSerializer, responses={200: PlatformConfigSerializer})
     def patch(self, request):
         if not can_edit_dashboard_matrix(request.user):
             return Response(status=status.HTTP_403_FORBIDDEN)
@@ -257,6 +274,14 @@ class AdminUserEditView(APIView):
     """Edit admin role or disable/enable an admin."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=inline_serializer(name='AdminUserEditRequest', fields={'staff_role': serializers.CharField(required=False), 'status': serializers.CharField(required=False)}),
+        responses={
+            200: inline_serializer(name='AdminUserEditResponse', fields={'message': serializers.CharField(), 'staff_role': serializers.CharField(), 'invite_status': serializers.CharField()}),
+            400: inline_serializer(name='AdminUserEditError', fields={'error': serializers.CharField()}),
+            404: inline_serializer(name='AdminUserEditNotFound', fields={'error': serializers.CharField()})
+        }
+    )
     def patch(self, request, pk):
         if not can_edit_dashboard_matrix(request.user):
             return Response(status=status.HTTP_403_FORBIDDEN)
@@ -315,6 +340,12 @@ class AdminUserEditView(APIView):
             'invite_status': profile.invite_status,
         })
 
+    @extend_schema(
+        responses={
+            200: inline_serializer(name='AdminUserDeleteResponse', fields={'message': serializers.CharField()}),
+            404: inline_serializer(name='AdminUserDeleteNotFound', fields={'error': serializers.CharField()})
+        }
+    )
     def delete(self, request, pk):
         """Permanently remove an admin."""
         if not can_edit_dashboard_matrix(request.user):

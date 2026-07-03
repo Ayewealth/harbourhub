@@ -6,8 +6,9 @@ import logging
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
 from rest_framework.views import APIView
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
@@ -36,6 +37,13 @@ class PaystackWebhookView(APIView):
     permission_classes = []
     authentication_classes = []
 
+    @extend_schema(
+        request=None,
+        responses={
+            200: inline_serializer(name='PaystackWebhookResponse', fields={'status': serializers.CharField()}),
+            400: inline_serializer(name='PaystackWebhookError', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request):
         signature = request.headers.get('x-paystack-signature', '')
         body = request.body

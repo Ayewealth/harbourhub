@@ -1,7 +1,7 @@
 from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema
-from rest_framework import generics, permissions, status
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import generics, permissions, status, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
@@ -18,6 +18,8 @@ class NotificationListView(generics.ListAPIView):
     filterset_fields = ['is_read', 'notification_type', 'priority']
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Notification.objects.none()
         return Notification.objects.filter(
             recipient=self.request.user
         )
@@ -27,6 +29,10 @@ class NotificationCountView(APIView):
     """Get total and unread notification counts."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: inline_serializer(
+        name='NotificationCountResponse',
+        fields={'total': serializers.IntegerField(), 'unread': serializers.IntegerField()}
+    )})
     def get(self, request):
         qs = Notification.objects.filter(recipient=request.user)
         return Response({
@@ -39,6 +45,13 @@ class NotificationMarkReadView(APIView):
     """Mark a single notification as read."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=None, 
+        responses={
+            200: inline_serializer(name='NotificationMarkReadResponse', fields={'message': serializers.CharField()}),
+            404: inline_serializer(name='NotificationErrorResponse', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request, pk):
         try:
             notif = Notification.objects.get(
@@ -56,6 +69,7 @@ class NotificationMarkAllReadView(APIView):
     """Mark all notifications as read."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: inline_serializer(name='NotificationMarkAllReadResponse', fields={'message': serializers.CharField()})})
     def post(self, request):
         updated = Notification.objects.filter(
             recipient=request.user,
@@ -71,6 +85,12 @@ class NotificationDeleteView(APIView):
     """Delete a single notification."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        responses={
+            204: inline_serializer(name='NotificationDeleteResponse', fields={'message': serializers.CharField()}),
+            404: inline_serializer(name='NotificationDeleteErrorResponse', fields={'error': serializers.CharField()})
+        }
+    )
     def delete(self, request, pk):
         try:
             notif = Notification.objects.get(
@@ -91,6 +111,7 @@ class NotificationClearAllView(APIView):
     """Delete all notifications for the user."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={204: inline_serializer(name='NotificationClearAllResponse', fields={'message': serializers.CharField()})})
     def delete(self, request):
         deleted, _ = Notification.objects.filter(
             recipient=request.user

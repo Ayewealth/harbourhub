@@ -4,8 +4,8 @@ from django.utils import timezone
 from django.db.models import Avg, Count, FloatField, Q, Value
 from django.db.models.functions import Coalesce
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import filters, generics, permissions, status, viewsets
+from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer, OpenApiResponse
+from rest_framework import filters, generics, permissions, status, viewsets, serializers
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
@@ -213,6 +213,20 @@ class StoreRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 class StorePublishView(APIView):
     permission_classes = [permissions.IsAuthenticated, CanManageStore]
 
+    @extend_schema(
+        request=None,
+        responses={
+            200: OpenApiResponse(description="Store published successfully", response=inline_serializer(
+                name='StorePublishResponse',
+                fields={'message': serializers.CharField()}
+            )),
+            400: OpenApiResponse(description="Store is already published", response=inline_serializer(
+                name='StorePublishError',
+                fields={'error': serializers.CharField()}
+            ))
+        }
+    )
+
     def patch(self, request, slug):
         store = get_object_or_404(Store, slug=slug, user=request.user)
 
@@ -229,6 +243,20 @@ class StorePublishView(APIView):
 
 class StoreUnpublishView(APIView):
     permission_classes = [permissions.IsAuthenticated, CanManageStore]
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: OpenApiResponse(description="Store unpublished successfully", response=inline_serializer(
+                name='StoreUnpublishResponse',
+                fields={'message': serializers.CharField()}
+            )),
+            400: OpenApiResponse(description="Store is already unpublished", response=inline_serializer(
+                name='StoreUnpublishError',
+                fields={'error': serializers.CharField()}
+            ))
+        }
+    )
 
     def patch(self, request, slug):
         store = get_object_or_404(Store, slug=slug, user=request.user)
@@ -251,11 +279,13 @@ class StoreUnpublishView(APIView):
 class StoreMeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: StoreDetailSerializer})
     def get(self, request):
         store = get_object_or_404(Store, user=request.user)
         serializer = StoreDetailSerializer(store, context={'request': request})
         return Response(serializer.data)
 
+    @extend_schema(request=StoreUpdateSerializer, responses={200: StoreUpdateSerializer})
     def patch(self, request):
         store = get_object_or_404(Store, user=request.user)
         serializer = StoreUpdateSerializer(
@@ -268,6 +298,12 @@ class StoreMeView(APIView):
 class StoreChecklistView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={
+        200: inline_serializer(
+            name='StoreChecklistResponse',
+            fields={'tasks': serializers.ListField(child=serializers.DictField())}
+        )
+    })
     def get(self, request):
         store = get_object_or_404(Store, user=request.user)
 
@@ -309,6 +345,19 @@ class StoreChecklistView(APIView):
 class StoreDashboardMetricsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={
+        200: inline_serializer(
+            name='StoreDashboardMetricsResponse',
+            fields={
+                'total_listings': serializers.IntegerField(),
+                'published_listings': serializers.IntegerField(),
+                'paused_listings': serializers.IntegerField(),
+                'total_orders': serializers.IntegerField(),
+                'total_revenue': serializers.FloatField(),
+                'quote_requests': serializers.IntegerField(),
+            }
+        )
+    })
     def get(self, request):
         store = get_object_or_404(Store, user=request.user)
 
@@ -342,6 +391,17 @@ class StoreDashboardMetricsView(APIView):
 class StoreDashboardTrendView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={
+        200: inline_serializer(
+            name='StoreDashboardTrendResponse',
+            fields={
+                'created_at__date': serializers.DateField(),
+                'count': serializers.IntegerField(),
+                'revenue': serializers.FloatField()
+            },
+            many=True
+        )
+    })
     def get(self, request):
         store = get_object_or_404(Store, user=request.user)
 
@@ -366,6 +426,8 @@ class StoreActivityListView(generics.ListAPIView):
     serializer_class = StoreActivitySerializer
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return StoreActivity.objects.none()
         store = get_object_or_404(Store, user=self.request.user)
         return store.activities.all()
 
@@ -381,6 +443,8 @@ class BuyerShippingOptionsView(generics.ListAPIView):
     serializer_class = ShippingProfileSerializer
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return ShippingProfile.objects.none()
         slug = self.kwargs.get("slug")
         store = get_object_or_404(Store, slug=slug)
         return ShippingProfile.objects.filter(store=store, is_active=True)
@@ -394,9 +458,13 @@ class SellerShippingProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ShippingProfileSerializer
 
     def get_store(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return None
         return get_object_or_404(Store, user=self.request.user)
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return ShippingProfile.objects.none()
         store = self.get_store()
         return ShippingProfile.objects.filter(store=store)
 

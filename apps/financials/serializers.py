@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 from .models import BankAccount, VendorEarning, Payout, VendorWallet, WalletTransaction
 from apps.core.currency import CurrencyConverterMixin
 
@@ -49,6 +50,7 @@ class VendorEarningSerializer(CurrencyConverterMixin, serializers.ModelSerialize
         )
         read_only_fields = fields
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_listing_thumbnail(self, obj):
         if obj.listing:
             primary = obj.listing.images.filter(is_primary=True).first()

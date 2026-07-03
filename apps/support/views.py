@@ -7,6 +7,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics, permissions, status, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import serializers
+from drf_spectacular.utils import extend_schema, inline_serializer, OpenApiResponse
 
 from apps.admin_panel.permissions import IsAdminOrSuperAdmin
 from .models import SupportTicket
@@ -46,8 +48,10 @@ class SupportTicketListCreateView(generics.ListCreateAPIView):
             'raised_by', 'order', 'listing', 'assigned_to'
         )
         # Non-admins see only their own tickets
-        if not getattr(user, 'is_staff', False):
-            return qs.filter(raised_by=user)
+        if getattr(self, 'swagger_fake_view', False) or not getattr(user, 'is_staff', False):
+            if user.is_authenticated:
+                return qs.filter(raised_by=user)
+            return SupportTicket.objects.none()
         return qs
 
 
@@ -64,6 +68,19 @@ class SupportTicketDetailView(generics.RetrieveAPIView):
 class MarkTicketResolvedView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(
+        request=MarkResolvedSerializer,
+        responses={
+            200: inline_serializer(
+                name='MarkTicketResolvedResponse',
+                fields={'message': serializers.CharField()}
+            ),
+            400: inline_serializer(
+                name='MarkTicketResolvedError',
+                fields={'error': serializers.CharField()}
+            )
+        }
+    )
     def post(self, request, pk):
         ticket = get_object_or_404(SupportTicket, pk=pk)
 
@@ -95,6 +112,19 @@ class MarkTicketResolvedView(APIView):
 class SupportTicketSummaryView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(responses={
+        200: inline_serializer(
+            name='SupportTicketSummaryResponse',
+            fields={
+                'open_tickets': serializers.IntegerField(),
+                'active_disputes': serializers.IntegerField(),
+                'resolved_today': serializers.IntegerField(),
+                'avg_resolution_time_hours': serializers.FloatField(),
+                'open_change_percent': serializers.FloatField(),
+                'disputes_change_percent': serializers.FloatField(),
+            }
+        )
+    })
     def get(self, request):
         now = timezone.now()
         today_start = now.replace(
@@ -181,6 +211,15 @@ class SupportTicketSummaryView(APIView):
 class ContactView(APIView):
     permission_classes = [permissions.AllowAny]
 
+    @extend_schema(
+        request=ContactSerializer,
+        responses={
+            200: inline_serializer(
+                name='ContactResponse',
+                fields={'message': serializers.CharField()}
+            )
+        }
+    )
     def post(self, request):
         serializer = ContactSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

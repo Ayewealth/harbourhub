@@ -362,6 +362,23 @@ SPECTACULAR_SETTINGS = {
     # Shows enum values in description
     "ENUM_GENERATE_CHOICE_DESCRIPTION": True,
     "ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE": False,
+    "ENUM_NAME_OVERRIDES": {
+        "OrderStatusEnum": "apps.commerce.models.Order.Status",
+        "QuoteRequestStatusEnum": "apps.commerce.models.QuoteRequest.Status",
+        "PaymentStatusEnum": "apps.commerce.models.Payment.Status",
+        "SupportTicketStatusEnum": "apps.support.models.SupportTicket.Status",
+        "DisputeStatusEnum": "apps.commerce.models.Dispute.Status",
+        "ListingStatusEnum": "apps.listings.models.Listing.Status",
+        "RaisedByRoleEnum": "apps.support.models.SupportTicket.RaisedBy",
+        "QuoteRequestPurchaseTypeEnum": "apps.commerce.models.QuoteRequest.PurchaseType",
+        "CartItemPurchaseTypeEnum": "apps.commerce.models.CartItem.PurchaseType",
+        "VerificationRequestStatusEnum": "apps.accounts.models.VerificationRequest.Status",
+        "ReportedContentStatusEnum": "apps.admin_panel.models.ReportedContent.Status",
+        "InquiryStatusEnum": "apps.inquiries.models.Inquiry.Status",
+        "VendorEarningStatusEnum": "apps.financials.models.VendorEarning.Status",
+        "PayoutStatusEnum": "apps.financials.models.Payout.Status",
+        "ComplianceStatusEnum": "apps.compliance.models.ComplianceDocument.Status",
+    },
 }
 
 

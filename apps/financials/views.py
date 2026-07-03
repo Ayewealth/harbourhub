@@ -7,8 +7,8 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from dateutil.relativedelta import relativedelta
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import generics, permissions, status, filters
+from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer, OpenApiParameter
+from rest_framework import generics, permissions, status, filters, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -33,6 +33,8 @@ class BankAccountListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return BankAccount.objects.none()
         return BankAccount.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
@@ -50,6 +52,7 @@ class BankAccountDetailView(generics.RetrieveUpdateDestroyAPIView):
 class BankAccountSetDefaultView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: inline_serializer(name='BankAccountSetDefaultResponse', fields={'message': serializers.CharField()})})
     def post(self, request, pk):
         account = get_object_or_404(
             BankAccount, pk=pk, user=request.user)
@@ -70,6 +73,8 @@ class EarningsListView(generics.ListAPIView):
     ordering = ['-created_at']
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return VendorEarning.objects.none()
         return VendorEarning.objects.filter(
             vendor=self.request.user
         ).select_related('order', 'listing', 'listing__category')
@@ -79,6 +84,7 @@ class EarningsSummaryView(APIView):
     """Returns earnings metrics from the VendorWallet."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: EarningsSummarySerializer})
     def get(self, request):
         from .models import VendorWallet
         wallet, _ = VendorWallet.objects.get_or_create(
@@ -129,6 +135,8 @@ class PayoutListCreateView(generics.ListCreateAPIView):
         return PayoutSerializer
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Payout.objects.none()
         return Payout.objects.filter(
             vendor=self.request.user
         ).select_related('bank_account')
@@ -170,6 +178,7 @@ class BankListView(APIView):
     """Fetch supported banks from Paystack."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: inline_serializer(name='BankResponse', fields={'name': serializers.CharField(), 'code': serializers.CharField(), 'id': serializers.IntegerField(), 'active': serializers.BooleanField()}, many=True)})
     def get(self, request):
         from apps.commerce.paystack import list_banks
         banks = list_banks()
@@ -180,6 +189,13 @@ class ResolveAccountView(APIView):
     """Verify a bank account number."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter('account_number', type=str),
+            OpenApiParameter('bank_code', type=str)
+        ],
+        responses={200: inline_serializer(name='ResolveAccountResponse', fields={'account_name': serializers.CharField(), 'account_number': serializers.CharField()})}
+    )
     def get(self, request):
         from apps.commerce.paystack import resolve_account
         account_number = request.query_params.get('account_number')
@@ -223,6 +239,8 @@ class WalletTransactionListView(generics.ListAPIView):
     ordering = ['-created_at']
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return WalletTransaction.objects.none()
         wallet, _ = VendorWallet.objects.get_or_create(user=self.request.user)
         return wallet.transactions.all()
 
@@ -230,6 +248,10 @@ class WalletTransactionListView(generics.ListAPIView):
 class PayoutFreezeView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(
+        request=inline_serializer(name='PayoutFreezeRequest', fields={'reason': serializers.CharField(required=False)}),
+        responses={200: inline_serializer(name='PayoutFreezeResponse', fields={'message': serializers.CharField(), 'status': serializers.CharField()})}
+    )
     def post(self, request, pk):
         payout = get_object_or_404(Payout, pk=pk)
 
@@ -265,6 +287,7 @@ class PayoutFreezeView(APIView):
 class PayoutUnfreezeView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(request=None, responses={200: inline_serializer(name='PayoutUnfreezeResponse', fields={'message': serializers.CharField(), 'status': serializers.CharField()})})
     def post(self, request, pk):
         payout = get_object_or_404(Payout, pk=pk)
 

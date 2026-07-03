@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions, serializers
 from django.db.models import Q
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.utils import extend_schema, OpenApiParameter, inline_serializer, OpenApiResponse
 
 from apps.listings.models import Listing
 from apps.categories.models import Category
@@ -96,6 +96,17 @@ class GlobalSearchView(APIView):
 class UserSearchHistoryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={
+        200: inline_serializer(
+            name='UserSearchHistoryResponse',
+            fields={
+                'id': serializers.IntegerField(),
+                'query': serializers.CharField(),
+                'created_at': serializers.DateTimeField()
+            },
+            many=True
+        )
+    })
     def get(self, request):
         """Get current user's search history"""
         from apps.core.models import UserSearch
@@ -104,6 +115,12 @@ class UserSearchHistoryView(APIView):
         ).values('id', 'query', 'created_at')[:20]
         return Response(list(searches))
 
+    @extend_schema(responses={
+        200: inline_serializer(
+            name='UserSearchHistoryClearResponse',
+            fields={'message': serializers.CharField()}
+        )
+    })
     def delete(self, request):
         """Clear current user's search history"""
         from apps.core.models import UserSearch
@@ -133,6 +150,25 @@ class FeedbackView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [FeedbackThrottle]
 
+    @extend_schema(
+        request=inline_serializer(
+            name='FeedbackRequest',
+            fields={
+                'topic': serializers.CharField(required=True),
+                'feedback': serializers.ChoiceField(choices=['helpful', 'not_helpful'], required=True)
+            }
+        ),
+        responses={
+            201: inline_serializer(
+                name='FeedbackSuccessResponse',
+                fields={'status': serializers.CharField()}
+            ),
+            400: inline_serializer(
+                name='FeedbackErrorResponse',
+                fields={'error': serializers.CharField()}
+            )
+        }
+    )
     def post(self, request):
         topic = request.data.get("topic")
         feedback_val = request.data.get("feedback")

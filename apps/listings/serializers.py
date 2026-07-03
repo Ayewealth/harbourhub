@@ -465,6 +465,7 @@ class PublicRecentSaleSerializer(serializers.Serializer):
     placed_at = serializers.DateTimeField(read_only=True)
     primary_image = serializers.SerializerMethodField()
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_primary_image(self, obj):
         primary = obj.listing.images.filter(is_primary=True).first()
         if primary:

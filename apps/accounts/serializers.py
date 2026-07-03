@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
+from drf_spectacular.utils import extend_schema_field
 
 from .models import User, PasswordResetToken, VerificationRequest, OneTimePassword, DeliveryDetail, UserPreference, UserTwoFactor, UserSession
 
@@ -392,18 +393,21 @@ class UserListSerializer(serializers.ModelSerializer):
             'inquiries_sent_count', 'inquiries_received_count'
         )
 
+    @extend_schema_field(serializers.IntegerField())
     def get_listings_count(self, obj):
         if hasattr(obj, 'listings'):
             return obj.listings.count()
         from apps.listings.models import Listing
         return Listing.objects.filter(user=obj).count()
 
+    @extend_schema_field(serializers.IntegerField())
     def get_inquiries_sent_count(self, obj):
         if hasattr(obj, 'sent_inquiries'):
             return obj.sent_inquiries.count()
         from apps.inquiries.models import Inquiry
         return Inquiry.objects.filter(sender=obj).count()
 
+    @extend_schema_field(serializers.IntegerField())
     def get_inquiries_received_count(self, obj):
         if hasattr(obj, 'received_inquiries'):
             return obj.received_inquiries.count()
@@ -471,12 +475,15 @@ class VerificationRequestSerializer(serializers.ModelSerializer):
                 return None
         return None
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_business_license(self, obj):
         return self._get_absolute_url(obj, 'business_license')
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_government_id(self, obj):
         return self._get_absolute_url(obj, 'government_id')
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_insurance_certificate(self, obj):
         return self._get_absolute_url(obj, 'insurance_certificate')
 
@@ -662,6 +669,7 @@ class UserSessionSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+    @extend_schema_field(serializers.BooleanField())
     def get_is_current(self, obj):
         request = self.context.get('request')
         if request:

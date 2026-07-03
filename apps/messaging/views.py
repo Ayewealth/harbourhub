@@ -3,7 +3,8 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -31,6 +32,8 @@ class ConversationListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Conversation.objects.none()
         user = self.request.user
         qs = Conversation.objects.filter(
             Q(buyer=user) | Q(vendor=user)
@@ -371,7 +374,7 @@ class MoveQuoteToCartFromChatView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(responses={200: dict})
+    @extend_schema(request=None, responses={200: inline_serializer(name='MoveQuoteToCartMessageResponse', fields={'message': serializers.CharField()})})
     def post(self, request, pk, message_id):
         conversation = get_object_or_404(
             Conversation,

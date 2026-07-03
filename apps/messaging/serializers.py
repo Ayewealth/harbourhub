@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
+from drf_spectacular.utils import extend_schema_field, inline_serializer
 from .models import Conversation, Message
 
 User = get_user_model()
@@ -16,14 +17,17 @@ class ParticipantSerializer(serializers.ModelSerializer):
         model = User
         fields = ('id', 'full_name', 'email', 'store_name', 'store_slug', 'profile_image')
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_store_name(self, obj):
         store = getattr(obj, 'store', None)
         return store.name if store else None
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_store_slug(self, obj):
         store = getattr(obj, 'store', None)
         return store.slug if store else None
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_profile_image(self, obj):
         if obj.profile_image:
             request = self.context.get('request')
@@ -76,11 +80,21 @@ class MessageSerializer(serializers.ModelSerializer):
             'is_read', 'read_at', 'created_at',
         )
 
+    @extend_schema_field(QuoteSnippetSerializer)
     def get_quote_data(self, obj):
         if obj.quote_request:
             return QuoteSnippetSerializer(obj.quote_request).data
         return None
 
+    @extend_schema_field(inline_serializer(
+        name='ReplyToPreview',
+        fields={
+            'id': serializers.IntegerField(),
+            'sender_name': serializers.CharField(),
+            'body': serializers.CharField(),
+        },
+        allow_null=True
+    ))
     def get_reply_to_preview(self, obj):
         if obj.reply_to:
             return {
@@ -163,6 +177,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'created_at',
         )
 
+    @extend_schema_field(ParticipantSerializer)
     def get_other_participant(self, obj):
         request = self.context.get('request')
         if request:
@@ -170,12 +185,14 @@ class ConversationListSerializer(serializers.ModelSerializer):
             return ParticipantSerializer(other).data
         return None
 
+    @extend_schema_field(serializers.IntegerField())
     def get_unread_count(self, obj):
         request = self.context.get('request')
         if request:
             return obj.unread_count_for(request.user)
         return 0
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_store_avatar(self, obj):
         if obj.store and obj.store.logo:
             request = self.context.get('request')
@@ -185,6 +202,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
                 return None
         return None
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_listing_image(self, obj):
         if obj.listing:
             primary = obj.listing.images.filter(is_primary=True).first()

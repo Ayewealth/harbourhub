@@ -5,9 +5,10 @@ import jwt
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import status, permissions, serializers
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status, permissions
 from rest_framework_simplejwt.tokens import RefreshToken
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,13 @@ def create_or_login_social_user(email):
 class GoogleSocialLoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
+    @extend_schema(
+        request=inline_serializer(name='GoogleLoginRequest', fields={'id_token': serializers.CharField(required=False), 'access_token': serializers.CharField(required=False)}),
+        responses={
+            200: inline_serializer(name='GoogleLoginResponse', fields={'refresh': serializers.CharField(), 'access': serializers.CharField()}),
+            400: inline_serializer(name='GoogleLoginError', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request):
         id_token = request.data.get("id_token")
         access_token = request.data.get("access_token")
@@ -143,6 +151,13 @@ class GoogleSocialLoginView(APIView):
 class AppleSocialLoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
+    @extend_schema(
+        request=inline_serializer(name='AppleLoginRequest', fields={'id_token': serializers.CharField()}),
+        responses={
+            200: inline_serializer(name='AppleLoginResponse', fields={'refresh': serializers.CharField(), 'access': serializers.CharField()}),
+            400: inline_serializer(name='AppleLoginError', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request):
         id_token = request.data.get("id_token")
         if not id_token:

@@ -5,7 +5,7 @@ import qrcode.image.svg
 from django.http import HttpResponse
 from django.conf import settings
 from django.utils.decorators import method_decorator
-from rest_framework import status, permissions, viewsets, generics
+from rest_framework import status, permissions, viewsets, generics, serializers
 from rest_framework.decorators import action
 from rest_framework.mixins import CreateModelMixin, RetrieveModelMixin, UpdateModelMixin
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -14,7 +14,8 @@ from rest_framework.viewsets import GenericViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django_ratelimit.decorators import ratelimit
 from django.contrib.auth import get_user_model
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
+from drf_spectacular.types import OpenApiTypes
 from rest_framework.views import APIView
 from django.core.signing import TimestampSigner
 
@@ -388,6 +389,8 @@ class DeliveryDetailListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return DeliveryDetail.objects.none()
         return DeliveryDetail.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
@@ -405,6 +408,7 @@ class DeliveryDetailRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIV
 class DeliveryDetailSetDefaultView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: inline_serializer(name='DeliveryDetailDefaultResponse', fields={'message': serializers.CharField()})})
     def post(self, request, pk):
         detail = generics.get_object_or_404(
             DeliveryDetail, pk=pk, user=request.user
@@ -423,11 +427,13 @@ class DeliveryDetailSetDefaultView(APIView):
 class UserPreferenceView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: UserPreferenceSerializer})
     def get(self, request):
         prefs, _ = UserPreference.objects.get_or_create(user=request.user)
         serializer = UserPreferenceSerializer(prefs)
         return Response(serializer.data)
 
+    @extend_schema(request=UserPreferenceSerializer, responses={200: UserPreferenceSerializer})
     def patch(self, request):
         prefs, _ = UserPreference.objects.get_or_create(user=request.user)
         serializer = UserPreferenceSerializer(
@@ -442,6 +448,7 @@ class TwoFactorStatusView(APIView):
     """Check if 2FA is enabled for the user."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: inline_serializer(name='TwoFactorStatusResponse', fields={'is_enabled': serializers.BooleanField()})})
     def get(self, request):
         tf = UserTwoFactor.objects.filter(
             user=request.user).first()
@@ -457,6 +464,7 @@ class TwoFactorSetupView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: inline_serializer(name='TwoFactorSetupResponse', fields={'secret': serializers.CharField(), 'qr_uri': serializers.CharField(), 'is_enabled': serializers.BooleanField()})})
     def get(self, request):
         tf = UserTwoFactor.get_or_create_secret(request.user)
         return Response({
@@ -473,6 +481,7 @@ class TwoFactorQRCodeView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={(200, 'image/svg+xml'): OpenApiTypes.BINARY})
     def get(self, request):
         tf = UserTwoFactor.get_or_create_secret(request.user)
         uri = tf.get_qr_uri()
@@ -496,6 +505,7 @@ class TwoFactorEnableView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=TwoFactorEnableSerializer, responses={200: inline_serializer(name='TwoFactorEnableResponse', fields={'message': serializers.CharField()})})
     def post(self, request):
         serializer = TwoFactorEnableSerializer(
             data=request.data,
@@ -512,6 +522,7 @@ class TwoFactorDisableView(APIView):
     """Disable 2FA by verifying current TOTP code."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=TwoFactorDisableSerializer, responses={200: inline_serializer(name='TwoFactorDisableResponse', fields={'message': serializers.CharField()})})
     def post(self, request):
         serializer = TwoFactorDisableSerializer(
             data=request.data,
@@ -531,6 +542,10 @@ class TwoFactorVerifyLoginView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
+    @extend_schema(
+        request=TwoFactorVerifyLoginSerializer,
+        responses={200: inline_serializer(name='TwoFactorVerifyLoginResponse', fields={'message': serializers.CharField(), 'tokens': inline_serializer(name='TwoFactorTokens', fields={'refresh': serializers.CharField(), 'access': serializers.CharField()}), 'user': inline_serializer(name='TwoFactorUser', fields={'id': serializers.IntegerField(), 'email': serializers.CharField(), 'role': serializers.CharField()})})}
+    )
     def post(self, request):
         serializer = TwoFactorVerifyLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -557,6 +572,7 @@ class SessionListView(APIView):
     """List all active sessions/devices for the user."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: UserSessionSerializer(many=True)})
     def get(self, request):
         sessions = UserSession.objects.filter(
             user=request.user,
@@ -574,6 +590,12 @@ class SessionRemoveView(APIView):
     """Remove/revoke a specific session."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        responses={
+            200: inline_serializer(name='SessionRemoveResponse', fields={'message': serializers.CharField()}),
+            404: inline_serializer(name='SessionRemoveError', fields={'error': serializers.CharField()})
+        }
+    )
     def delete(self, request, pk):
         try:
             session = UserSession.objects.get(
@@ -607,6 +629,7 @@ class SessionRemoveAllView(APIView):
     """Remove all sessions except current."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: inline_serializer(name='SessionRemoveAllResponse', fields={'message': serializers.CharField()})})
     def delete(self, request):
         # Get current session JTI
         current_jti = ''
@@ -650,6 +673,7 @@ class BecomeSellerView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=BecomeSellerSerializer, responses={200: inline_serializer(name='BecomeSellerResponse', fields={'message': serializers.CharField(), 'next_step': serializers.CharField()}), 400: inline_serializer(name='BecomeSellerError', fields={'error': serializers.CharField()})})
     def post(self, request):
         if request.user.role in ['seller', 'service_provider']:
             return Response(
@@ -671,6 +695,7 @@ class SellerOnboardingStep1View(APIView):
     """Step 1 — Business details + create store."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=SellerOnboardingStep1Serializer, responses={200: inline_serializer(name='SellerOnboardingStep1Response', fields={'message': serializers.CharField(), 'store_id': serializers.IntegerField(), 'store_slug': serializers.CharField(), 'next_step': serializers.CharField()})})
     def post(self, request):
         serializer = SellerOnboardingStep1Serializer(
             data=request.data)
@@ -691,6 +716,13 @@ class SellerOnboardingStep2View(APIView):
     """Step 2 — Select selling categories."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        request=SellerOnboardingStep2Serializer,
+        responses={
+            200: inline_serializer(name='SellerOnboardingStep2Response', fields={'message': serializers.CharField(), 'next_step': serializers.CharField()}),
+            400: inline_serializer(name='SellerOnboardingStep2Error', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request):
         from apps.store.models import Store
         if not Store.objects.filter(user=request.user).exists():
@@ -715,6 +747,13 @@ class SellerOnboardingStep3View(APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
+    @extend_schema(
+        request=SellerOnboardingStep3Serializer,
+        responses={
+            200: inline_serializer(name='SellerOnboardingStep3Response', fields={'message': serializers.CharField(), 'next_step': serializers.CharField()}),
+            400: inline_serializer(name='SellerOnboardingStep3Error', fields={'error': serializers.CharField()})
+        }
+    )
     def post(self, request):
         from apps.store.models import Store
         if not Store.objects.filter(user=request.user).exists():
@@ -757,6 +796,7 @@ class OnboardingStatusView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(responses={200: inline_serializer(name='OnboardingStatusResponse', fields={'step_1_complete': serializers.BooleanField(), 'step_2_complete': serializers.BooleanField(), 'step_3_complete': serializers.BooleanField(), 'is_verified': serializers.BooleanField(), 'store_active': serializers.BooleanField()})})
     def get(self, request):
         user = request.user
         from apps.store.models import Store

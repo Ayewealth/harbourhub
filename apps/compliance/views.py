@@ -3,7 +3,8 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import generics, permissions, status, filters
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import generics, permissions, serializers, status, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -39,6 +40,8 @@ class ComplianceDocumentListCreateView(generics.ListCreateAPIView):
         return ComplianceDocumentSerializer
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return ComplianceDocument.objects.none()
         user = self.request.user
         qs = ComplianceDocument.objects.select_related(
             'party', 'order', 'listing', 'reviewed_by'
@@ -61,6 +64,10 @@ class ComplianceDocumentDetailView(generics.RetrieveUpdateAPIView):
 class VerifyComplianceDocumentView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(
+        request=VerifyDocumentSerializer,
+        responses={200: inline_serializer(name='VerifyDocumentResponse', fields={'message': serializers.CharField()})}
+    )
     def post(self, request, pk):
         doc = get_object_or_404(ComplianceDocument, pk=pk)
         serializer = VerifyDocumentSerializer(data=request.data)
@@ -97,6 +104,17 @@ class VerifyComplianceDocumentView(APIView):
 class ComplianceSummaryView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 
+    @extend_schema(responses={200: inline_serializer(
+        name='ComplianceSummaryResponse',
+        fields={
+            'active_contracts': serializers.IntegerField(),
+            'expiring_soon': serializers.IntegerField(),
+            'expired': serializers.IntegerField(),
+            'missing_certifications': serializers.IntegerField(),
+            'active_change_percent': serializers.FloatField(),
+            'expiring_change_percent': serializers.FloatField(),
+        }
+    )})
     def get(self, request):
         now = timezone.now()
         this_month = now.replace(day=1, hour=0, minute=0, second=0)
