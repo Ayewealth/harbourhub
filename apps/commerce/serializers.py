@@ -39,6 +39,8 @@ class QuoteRequestCreateSerializer(serializers.ModelSerializer):
 
 class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
     monetary_fields = ["standard_price", "total_quote_price"]
+    total_quote_price = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True)
     listing_title = serializers.CharField(
         source="listing.title", read_only=True)
     buyer_email = serializers.EmailField(source="buyer.email", read_only=True)
@@ -121,7 +123,6 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             "order_type",
             "buyer",
             "seller",
-            "listing",
             "store",
             "store_name",
             "store_slug",
@@ -132,7 +133,6 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             "total_amount",
             "status",
             "placed_at",
-            "quote_request",
             "tracking_id",
             "delivery_address",
             "delivery_contact_name",
@@ -171,13 +171,11 @@ class OrderCreateSerializer(CurrencyConverterMixin, serializers.ModelSerializer)
             "order_type",
             "buyer",
             "seller",
-            "listing",
             "store",
             "currency",
             "total_amount",
             "status",
             "placed_at",
-            "quote_request",
             "extra",
         )
 
@@ -362,7 +360,7 @@ class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = (
-            'id', 'order', 'amount', 'currency',
+            'id', 'checkout_session', 'amount', 'currency',
             'status', 'reference', 'authorization_url',
             'paid_at', 'created_at',
         )
