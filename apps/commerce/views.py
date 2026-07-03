@@ -108,7 +108,18 @@ class QuoteRequestListCreateView(generics.ListCreateAPIView):
         return qs.filter(Q(buyer=user) | Q(listing__user=user))
 
     def perform_create(self, serializer):
-        quote = serializer.save(buyer=self.request.user)
+        listing = serializer.validated_data.get('listing')
+        quantity = serializer.validated_data.get('quantity', 1)
+        duration_days = serializer.validated_data.get('duration_days', 1) or 1
+        
+        base_price = listing.price or 0
+        purchase_type = serializer.validated_data.get('purchase_type')
+        if purchase_type in ['rent', 'lease']:
+            standard_price = base_price * quantity * duration_days
+        else:
+            standard_price = base_price * quantity
+            
+        quote = serializer.save(buyer=self.request.user, standard_price=standard_price)
         notify_quote_received(quote)
         track_quote_requested(self.request.user, quote)
 
@@ -666,9 +677,7 @@ class CheckoutView(APIView):
             context={'request': request}
         )
         serializer.is_valid(raise_exception=True)
-
         cart_items = serializer.validated_data['cart_items']
-        delivery_detail = getattr(serializer, 'delivery_detail', None)
 
         from collections import defaultdict
         store_groups = defaultdict(list)
@@ -676,13 +685,28 @@ class CheckoutView(APIView):
             store_key = item.store_id or 'no_store'
             store_groups[store_key].append(item)
 
-        orders_created = []
-        payments_created = []
-
+        # 1. Calculate grand total for CheckoutSession
+        grand_total = Decimal('0.00')
         for store_key, items in store_groups.items():
             subtotal = sum(item.subtotal for item in items)
-            escrow_fee = (subtotal * self.ESCROW_RATE).quantize(
-                Decimal('0.01'))
+            escrow_fee = (subtotal * self.ESCROW_RATE).quantize(Decimal('0.01'))
+            total = subtotal + self.DELIVERY_FEE + escrow_fee
+            grand_total += total
+
+        from apps.commerce.models import CheckoutSession, OrderItem
+        # 2. Create CheckoutSession
+        checkout_session = CheckoutSession.objects.create(
+            buyer=request.user,
+            total_amount=grand_total,
+            currency='NGN'
+        )
+
+        orders_created = []
+
+        # 3. Create Orders and OrderItems
+        for store_key, items in store_groups.items():
+            subtotal = sum(item.subtotal for item in items)
+            escrow_fee = (subtotal * self.ESCROW_RATE).quantize(Decimal('0.01'))
             total = subtotal + self.DELIVERY_FEE + escrow_fee
 
             first_item = items[0]
@@ -691,29 +715,17 @@ class CheckoutView(APIView):
                 CartItem.PurchaseType.RENT: Order.OrderType.HIRE,
                 CartItem.PurchaseType.LEASE: Order.OrderType.LEASE,
             }
-            order_type = order_type_map.get(
-                first_item.purchase_type, Order.OrderType.BUY)
+            order_type = order_type_map.get(first_item.purchase_type, Order.OrderType.BUY)
 
             seller = first_item.listing.user
-            delivery_address = ''
-            delivery_contact_name = ''
-            delivery_contact_phone = ''
-
-            if delivery_detail:
-                delivery_address = (
-                    f"{delivery_detail.address}, "
-                    f"{delivery_detail.city}, {delivery_detail.state}"
-                )
-                delivery_contact_name = delivery_detail.contact_person
-                delivery_contact_phone = delivery_detail.phone
 
             order = Order.objects.create(
                 order_number=f"ORD-{uuid.uuid4().hex[:12].upper()}",
                 order_type=order_type,
                 buyer=request.user,
                 seller=seller,
-                listing=first_item.listing,
                 store=first_item.store,
+                checkout_session=checkout_session,
                 currency='NGN',
                 subtotal=subtotal,
                 delivery_fee=self.DELIVERY_FEE,
@@ -721,10 +733,20 @@ class CheckoutView(APIView):
                 total_amount=total,
                 status=Order.Status.PENDING_PAYMENT,
                 placed_at=timezone.now(),
-                delivery_address=delivery_address,
-                delivery_contact_name=delivery_contact_name,
-                delivery_contact_phone=delivery_contact_phone,
             )
+            
+            # Create OrderItems
+            for item in items:
+                OrderItem.objects.create(
+                    order=order,
+                    listing=item.listing,
+                    quote_request=item.quote_request,
+                    purchase_type=item.purchase_type,
+                    quantity=item.quantity,
+                    unit_price=item.unit_price,
+                    delivery_detail=item.delivery_detail,
+                    duration_days=item.duration_days,
+                )
 
             if first_item.purchase_type in [CartItem.PurchaseType.RENT, CartItem.PurchaseType.LEASE]:
                 rental_start = first_item.quote_request.preferred_delivery_date if first_item.quote_request_id and first_item.quote_request and first_item.quote_request.preferred_delivery_date else timezone.now().date()
@@ -745,38 +767,30 @@ class CheckoutView(APIView):
 
             orders_created.append(order)
 
-            # Use paystack.py client
-            reference = f"PAY-{uuid.uuid4().hex[:16].upper()}"
-            payment = Payment.objects.create(
-                order=order,
-                buyer=request.user,
-                amount=total,
-                currency='NGN',
-                reference=reference,
-                status=Payment.Status.PENDING,
-            )
+        # 4. Create single Payment for CheckoutSession
+        reference = f"PAY-{uuid.uuid4().hex[:16].upper()}"
+        payment = Payment.objects.create(
+            checkout_session=checkout_session,
+            buyer=request.user,
+            amount=grand_total,
+            currency='NGN',
+            reference=reference,
+            status=Payment.Status.PENDING,
+        )
 
-            paystack_data = initialize_transaction(
-                email=request.user.email,
-                amount_kobo=int(total * 100),
-                reference=reference,
-                metadata={'order_id': order.id},
-                callback_url=settings.PAYSTACK_CALLBACK_URL,
-            )
+        paystack_data = initialize_transaction(
+            email=request.user.email,
+            amount_kobo=int(grand_total * 100),
+            reference=reference,
+            metadata={'checkout_session_id': checkout_session.id},
+            callback_url=settings.PAYSTACK_CALLBACK_URL,
+        )
 
-            if paystack_data:
-                payment.authorization_url = paystack_data.get(
-                    'authorization_url', '')
-                payment.paystack_access_code = paystack_data.get(
-                    'access_code', '')
-                payment.gateway_response = paystack_data
-                payment.save(update_fields=[
-                    'authorization_url',
-                    'paystack_access_code',
-                    'gateway_response'
-                ])
-
-            payments_created.append(payment)
+        if paystack_data:
+            payment.authorization_url = paystack_data.get('authorization_url', '')
+            payment.paystack_access_code = paystack_data.get('access_code', '')
+            payment.gateway_response = paystack_data
+            payment.save(update_fields=['authorization_url', 'paystack_access_code', 'gateway_response'])
 
         # Remove checked out items from cart
         cart_items.delete()
@@ -793,13 +807,12 @@ class CheckoutView(APIView):
             ],
             'payments': [
                 {
-                    'payment_id': p.id,
-                    'reference': p.reference,
-                    'authorization_url': p.authorization_url,
-                    'amount': str(p.amount),
+                    'payment_id': payment.id,
+                    'reference': payment.reference,
+                    'authorization_url': payment.authorization_url,
+                    'amount': str(payment.amount),
                 }
-                for p in payments_created
-            ],
+            ]
         }, status=status.HTTP_201_CREATED)
 
 
@@ -1364,7 +1377,7 @@ class OrderInvoicePDFView(APIView):
                 Paragraph("Amount", table_header_style)
             ],
             [
-                Paragraph(order.listing.title if order.listing else "Marketplace Item / Order Transaction", body_style),
+                Paragraph(order.items.first().listing.title if order.items.exists() and order.items.first().listing else "Marketplace Item / Order Transaction", body_style),
                 Paragraph(order.get_order_type_display(), body_style),
                 Paragraph(f"{order.currency} {order.subtotal or order.total_amount:,.2f}", body_style)
             ]

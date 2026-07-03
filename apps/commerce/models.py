@@ -53,12 +53,24 @@ class QuoteRequest(models.Model):
     duration_days = models.PositiveIntegerField(null=True, blank=True)
     delivery_location = models.CharField(max_length=500, blank=True)
     notes = models.TextField(blank=True)
-    vendor_price = models.DecimalField(
+    standard_price = models.DecimalField(
         max_digits=14,
         decimal_places=2,
         null=True,
         blank=True,
-        help_text=_("Vendor's counter-offer price (overrides listing price for this quote)"),
+        help_text=_("Standard calculated price before adjustments"),
+    )
+    adjustments = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=_("List of adjustments (name, amount, type: addition|subtraction)"),
+    )
+    delivery_detail = models.ForeignKey(
+        "accounts.DeliveryDetail",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="quote_requests",
     )
     vendor_notes = models.TextField(
         blank=True,
@@ -83,6 +95,37 @@ class QuoteRequest(models.Model):
     def __str__(self):
         return f"Quote {self.pk} for listing {self.listing_id}"
 
+    @property
+    def total_quote_price(self):
+        if self.standard_price is None:
+            return None
+        from decimal import Decimal
+        total = Decimal(str(self.standard_price))
+        for adj in self.adjustments:
+            try:
+                amt = Decimal(str(adj.get('amount', 0)))
+                if adj.get('type') == 'addition':
+                    total += amt
+                elif adj.get('type') == 'subtraction':
+                    total -= amt
+            except (ValueError, TypeError, decimal.InvalidOperation):
+                pass
+        return total
+
+
+class CheckoutSession(models.Model):
+    """A single checkout session that may span multiple vendors."""
+    buyer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="checkout_sessions",
+    )
+    total_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(max_length=3, default="NGN")
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = "checkout_sessions"
 
 class Order(models.Model):
     """Orders used for marketplace breakdown (buy / hire / lease)."""
@@ -122,19 +165,19 @@ class Order(models.Model):
         on_delete=models.PROTECT,
         related_name="orders_as_seller",
     )
-    listing = models.ForeignKey(
-        "listings.Listing",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="orders",
-    )
     store = models.ForeignKey(
         "store.Store",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="orders",
+    )
+    checkout_session = models.ForeignKey(
+        CheckoutSession,
+        on_delete=models.CASCADE,
+        related_name="orders",
+        null=True,
+        blank=True,
     )
     currency = models.CharField(max_length=3, default="NGN")
     total_amount = models.DecimalField(max_digits=14, decimal_places=2)
@@ -145,13 +188,6 @@ class Order(models.Model):
         db_index=True,
     )
     placed_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    quote_request = models.ForeignKey(
-        QuoteRequest,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="orders",
-    )
     extra = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -210,6 +246,28 @@ class Order(models.Model):
 
     def __str__(self):
         return self.order_number
+
+
+class OrderItem(models.Model):
+    """Individual item within a vendor order."""
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    listing = models.ForeignKey('listings.Listing', on_delete=models.SET_NULL, null=True, related_name='order_items')
+    quote_request = models.ForeignKey('commerce.QuoteRequest', on_delete=models.SET_NULL, null=True, blank=True)
+    purchase_type = models.CharField(max_length=16, choices=Order.OrderType.choices)
+    quantity = models.PositiveIntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=14, decimal_places=2)
+    delivery_detail = models.ForeignKey('accounts.DeliveryDetail', on_delete=models.SET_NULL, null=True, blank=True)
+    
+    duration_days = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = "commerce_order_items"
+
+    @property
+    def subtotal(self):
+        if self.purchase_type in [Order.OrderType.HIRE, Order.OrderType.LEASE]:
+            return self.unit_price * self.quantity * (self.duration_days or 1)
+        return self.unit_price * self.quantity
 
 
 class OrderActivity(models.Model):
@@ -328,6 +386,12 @@ class CartItem(models.Model):
         null=True, blank=True,
         related_name='cart_items',
     )
+    delivery_detail = models.ForeignKey(
+        'accounts.DeliveryDetail',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='cart_items'
+    )
     locked_subtotal = models.DecimalField(
         max_digits=14, decimal_places=2, null=True, blank=True,
         help_text=_("Locked contract price from a quote (bypasses unit_price × qty)"),
@@ -363,10 +427,11 @@ class Payment(models.Model):
     class Gateway(models.TextChoices):
         PAYSTACK = 'paystack', _('Paystack')
 
-    order = models.OneToOneField(
-        Order,
+    checkout_session = models.OneToOneField(
+        'CheckoutSession',
         on_delete=models.CASCADE,
-        related_name='payment'
+        related_name='payment',
+        null=True, blank=True
     )
     buyer = models.ForeignKey(
         settings.AUTH_USER_MODEL,

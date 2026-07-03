@@ -49,7 +49,7 @@ def notify_order_placed(order):
         title='New Order Received',
         message=(
             f"Order #{order.order_number} has been placed "
-            f"for {order.listing.title if order.listing else 'your product'}."
+            f"for {order.items.first().listing.title if order.items.exists() and order.items.first().listing else 'your product'}."
         ),
         priority='high',
         action_url=f"/vendor/orders/{order.id}",

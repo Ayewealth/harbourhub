@@ -38,7 +38,7 @@ class QuoteRequestCreateSerializer(serializers.ModelSerializer):
 
 
 class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
-    monetary_fields = ["vendor_price"]
+    monetary_fields = ["standard_price", "total_quote_price"]
     listing_title = serializers.CharField(
         source="listing.title", read_only=True)
     buyer_email = serializers.EmailField(source="buyer.email", read_only=True)
@@ -62,15 +62,18 @@ class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer
             "duration_days",
             "preferred_delivery_date",
             "delivery_location",
+            "delivery_detail",
             "notes",
-            "vendor_price",
+            "standard_price",
+            "adjustments",
+            "total_quote_price",
             "vendor_notes",
             "currency",
             "status",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("buyer", "status", "created_at", "updated_at")
+        read_only_fields = ("buyer", "status", "created_at", "updated_at", "total_quote_price", "standard_price")
 
 
 class QuoteRequestVendorUpdateSerializer(serializers.ModelSerializer):
@@ -78,7 +81,7 @@ class QuoteRequestVendorUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QuoteRequest
-        fields = ("vendor_price", "vendor_notes")
+        fields = ("adjustments", "vendor_notes")
 
 
 class OrderActivitySerializer(serializers.ModelSerializer):
@@ -220,7 +223,7 @@ class CartItemSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             'id', 'listing', 'listing_title', 'listing_price',
             'primary_image', 'store', 'store_name',
             'purchase_type', 'quantity', 'duration_days',
-            'unit_price', 'subtotal', 'locked_subtotal', 'quote_request', 'created_at',
+            'unit_price', 'subtotal', 'locked_subtotal', 'quote_request', 'delivery_detail', 'created_at',
         )
         read_only_fields = ('id', 'unit_price', 'subtotal', 'created_at')
 
@@ -238,7 +241,7 @@ class CartItemCreateSerializer(serializers.ModelSerializer):
         model = CartItem
         fields = (
             'listing', 'purchase_type',
-            'quantity', 'duration_days',
+            'quantity', 'duration_days', 'delivery_detail',
         )
 
     def validate_listing(self, value):
@@ -304,9 +307,6 @@ class CheckoutSerializer(serializers.Serializer):
     cart_item_ids = serializers.ListField(
         child=serializers.IntegerField(),
         help_text="IDs of cart items to checkout"
-    )
-    delivery_detail_id = serializers.IntegerField(
-        help_text="ID of saved delivery address"
     )
     payment_method = serializers.ChoiceField(
         choices=[('paystack', 'Paystack')],

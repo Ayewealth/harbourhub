@@ -88,7 +88,7 @@ class PaystackWebhookView(APIView):
 
         try:
             payment = Payment.objects.select_related(
-                'order'
+                'checkout_session'
             ).get(reference=reference)
         except Payment.DoesNotExist:
             logger.warning(
@@ -104,21 +104,23 @@ class PaystackWebhookView(APIView):
         payment.save(update_fields=[
             'status', 'paid_at', 'gateway_response'])
 
-        order = payment.order
-        order.status = Order.Status.PAID
-        order.save(update_fields=['status'])
+        checkout_session = payment.checkout_session
+        if checkout_session:
+            for order in checkout_session.orders.all():
+                order.status = Order.Status.PAID
+                order.save(update_fields=['status'])
 
-        notify_order_paid(order)
-        track_payment_success(order.buyer, order)
+                notify_order_paid(order)
+                track_payment_success(order.buyer, order)
 
-        OrderActivity.objects.create(
-            order=order,
-            event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
-            message="Payment confirmed via Paystack. Funds held in escrow."
-        )
+                OrderActivity.objects.create(
+                    order=order,
+                    event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
+                    message="Payment confirmed via Paystack. Funds held in escrow."
+                )
 
-        # Create vendor earning
-        self._create_vendor_earning(order)
+                # Create vendor earning
+                self._create_vendor_earning(order)
 
         logger.info("Charge success processed for reference %s", reference)
 
@@ -133,7 +135,7 @@ class PaystackWebhookView(APIView):
             vendor=order.seller,
             store=order.store,
             order=order,
-            listing=order.listing,
+            listing=order.items.first().listing if order.items.exists() else None,
             earning_type=order.order_type,
             gross_amount=order.subtotal,
             commission_rate=getattr(
