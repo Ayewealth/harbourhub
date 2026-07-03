@@ -697,9 +697,9 @@ class PublicRecentSalesView(generics.ListAPIView):
     filter_backends = []
 
     def get_queryset(self):
-        from apps.commerce.models import Order
-        return Order.objects.filter(
-            status__in=[Order.Status.PAID, Order.Status.FULFILLED]
+        from apps.commerce.models import OrderItem, Order
+        return OrderItem.objects.filter(
+            order__status__in=[Order.Status.PAID, Order.Status.FULFILLED]
         ).select_related(
-            "listing", "store"
-        ).order_by("-placed_at", "-created_at")[:10]
+            "listing", "order", "order__store"
+        ).order_by("-order__placed_at", "-order__created_at")[:10]

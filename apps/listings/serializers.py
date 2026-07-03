@@ -454,19 +454,21 @@ class MyListingSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
 
 class PublicRecentSaleSerializer(serializers.Serializer):
     """Minimal order info for public hero page."""
-    id = serializers.IntegerField(read_only=True)
+    id = serializers.IntegerField(source="order.id", read_only=True)
     listing_id = serializers.IntegerField(source="listing.id", read_only=True)
     listing_title = serializers.CharField(source="listing.title", read_only=True)
-    store_name = serializers.CharField(source="store.name", read_only=True)
-    store_slug = serializers.CharField(source="store.slug", read_only=True)
-    order_type = serializers.CharField(read_only=True)
-    total_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
-    currency = serializers.CharField(read_only=True)
-    placed_at = serializers.DateTimeField(read_only=True)
+    store_name = serializers.CharField(source="order.store.name", read_only=True)
+    store_slug = serializers.CharField(source="order.store.slug", read_only=True)
+    order_type = serializers.CharField(source="order.order_type", read_only=True)
+    total_amount = serializers.DecimalField(source="order.total_amount", max_digits=14, decimal_places=2, read_only=True)
+    currency = serializers.CharField(source="order.currency", read_only=True)
+    placed_at = serializers.DateTimeField(source="order.placed_at", read_only=True)
     primary_image = serializers.SerializerMethodField()
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_primary_image(self, obj):
+        if not obj.listing:
+            return None
         primary = obj.listing.images.filter(is_primary=True).first()
         if primary:
             try:
