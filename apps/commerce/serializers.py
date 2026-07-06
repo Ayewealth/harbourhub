@@ -25,6 +25,7 @@ class QuoteRequestCreateSerializer(serializers.ModelSerializer):
             "duration_days",
             "preferred_delivery_date",
             "delivery_location",
+            "delivery_detail",
             "notes",
         )
 

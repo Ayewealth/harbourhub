@@ -89,27 +89,41 @@ def get_exchange_rates() -> dict:
     return fallback_rates
 
 
-def convert_currency(amount_ngn, target_currency: str) -> tuple[float, str]:
+def convert_currency(amount, target_currency: str, source_currency: str = "NGN") -> tuple[float, str]:
     """
-    Convert NGN amount to target currency.
+    Convert amount from source_currency to target_currency.
     Returns (converted_amount_float, symbol_string).
     """
-    if amount_ngn is None:
+    if amount is None:
         return 0.0, CURRENCY_SYMBOLS.get(target_currency, target_currency)
 
     try:
-        val = Decimal(str(amount_ngn))
+        val = Decimal(str(amount))
     except Exception:
         return 0.0, CURRENCY_SYMBOLS.get(target_currency, target_currency)
 
+    source_currency = source_currency.upper().strip()
     target_currency = target_currency.upper().strip()
+    
+    if source_currency == target_currency:
+        return round(float(val), 2), CURRENCY_SYMBOLS.get(target_currency, target_currency)
+
     rates = get_exchange_rates()
-    rate = rates.get(target_currency)
+    
+    source_rate = rates.get(source_currency)
+    if source_rate is None:
+        source_rate = rates.get("NGN", 1.0) if source_currency == "NGN" else 1.0
+        
+    target_rate = rates.get(target_currency)
+    if target_rate is None:
+        target_rate = rates.get("NGN", 1.0) if target_currency == "NGN" else 1.0
 
-    if rate is None:
-        rate = rates.get("NGN", 1.0) if target_currency == "NGN" else 1.0
-
-    converted = val * Decimal(str(rate))
+    # Convert to NGN first (base currency)
+    amount_in_ngn = val / Decimal(str(source_rate)) if source_rate else val
+    
+    # Then convert to target currency
+    converted = amount_in_ngn * Decimal(str(target_rate))
+    
     return round(float(converted), 2), CURRENCY_SYMBOLS.get(target_currency, target_currency)
 
 
@@ -128,11 +142,14 @@ class CurrencyConverterMixin(object):
             return ret
 
         target_curr = get_preferred_currency(request)
+        source_curr = getattr(instance, "currency", "NGN")
+        if "currency" in ret:
+            source_curr = ret["currency"]
 
         for field in self.monetary_fields:
             if field in ret and ret[field] is not None:
                 try:
-                    converted, _ = convert_currency(ret[field], target_curr)
+                    converted, _ = convert_currency(ret[field], target_curr, source_currency=source_curr)
                     ret[field] = converted
                 except Exception:
                     pass
