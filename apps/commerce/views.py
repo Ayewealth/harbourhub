@@ -269,7 +269,7 @@ class MoveQuoteToCartView(APIView):
         cart, _ = Cart.objects.get_or_create(buyer=request.user)
 
         # vendor_price is the total agreed contract price for the entire quote
-        total_price = request.data.get('quoted_price') or quote.vendor_price or quote.listing.price
+        total_price = request.data.get('quoted_price') or quote.total_quote_price or quote.listing.price
 
         CartItem.objects.update_or_create(
             cart=cart,

@@ -79,17 +79,17 @@ def get_exchange_rates() -> dict:
     except Exception as exc:
         logger.warning("Failed to retrieve exchange rates from external API: %s. Using default fallbacks.", exc)
 
-    # Reliable fallbacks
+    # Fallback if DB is empty or NGN/USD missing
     fallback_rates = {
-        "NGN": 1.0,
-        "USD": 0.00067,
-        "EUR": 0.00062,
-        "GBP": 0.00053,
+        "USD": 1.0,
+        "NGN": 1492.53,  # approx 1 / 0.00067
+        "EUR": 0.925,    # approx 0.00062 / 0.00067
+        "GBP": 0.791,    # approx 0.00053 / 0.00067
     }
     return fallback_rates
 
 
-def convert_currency(amount, target_currency: str, source_currency: str = "NGN") -> tuple[float, str]:
+def convert_currency(amount, target_currency: str, source_currency: str = "USD") -> tuple[float, str]:
     """
     Convert amount from source_currency to target_currency.
     Returns (converted_amount_float, symbol_string).
@@ -112,18 +112,16 @@ def convert_currency(amount, target_currency: str, source_currency: str = "NGN")
     
     source_rate = rates.get(source_currency)
     if source_rate is None:
-        source_rate = rates.get("NGN", 1.0) if source_currency == "NGN" else 1.0
-        
+        source_rate = rates.get("USD", 1.0) if source_currency == "USD" else 1.0
+
     target_rate = rates.get(target_currency)
     if target_rate is None:
-        target_rate = rates.get("NGN", 1.0) if target_currency == "NGN" else 1.0
+        target_rate = rates.get("USD", 1.0) if target_currency == "USD" else 1.0
 
-    # Convert to NGN first (base currency)
-    amount_in_ngn = val / Decimal(str(source_rate)) if source_rate else val
-    
-    # Then convert to target currency
-    converted = amount_in_ngn * Decimal(str(target_rate))
-    
+    # Convert to USD first (base currency)
+    amount_in_usd = val / Decimal(str(source_rate)) if source_rate else val
+    converted = amount_in_usd * Decimal(str(target_rate)) if target_rate else amount_in_usd
+
     return round(float(converted), 2), CURRENCY_SYMBOLS.get(target_currency, target_currency)
 
 
@@ -142,7 +140,7 @@ class CurrencyConverterMixin(object):
             return ret
 
         target_curr = get_preferred_currency(request)
-        source_curr = getattr(instance, "currency", "NGN")
+        source_curr = getattr(instance, "currency", "USD")
         if "currency" in ret:
             source_curr = ret["currency"]
 

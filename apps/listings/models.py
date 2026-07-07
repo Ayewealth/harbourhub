@@ -48,7 +48,7 @@ class Listing(models.Model):
         max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
     )
     currency = models.CharField(
-        max_length=3, default="NGN", help_text=_("Currency code (NGN for Naira)"))
+        max_length=3, default="USD", help_text=_("Currency code (USD as base)"))
     price_unit = models.CharField(max_length=30, blank=True)
     negotiable = models.BooleanField(default=False)
 

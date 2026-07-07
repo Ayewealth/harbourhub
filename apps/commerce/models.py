@@ -128,7 +128,7 @@ class CheckoutSession(models.Model):
         related_name="checkout_sessions",
     )
     total_amount = models.DecimalField(max_digits=14, decimal_places=2)
-    currency = models.CharField(max_length=3, default="NGN")
+    currency = models.CharField(max_length=3, default="USD")
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -186,7 +186,7 @@ class Order(models.Model):
         null=True,
         blank=True,
     )
-    currency = models.CharField(max_length=3, default="NGN")
+    currency = models.CharField(max_length=3, default="USD")
     total_amount = models.DecimalField(max_digits=14, decimal_places=2)
     status = models.CharField(
         max_length=32,
@@ -451,7 +451,7 @@ class Payment(models.Model):
         default=Gateway.PAYSTACK
     )
     amount = models.DecimalField(max_digits=14, decimal_places=2)
-    currency = models.CharField(max_length=3, default='NGN')
+    currency = models.CharField(max_length=3, default='USD')
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
