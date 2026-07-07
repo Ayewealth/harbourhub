@@ -99,18 +99,25 @@ class QuoteRequest(models.Model):
     def total_quote_price(self):
         if self.standard_price is None:
             return None
-        from decimal import Decimal
+        from decimal import Decimal, InvalidOperation
         total = Decimal(str(self.standard_price))
         for adj in self.adjustments:
+            if not isinstance(adj, dict):
+                continue
             try:
-                amt = Decimal(str(adj.get('amount', 0)))
-                if adj.get('type') == 'addition':
+                amt_str = str(adj.get('amount', 0)).strip()
+                if not amt_str:
+                    continue
+                amt = Decimal(amt_str)
+                adj_type = adj.get('type')
+                if adj_type == 'addition':
                     total += amt
-                elif adj.get('type') == 'subtraction':
+                elif adj_type == 'subtraction':
                     total -= amt
-            except (ValueError, TypeError, decimal.InvalidOperation):
+            except (ValueError, TypeError, InvalidOperation):
                 pass
         return total
+
 
 
 class CheckoutSession(models.Model):

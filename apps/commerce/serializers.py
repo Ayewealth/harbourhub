@@ -14,6 +14,12 @@ class QuoteRequestCreateSerializer(serializers.ModelSerializer):
     purchase_type = serializers.ChoiceField(
         choices=QuoteRequest.PurchaseType.choices
     )
+    from apps.accounts.models import DeliveryDetail
+    delivery_detail = serializers.PrimaryKeyRelatedField(
+        queryset=DeliveryDetail.objects.all(), 
+        required=False, 
+        allow_null=True
+    )
 
     class Meta:
         model = QuoteRequest

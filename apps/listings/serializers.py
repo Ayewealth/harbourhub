@@ -233,6 +233,7 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
         child=serializers.FileField(), write_only=True, required=False, allow_empty=True)
     images = ListingImageSerializer(many=True, read_only=True)
     documents = ListingDocumentSerializer(many=True, read_only=True)
+    currency = serializers.CharField(required=False, max_length=3)
 
     class Meta:
         model = Listing
