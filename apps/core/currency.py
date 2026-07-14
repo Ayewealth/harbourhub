@@ -31,10 +31,10 @@ def get_preferred_currency(request) -> str:
     1. Authenticated user profile preference
     2. Request cookies ('hh_currency')
     3. Custom headers ('hh-currency' / 'HTTP_HH_CURRENCY')
-    4. Default NGN fallback
+    4. Default USD fallback
     """
     if not request:
-        return "NGN"
+        return "USD"
 
     user = getattr(request, "user", None)
     if user and user.is_authenticated:
@@ -54,21 +54,21 @@ def get_preferred_currency(request) -> str:
     if header_curr:
         return header_curr.upper().strip()
 
-    return "NGN"
+    return "USD"
 
 
 def get_exchange_rates() -> dict:
     """
     Fetch exchange rates from a free API, caching in Redis for 1 hour.
-    Returns conversion rates from NGN to other target currencies.
+    Returns conversion rates from USD to other target currencies.
     """
-    cache_key = "harbour_hub_exchange_rates_ngn"
+    cache_key = "harbour_hub_exchange_rates_usd"
     rates = cache.get(cache_key)
     if rates:
         return rates
 
     try:
-        response = requests.get("https://open.er-api.com/v6/latest/NGN", timeout=5)
+        response = requests.get("https://open.er-api.com/v6/latest/USD", timeout=5)
         if response.status_code == 200:
             data = response.json()
             rates = data.get("rates", {})
@@ -82,9 +82,9 @@ def get_exchange_rates() -> dict:
     # Fallback if DB is empty or NGN/USD missing
     fallback_rates = {
         "USD": 1.0,
-        "NGN": 1492.53,  # approx 1 / 0.00067
-        "EUR": 0.925,    # approx 0.00062 / 0.00067
-        "GBP": 0.791,    # approx 0.00053 / 0.00067
+        "NGN": 1492.53,
+        "EUR": 0.925,
+        "GBP": 0.791,
     }
     return fallback_rates
 
