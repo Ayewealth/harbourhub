@@ -55,6 +55,7 @@ class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer
     store_name = serializers.CharField(source="store.name", read_only=True)
     store_slug = serializers.CharField(source="store.slug", read_only=True)
     currency = serializers.CharField(source="listing.currency", read_only=True)
+    delivery_detail_data = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = QuoteRequest
@@ -73,6 +74,7 @@ class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer
             "preferred_delivery_date",
             "delivery_location",
             "delivery_detail",
+            "delivery_detail_data",
             "notes",
             "standard_price",
             "adjustments",
@@ -84,6 +86,20 @@ class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer
             "updated_at",
         )
         read_only_fields = ("buyer", "status", "created_at", "updated_at", "total_quote_price", "standard_price")
+
+    @extend_schema_field(inline_serializer(name='QuoteDeliveryDetail', fields={'id': serializers.IntegerField(), 'contact_person': serializers.CharField(), 'address': serializers.CharField(), 'city': serializers.CharField(), 'state': serializers.CharField(), 'country': serializers.CharField(), 'phone': serializers.CharField()}))
+    def get_delivery_detail_data(self, obj):
+        if obj.delivery_detail:
+            return {
+                "id": obj.delivery_detail.id,
+                "contact_person": obj.delivery_detail.contact_person,
+                "address": obj.delivery_detail.address,
+                "city": obj.delivery_detail.city,
+                "state": obj.delivery_detail.state,
+                "country": obj.delivery_detail.country,
+                "phone": obj.delivery_detail.phone,
+            }
+        return None
 
 
 class QuoteRequestVendorUpdateSerializer(serializers.ModelSerializer):
