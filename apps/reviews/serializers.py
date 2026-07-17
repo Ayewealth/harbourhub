@@ -6,11 +6,12 @@ from .models import ListingReview, StoreReview
 
 
 class ListingReviewSerializer(serializers.ModelSerializer):
-    reviewer_name = serializers.CharField(
-        source="reviewer.get_full_name", read_only=True
-    )
+    reviewer_name = serializers.SerializerMethodField()
     store_slug = serializers.CharField(source="listing.store.slug", read_only=True)
     listing_title = serializers.CharField(source="listing.title", read_only=True)
+
+    def get_reviewer_name(self, obj):
+        return getattr(obj.reviewer, "full_name", "") or obj.reviewer.get_full_name() or getattr(obj.reviewer, "username", "") or "Anonymous"
 
     class Meta:
         model = ListingReview
@@ -63,11 +64,12 @@ class ListingReviewCreateSerializer(serializers.ModelSerializer):
 
 
 class StoreReviewSerializer(serializers.ModelSerializer):
-    reviewer_name = serializers.CharField(
-        source="reviewer.get_full_name", read_only=True
-    )
+    reviewer_name = serializers.SerializerMethodField()
     store_name = serializers.CharField(source="store.name", read_only=True)
     store_slug = serializers.CharField(source="store.slug", read_only=True)
+
+    def get_reviewer_name(self, obj):
+        return getattr(obj.reviewer, "full_name", "") or obj.reviewer.get_full_name() or getattr(obj.reviewer, "username", "") or "Anonymous"
 
     class Meta:
         model = StoreReview

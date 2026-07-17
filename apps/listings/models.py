@@ -136,6 +136,14 @@ class Listing(models.Model):
             return f"₦{self.price:,.2f}" + (f" / {self.price_unit}" if self.price_unit else "")
         return "Contact for price"
 
+    @property
+    def average_rating(self):
+        if hasattr(self, 'rating_avg') and self.rating_avg is not None:
+            return round(float(self.rating_avg), 2)
+        from django.db.models import Avg
+        avg = self.reviews.aggregate(Avg('rating'))['rating__avg']
+        return round(float(avg), 2) if avg else 0.0
+
     def increment_views(self):
         # DB-side increment (atomic-ish). Refresh instance so view_count available.
         Listing.objects.filter(pk=self.pk).update(

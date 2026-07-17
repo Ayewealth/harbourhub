@@ -5,7 +5,7 @@ import qrcode.image.svg
 from django.http import HttpResponse
 from django.conf import settings
 from django.utils.decorators import method_decorator
-from rest_framework import status, permissions, viewsets, generics, serializers
+from rest_framework import status, permissions, viewsets, generics, serializers, filters
 from rest_framework.decorators import action
 from rest_framework.mixins import CreateModelMixin, RetrieveModelMixin, UpdateModelMixin
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -387,6 +387,8 @@ class VerificationViewSet(viewsets.ViewSet):
 class DeliveryDetailListCreateView(generics.ListCreateAPIView):
     serializer_class = DeliveryDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["address", "city", "state", "country", "contact_person", "phone", "zip_code"]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):

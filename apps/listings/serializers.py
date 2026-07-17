@@ -94,7 +94,7 @@ class ListingListSerializer(CurrencyConverterMixin, serializers.ModelSerializer)
     primary_image = serializers.SerializerMethodField()
     location_display = serializers.SerializerMethodField()
     currency_symbol = serializers.SerializerMethodField()
-    rating_average = serializers.SerializerMethodField()
+    average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -106,7 +106,7 @@ class ListingListSerializer(CurrencyConverterMixin, serializers.ModelSerializer)
             "contact_name", "contact_email", "contact_phone",
             "manufacturer", "model", "year", "condition",
             "status", "featured", "views_count", "inquiries_count",
-            "rating_average", "review_count",
+            "average_rating", "review_count",
             "owner_name", "owner_company", "primary_image",
             "store_logo",
             "created_at", "updated_at", "published_at",
@@ -145,11 +145,8 @@ class ListingListSerializer(CurrencyConverterMixin, serializers.ModelSerializer)
         return CURRENCY_SYMBOLS.get(obj.currency, obj.currency)
 
     @extend_schema_field(serializers.FloatField(allow_null=True))
-    def get_rating_average(self, obj):
-        v = getattr(obj, "rating_avg", None)
-        if v is None:
-            return None
-        return round(float(v), 2)
+    def get_average_rating(self, obj):
+        return obj.average_rating
 
     @extend_schema_field(serializers.IntegerField())
     def get_review_count(self, obj):
@@ -174,6 +171,7 @@ class ListingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerialize
     documents = ListingDocumentSerializer(many=True, read_only=True)
     location_display = serializers.SerializerMethodField()
     currency_symbol = serializers.SerializerMethodField()
+    average_rating = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -184,7 +182,7 @@ class ListingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerialize
             "contact_name", "contact_email", "contact_phone",
             "manufacturer", "model", "year", "condition", "service_area",
             "status", "featured", "views_count", "inquiries_count",
-            "owner", "images", "documents",
+            "owner", "images", "documents", "average_rating",
             "created_at", "updated_at", "published_at", "expires_at"
         )
         read_only_fields = ("views_count", "inquiries_count",
@@ -200,6 +198,10 @@ class ListingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerialize
             "is_verified": obj.user.is_verified,
             "date_joined": obj.user.date_joined,
         }
+
+    @extend_schema_field(serializers.FloatField(allow_null=True))
+    def get_average_rating(self, obj):
+        return obj.average_rating
 
     @extend_schema_field(serializers.CharField())
     def get_location_display(self, obj):
