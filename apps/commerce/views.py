@@ -747,7 +747,6 @@ class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     ESCROW_RATE = Decimal('0.05')
-    DELIVERY_FEE = Decimal('250.00')
 
     @transaction.atomic
     def post(self, request):
@@ -769,7 +768,7 @@ class CheckoutView(APIView):
         for store_key, items in store_groups.items():
             subtotal = sum(Decimal(str(convert_currency(item.subtotal, 'NGN', source_currency=item.listing.currency)[0])) for item in items)
             escrow_fee = (subtotal * self.ESCROW_RATE).quantize(Decimal('0.01'))
-            total = subtotal + self.DELIVERY_FEE + escrow_fee
+            total = subtotal + escrow_fee
             grand_total += total
 
         from apps.commerce.models import CheckoutSession, OrderItem
@@ -786,7 +785,7 @@ class CheckoutView(APIView):
         for store_key, items in store_groups.items():
             subtotal = sum(Decimal(str(convert_currency(item.subtotal, 'NGN', source_currency=item.listing.currency)[0])) for item in items)
             escrow_fee = (subtotal * self.ESCROW_RATE).quantize(Decimal('0.01'))
-            total = subtotal + self.DELIVERY_FEE + escrow_fee
+            total = subtotal + escrow_fee
 
             first_item = items[0]
             order_type_map = {
@@ -807,7 +806,7 @@ class CheckoutView(APIView):
                 checkout_session=checkout_session,
                 currency='NGN',
                 subtotal=subtotal,
-                delivery_fee=self.DELIVERY_FEE,
+                delivery_fee=Decimal('0.00'),
                 escrow_fee=escrow_fee,
                 total_amount=total,
                 status=Order.Status.PENDING_PAYMENT,
