@@ -899,7 +899,7 @@ class PaymentVerifyView(APIView):
 
     @extend_schema(
         responses={
-            200: inline_serializer(name='PaymentVerifyResponse', fields={'status': serializers.CharField(), 'message': serializers.CharField(), 'order_id': serializers.IntegerField(required=False)}),
+            200: inline_serializer(name='PaymentVerifyResponse', fields={'status': serializers.CharField(), 'message': serializers.CharField(), 'checkout_session_id': serializers.IntegerField(required=False)}),
             400: inline_serializer(name='PaymentVerifyError', fields={'status': serializers.CharField(), 'message': serializers.CharField()})
         }
     )
@@ -912,7 +912,7 @@ class PaymentVerifyView(APIView):
             return Response({
                 'status': 'success',
                 'message': 'Payment already verified.',
-                'order_id': payment.order_id,
+                'checkout_session_id': payment.checkout_session_id,
             })
 
         # Use paystack.py client
@@ -925,28 +925,31 @@ class PaymentVerifyView(APIView):
             payment.save(update_fields=[
                 'status', 'paid_at', 'gateway_response'])
 
-            order = payment.order
-            order.status = Order.Status.PAID
-            order.save(update_fields=['status'])
+            orders = payment.checkout_session.orders.all() if payment.checkout_session else []
+            for order in orders:
+                order.status = Order.Status.PAID
+                order.save(update_fields=['status'])
 
-            OrderActivity.objects.create(
-                order=order,
-                event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
-                message="Payment confirmed. Funds held in escrow."
-            )
+                OrderActivity.objects.create(
+                    order=order,
+                    event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
+                    message="Payment confirmed. Funds held in escrow."
+                )
 
-            track_payment_success(request.user, order)
+                track_payment_success(request.user, order)
 
             return Response({
                 'status': 'success',
                 'message': 'Payment verified successfully.',
-                'order_id': payment.order_id,
+                'checkout_session_id': payment.checkout_session_id,
             })
 
         payment.status = Payment.Status.FAILED
         payment.save(update_fields=['status'])
         
-        track_payment_failed(request.user, payment.order, "Verification failed or cancelled")
+        orders = payment.checkout_session.orders.all() if payment.checkout_session else []
+        for order in orders:
+            track_payment_failed(request.user, order, "Verification failed or cancelled")
         
         return Response(
             {'status': 'failed', 'message': 'Payment not successful.'},
