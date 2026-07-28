@@ -4,7 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from drf_spectacular.utils import extend_schema_field, inline_serializer
-from apps.core.currency import CurrencyConverterMixin
+from apps.core.currency import CurrencyConverterMixin, convert_currency
 from apps.listings.models import Listing
 
 from .models import Cart, CartItem, Order, OrderActivity, Payment, QuoteRequest
@@ -100,6 +100,30 @@ class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer
                 "phone": obj.delivery_detail.phone,
             }
         return None
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        
+        # Super handles monetary_fields and sets target currency
+        target_curr = ret.get("currency", "USD")
+        
+        source_curr = "USD"
+        if hasattr(instance, "listing") and instance.listing:
+            source_curr = instance.listing.currency
+            
+        if "adjustments" in ret and ret["adjustments"]:
+            new_adjustments = []
+            for adj in ret["adjustments"]:
+                if isinstance(adj, dict) and "amount" in adj:
+                    converted_amt, _ = convert_currency(adj["amount"], target_curr, source_currency=source_curr)
+                    adj_copy = dict(adj)
+                    adj_copy["amount"] = str(converted_amt)
+                    new_adjustments.append(adj_copy)
+                else:
+                    new_adjustments.append(adj)
+            ret["adjustments"] = new_adjustments
+            
+        return ret
 
 
 class QuoteRequestVendorUpdateSerializer(serializers.ModelSerializer):

@@ -25,6 +25,7 @@ from apps.commerce.models import Order, OrderActivity
 from apps.commerce.paystack import initialize_transaction, verify_transaction
 from apps.admin_panel.auth import has_admin_module_permission
 from apps.admin_panel.constants import AdminModule
+from apps.core.currency import convert_currency
 from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
 from apps.analytics.posthog_utils import (
     track_quote_requested, track_order_placed, 
@@ -766,7 +767,7 @@ class CheckoutView(APIView):
         # 1. Calculate grand total for CheckoutSession
         grand_total = Decimal('0.00')
         for store_key, items in store_groups.items():
-            subtotal = sum(item.subtotal for item in items)
+            subtotal = sum(Decimal(str(convert_currency(item.subtotal, 'NGN', source_currency=item.listing.currency)[0])) for item in items)
             escrow_fee = (subtotal * self.ESCROW_RATE).quantize(Decimal('0.01'))
             total = subtotal + self.DELIVERY_FEE + escrow_fee
             grand_total += total
@@ -783,7 +784,7 @@ class CheckoutView(APIView):
 
         # 3. Create Orders and OrderItems
         for store_key, items in store_groups.items():
-            subtotal = sum(item.subtotal for item in items)
+            subtotal = sum(Decimal(str(convert_currency(item.subtotal, 'NGN', source_currency=item.listing.currency)[0])) for item in items)
             escrow_fee = (subtotal * self.ESCROW_RATE).quantize(Decimal('0.01'))
             total = subtotal + self.DELIVERY_FEE + escrow_fee
 
@@ -815,13 +816,14 @@ class CheckoutView(APIView):
             
             # Create OrderItems
             for item in items:
+                converted_unit_price = Decimal(str(convert_currency(item.unit_price, 'NGN', source_currency=item.listing.currency)[0]))
                 OrderItem.objects.create(
                     order=order,
                     listing=item.listing,
                     quote_request=item.quote_request,
                     purchase_type=item.purchase_type,
                     quantity=item.quantity,
-                    unit_price=item.unit_price,
+                    unit_price=converted_unit_price,
                     delivery_detail=item.delivery_detail,
                     duration_days=item.duration_days,
                 )
