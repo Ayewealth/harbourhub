@@ -12,6 +12,7 @@ from .views import (
     CartItemView,
     CheckoutView,
     PaymentVerifyView,
+    RetryPaymentView,
     QuoteRequestVendorUpdateView,
     DisputeListCreateView,
     DisputeDetailView,
@@ -64,6 +65,7 @@ urlpatterns = [
 
     # Checkout & Payment
     path("checkout/", CheckoutView.as_view(), name="checkout"),
+    path("checkout/session/<int:session_id>/retry/", RetryPaymentView.as_view(), name="retry-payment"),
     path("payment/verify/<str:reference>/",
          PaymentVerifyView.as_view(), name="payment-verify"),
     path("payment/webhook/",

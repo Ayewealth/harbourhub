@@ -7,7 +7,7 @@ from drf_spectacular.utils import extend_schema_field, inline_serializer
 from apps.core.currency import CurrencyConverterMixin, convert_currency
 from apps.listings.models import Listing
 
-from .models import Cart, CartItem, Order, OrderActivity, Payment, QuoteRequest
+from .models import Cart, CartItem, Order, OrderItem, OrderActivity, Payment, QuoteRequest
 
 
 class QuoteRequestCreateSerializer(serializers.ModelSerializer):
@@ -152,13 +152,51 @@ class OrderActivitySerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'order', 'created_at')
 
 
+class OrderItemSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
+    monetary_fields = ["unit_price", "subtotal"]
+
+    listing_title = serializers.CharField(source='listing.title', read_only=True)
+    primary_image = serializers.SerializerMethodField()
+    subtotal = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    delivery_detail_data = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderItem
+        fields = (
+            'id', 'quote_request', 'listing', 'listing_title', 'primary_image', 
+            'purchase_type', 'quantity', 'unit_price', 'subtotal',
+            'rental_start_date', 'rental_end_date', 'duration_days', 'pickup_scheduled_date',
+            'delivery_detail', 'delivery_detail_data'
+        )
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_primary_image(self, obj):
+        if not obj.listing: return None
+        primary = obj.listing.images.filter(is_primary=True).first()
+        if primary:
+            request = self.context.get('request')
+            return request.build_absolute_uri(primary.image.url) if request else primary.image.url
+        return None
+
+    @extend_schema_field(serializers.DictField(allow_null=True))
+    def get_delivery_detail_data(self, obj):
+        if obj.delivery_detail:
+            return {
+                "id": obj.delivery_detail.id,
+                "contact_person": obj.delivery_detail.contact_person,
+                "address": obj.delivery_detail.address,
+                "city": obj.delivery_detail.city,
+                "state": obj.delivery_detail.state,
+                "phone": obj.delivery_detail.phone,
+            }
+        return None
+
+
 class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
     monetary_fields = ["subtotal", "delivery_fee", "escrow_fee", "total_amount"]
 
     activities = OrderActivitySerializer(many=True, read_only=True)
-    rental_days_total = serializers.IntegerField(read_only=True)
-    rental_days_elapsed = serializers.IntegerField(read_only=True)
-    rental_progress_percentage = serializers.FloatField(read_only=True)
+    order_items = OrderItemSerializer(source='items', many=True, read_only=True)
     store_name = serializers.CharField(source="store.name", read_only=True)
     store_slug = serializers.CharField(source="store.slug", read_only=True)
     carrier = serializers.CharField(source="delivery_carrier", read_only=True)
@@ -168,7 +206,6 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
         fields = (
             "id",
             "order_number",
-            "order_type",
             "buyer",
             "seller",
             "store",
@@ -187,13 +224,7 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             "delivery_contact_phone",
             "delivery_carrier",
             "carrier",
-            "rental_start_date",
-            "rental_end_date",
-            "rental_duration_days",
-            "pickup_scheduled_date",
-            "rental_days_total",
-            "rental_days_elapsed",
-            "rental_progress_percentage",
+            "order_items",
             "activities",
             "extra",
             "created_at",
@@ -205,9 +236,6 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
 class OrderCreateSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
     monetary_fields = ["total_amount"]
 
-    order_type = serializers.ChoiceField(
-        choices=Order.OrderType.choices
-    )
     status = serializers.ChoiceField(
         choices=Order.Status.choices,
         required=False,
@@ -216,7 +244,6 @@ class OrderCreateSerializer(CurrencyConverterMixin, serializers.ModelSerializer)
     class Meta:
         model = Order
         fields = (
-            "order_type",
             "buyer",
             "seller",
             "store",
@@ -502,28 +529,16 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
     listing_title = serializers.CharField(source="listing.title", default="")
     buyer = serializers.SerializerMethodField()
     seller = serializers.SerializerMethodField()
-    rental_start = serializers.DateField(source="rental_start_date", allow_null=True)
-    rental_end = serializers.DateField(source="rental_end_date", allow_null=True)
-    rental_duration = serializers.IntegerField(source="rental_duration_days", read_only=True, allow_null=True)
-    dispute = serializers.SerializerMethodField()
-    timeline = serializers.SerializerMethodField()
-    carrier = serializers.CharField(source="delivery_carrier", read_only=True)
-    estimated_delivery = serializers.SerializerMethodField()
-
     class Meta:
         model = Order
         fields = (
             "order_id",
             "status",
-            "order_type",
             "listing_title",
             "buyer",
             "seller",
             "created_at",
             "estimated_delivery",
-            "rental_start",
-            "rental_end",
-            "rental_duration",
             "dispute",
             "timeline",
             "tracking_id",
@@ -645,7 +660,6 @@ class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
             "listing_title",
             "seller_name",
             "buyer_name",
-            "order_type",
             "status",
             "last_event",
             "last_event_at",

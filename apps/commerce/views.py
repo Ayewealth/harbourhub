@@ -309,7 +309,7 @@ class MoveQuoteToCartView(APIView):
             OpenApiExample(
                 "Create buy order",
                 value={
-                    "order_type": "buy",
+                    "purchase_type": "buy",
                     "seller": 106,
                     "listing": 104,
                     "store": 1,
@@ -328,7 +328,7 @@ class MoveQuoteToCartView(APIView):
             OpenApiExample(
                 "Create hire order",
                 value={
-                    "order_type": "hire",
+                    "purchase_type": "hire",
                     "seller": 106,
                     "listing": 104,
                     "store": 1,
@@ -444,7 +444,7 @@ class OrderExtendRentalView(APIView):
         try:
             order = Order.objects.get(
                 pk=pk, buyer=request.user,
-                order_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE]
+                items__purchase_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE]
             )
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=404)
@@ -594,8 +594,8 @@ class MarketplaceBreakdownView(APIView):
                     | Q(placed_at__isnull=True, created_at__date__lte=d)
                 )
 
-        rows = qs.values("order_type").annotate(count=Count("id"))
-        type_counts = {r["order_type"]: r["count"] for r in rows}
+        rows = qs.values("items__purchase_type").annotate(count=Count("id", distinct=True))
+        type_counts = {r["items__purchase_type"]: r["count"] for r in rows if r["items__purchase_type"]}
         avg_val = qs.aggregate(avg=Avg("total_amount"))["avg"]
 
         return Response(
@@ -788,21 +788,13 @@ class CheckoutView(APIView):
             total = subtotal + escrow_fee
 
             first_item = items[0]
-            order_type_map = {
-                CartItem.PurchaseType.BUY: Order.OrderType.BUY,
-                CartItem.PurchaseType.RENT: Order.OrderType.HIRE,
-                CartItem.PurchaseType.LEASE: Order.OrderType.LEASE,
-            }
-            order_type = order_type_map.get(first_item.purchase_type, Order.OrderType.BUY)
-
             seller = first_item.listing.user
 
             order = Order.objects.create(
                 order_number=f"ORD-{uuid.uuid4().hex[:12].upper()}",
-                order_type=order_type,
                 buyer=request.user,
                 seller=seller,
-                store=first_item.store,
+                store=first_item.store if hasattr(first_item, 'store') else first_item.listing.store,
                 checkout_session=checkout_session,
                 currency='NGN',
                 subtotal=subtotal,
@@ -816,6 +808,14 @@ class CheckoutView(APIView):
             # Create OrderItems
             for item in items:
                 converted_unit_price = Decimal(str(convert_currency(item.unit_price, 'NGN', source_currency=item.listing.currency)[0]))
+                
+                rental_start = None
+                rental_end = None
+                if item.purchase_type in [CartItem.PurchaseType.RENT, CartItem.PurchaseType.LEASE]:
+                    rental_start = item.quote_request.preferred_delivery_date if item.quote_request_id and item.quote_request and item.quote_request.preferred_delivery_date else timezone.now().date()
+                    if item.duration_days:
+                        rental_end = rental_start + timedelta(days=item.duration_days)
+
                 OrderItem.objects.create(
                     order=order,
                     listing=item.listing,
@@ -825,15 +825,9 @@ class CheckoutView(APIView):
                     unit_price=converted_unit_price,
                     delivery_detail=item.delivery_detail,
                     duration_days=item.duration_days,
+                    rental_start_date=rental_start,
+                    rental_end_date=rental_end,
                 )
-
-            if first_item.purchase_type in [CartItem.PurchaseType.RENT, CartItem.PurchaseType.LEASE]:
-                rental_start = first_item.quote_request.preferred_delivery_date if first_item.quote_request_id and first_item.quote_request and first_item.quote_request.preferred_delivery_date else timezone.now().date()
-                order.rental_start_date = rental_start
-                if first_item.duration_days:
-                    order.rental_end_date = rental_start + timedelta(days=first_item.duration_days)
-                    order.rental_duration_days = first_item.duration_days
-                order.save(update_fields=['rental_start_date', 'rental_end_date', 'rental_duration_days'])
 
             OrderActivity.objects.create(
                 order=order,
@@ -870,6 +864,8 @@ class CheckoutView(APIView):
             payment.paystack_access_code = paystack_data.get('access_code', '')
             payment.gateway_response = paystack_data
             payment.save(update_fields=['authorization_url', 'paystack_access_code', 'gateway_response'])
+        else:
+            raise serializers.ValidationError("Failed to initialize payment gateway. Please check your Paystack API keys or try again later.")
 
         # Remove checked out items from cart
         cart_items.delete()
@@ -893,6 +889,46 @@ class CheckoutView(APIView):
                 }
             ]
         }, status=status.HTTP_201_CREATED)
+
+
+class RetryPaymentView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        summary="Retry Payment for an existing checkout session",
+        responses={200: inline_serializer(name='RetryPaymentResponse', fields={'authorization_url': serializers.URLField()})}
+    )
+    def post(self, request, session_id):
+        from apps.commerce.models import CheckoutSession, Payment
+        session = get_object_or_404(CheckoutSession, id=session_id, buyer=request.user)
+        payment = get_object_or_404(Payment, checkout_session=session, buyer=request.user)
+        
+        if payment.status == Payment.Status.SUCCESS:
+            return Response({"message": "Payment already successful"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generate new reference
+        reference = f"PAY-{uuid.uuid4().hex[:16].upper()}"
+        
+        paystack_data = initialize_transaction(
+            email=request.user.email,
+            amount_kobo=int(session.total_amount * 100),
+            reference=reference,
+            metadata={'checkout_session_id': session.id},
+            callback_url=settings.PAYSTACK_CALLBACK_URL,
+        )
+
+        if not paystack_data:
+            return Response({"error": "Failed to re-initialize payment gateway."}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment.reference = reference
+        payment.authorization_url = paystack_data.get('authorization_url', '')
+        payment.paystack_access_code = paystack_data.get('access_code', '')
+        payment.gateway_response = paystack_data
+        payment.save(update_fields=['reference', 'authorization_url', 'paystack_access_code', 'gateway_response'])
+
+        return Response({"authorization_url": payment.authorization_url})
+
+
 
 
 class PaymentVerifyView(APIView):
@@ -1385,15 +1421,16 @@ class OrderInvoicePDFView(APIView):
         story.append(Spacer(1, 15))
 
         # 2. Transaction Information Block (Order Type, Status)
+        # 2. Transaction Information Block (Status, Date)
         txn_data = [
             [
-                Paragraph("<b>Transaction Type:</b>", header_style),
-                Paragraph("<b>Order Status:</b>", header_style),
+                Paragraph("<b>Status:</b>", header_style),
+                Paragraph("<b>Date Placed:</b>", header_style),
                 Paragraph("<b>Payment Currency:</b>", header_style),
             ],
             [
-                Paragraph(order.get_order_type_display(), body_style),
                 Paragraph(order.get_status_display(), body_style),
+                Paragraph(order.placed_at.strftime("%B %d, %Y") if order.placed_at else 'N/A', body_style),
                 Paragraph(order.currency, body_style),
             ]
         ]
@@ -1446,42 +1483,16 @@ class OrderInvoicePDFView(APIView):
             story.append(delivery_table)
             story.append(Spacer(1, 15))
 
-        # 5. Rental Period details (if Hire or Lease)
-        if order.order_type in [Order.OrderType.HIRE, Order.OrderType.LEASE] and order.rental_start_date:
-            rental_data = [
-                [
-                    Paragraph("<b>Rental Start Date:</b>", header_style),
-                    Paragraph("<b>Rental End Date:</b>", header_style),
-                    Paragraph("<b>Total Rental Days:</b>", header_style),
-                ],
-                [
-                    Paragraph(order.rental_start_date.strftime('%Y-%m-%d'), body_style),
-                    Paragraph(order.rental_end_date.strftime('%Y-%m-%d') if order.rental_end_date else 'N/A', body_style),
-                    Paragraph(str(order.rental_days_total) if order.rental_days_total else 'N/A', body_style),
-                ]
-            ]
-            rental_table = Table(rental_data, colWidths=[2.33*inch, 2.33*inch, 2.34*inch])
-            rental_table.setStyle(TableStyle([
-                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-                ('TOPPADDING', (0,0), (-1,-1), 4),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#EEEEEE')),
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F9F9F9')),
-            ]))
-            story.append(rental_table)
-            story.append(Spacer(1, 15))
+
 
         # 6. Itemized Marketplace Table
         item_table_data = [
             [
                 Paragraph("Item Description / Listing", table_header_style),
-                Paragraph("Transaction", table_header_style),
                 Paragraph("Amount", table_header_style)
             ],
             [
                 Paragraph(order.items.first().listing.title if order.items.exists() and order.items.first().listing else "Marketplace Item / Order Transaction", body_style),
-                Paragraph(order.get_order_type_display(), body_style),
                 Paragraph(f"{order.currency} {order.subtotal or order.total_amount:,.2f}", body_style)
             ]
         ]

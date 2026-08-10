@@ -36,7 +36,6 @@ class OrderInvoicePDFTests(APITestCase):
         # Create a dummy order
         self.order = Order.objects.create(
             order_number="HH-2026-987654",
-            order_type=Order.OrderType.BUY,
             buyer=self.buyer,
             seller=self.seller,
             currency="NGN",
@@ -98,3 +97,28 @@ class OrderInvoicePDFTests(APITestCase):
         url = reverse("order-invoice-pdf", kwargs={"pk": 999999})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CheckoutAndPaymentTests(APITestCase):
+    def setUp(self):
+        self.buyer = User.objects.create_user(
+            email="buyer2@harbourhubglobal.com",
+            username="buyer2",
+            password="testpassword123",
+            role=User.Role.BUYER
+        )
+        self.seller = User.objects.create_user(
+            email="seller2@harbourhubglobal.com",
+            username="seller2",
+            password="testpassword123",
+            role=User.Role.SELLER
+        )
+        
+        # We mock Paystack initialization by patching initialize_transaction
+        # or we just rely on testing the response behavior when it fails or succeeds.
+
+    def test_retry_payment_requires_auth(self):
+        url = reverse("retry-payment", kwargs={"session_id": 999})
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+

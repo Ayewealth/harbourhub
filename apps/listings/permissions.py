@@ -33,5 +33,10 @@ class CanCreateListing(permissions.BasePermission):
 
     def has_permission(self, request, view):
         if request.method == "POST":
-            return bool(request.user and request.user.is_authenticated and getattr(request.user, "can_create_listings", False))
+            if not (request.user and request.user.is_authenticated):
+                return False
+            can_create = getattr(request.user, "can_create_listings", False)
+            if callable(can_create):
+                return can_create()
+            return bool(can_create)
         return True

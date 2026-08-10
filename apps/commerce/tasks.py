@@ -23,10 +23,10 @@ def advance_rental_order_statuses_task():
 
     # 1. Paid -> Hire Started
     paid_rentals = Order.objects.filter(
-        order_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE],
+        items__purchase_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE],
         status=Order.Status.PAID,
-        rental_start_date__lte=now
-    )
+        items__rental_start_date__lte=now
+    ).distinct()
     for order in paid_rentals:
         try:
             with transaction.atomic():
@@ -45,10 +45,10 @@ def advance_rental_order_statuses_task():
 
     # 2. Hire Started -> Hire Ended
     ended_rentals = Order.objects.filter(
-        order_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE],
+        items__purchase_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE],
         status=Order.Status.ACTIVE_HIRE,
-        rental_end_date__lte=now
-    )
+        items__rental_end_date__lte=now
+    ).distinct()
     for order in ended_rentals:
         try:
             with transaction.atomic():

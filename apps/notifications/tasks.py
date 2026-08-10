@@ -25,7 +25,7 @@ def send_rental_reminders_task():
             order_type__in=['hire', 'lease'],
             status=Order.Status.PAID,
             rental_end_date=target_date,
-        ).select_related('buyer', 'listing')
+        ).select_related('buyer').prefetch_related('items__listing')
 
         for order in orders:
             notify_rental_reminder(order, days_left=days)

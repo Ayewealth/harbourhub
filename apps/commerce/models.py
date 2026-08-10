@@ -157,11 +157,6 @@ class Order(models.Model):
         CANCELLED = "cancelled", _("Cancelled")
 
     order_number = models.CharField(max_length=40, unique=True, db_index=True)
-    order_type = models.CharField(
-        max_length=16,
-        choices=OrderType.choices,
-        db_index=True,
-    )
     buyer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -199,12 +194,6 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    # Rental tracking (for hire/lease orders)
-    rental_start_date = models.DateField(null=True, blank=True)
-    rental_end_date = models.DateField(null=True, blank=True)
-    rental_duration_days = models.PositiveIntegerField(null=True, blank=True)
-    pickup_scheduled_date = models.DateField(null=True, blank=True)
-
     # Delivery info
     delivery_address = models.TextField(blank=True)
     delivery_contact_name = models.CharField(max_length=100, blank=True)
@@ -219,6 +208,43 @@ class Order(models.Model):
         max_digits=14, decimal_places=2, null=True, blank=True)
     delivery_fee = models.DecimalField(
         max_digits=14, decimal_places=2, default=0)
+
+    @property
+    def listing(self):
+        first_item = self.items.first()
+        return first_item.listing if first_item else None
+
+
+
+
+    class Meta:
+        db_table = "commerce_orders"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["-created_at"]),
+        ]
+
+    def __str__(self):
+        return self.order_number
+
+
+class OrderItem(models.Model):
+    """Individual item within a vendor order."""
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    listing = models.ForeignKey('listings.Listing', on_delete=models.SET_NULL, null=True, related_name='order_items')
+    quote_request = models.ForeignKey('commerce.QuoteRequest', on_delete=models.SET_NULL, null=True, blank=True)
+    purchase_type = models.CharField(max_length=16, choices=Order.OrderType.choices)
+    quantity = models.PositiveIntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=14, decimal_places=2)
+    delivery_detail = models.ForeignKey('accounts.DeliveryDetail', on_delete=models.SET_NULL, null=True, blank=True)
+    
+    duration_days = models.PositiveIntegerField(null=True, blank=True)
+    rental_start_date = models.DateField(null=True, blank=True)
+    rental_end_date = models.DateField(null=True, blank=True)
+    pickup_scheduled_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        db_table = "commerce_order_items"
 
     @property
     def rental_days_total(self):
@@ -242,33 +268,6 @@ class Order(models.Model):
         if total and elapsed is not None:
             return round((elapsed / total) * 100, 1)
         return 0
-
-    class Meta:
-        db_table = "commerce_orders"
-        ordering = ["-created_at"]
-        indexes = [
-            models.Index(fields=["order_type", "-placed_at"]),
-            models.Index(fields=["-created_at"]),
-        ]
-
-    def __str__(self):
-        return self.order_number
-
-
-class OrderItem(models.Model):
-    """Individual item within a vendor order."""
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
-    listing = models.ForeignKey('listings.Listing', on_delete=models.SET_NULL, null=True, related_name='order_items')
-    quote_request = models.ForeignKey('commerce.QuoteRequest', on_delete=models.SET_NULL, null=True, blank=True)
-    purchase_type = models.CharField(max_length=16, choices=Order.OrderType.choices)
-    quantity = models.PositiveIntegerField(default=1)
-    unit_price = models.DecimalField(max_digits=14, decimal_places=2)
-    delivery_detail = models.ForeignKey('accounts.DeliveryDetail', on_delete=models.SET_NULL, null=True, blank=True)
-    
-    duration_days = models.PositiveIntegerField(null=True, blank=True)
-
-    class Meta:
-        db_table = "commerce_order_items"
 
     @property
     def subtotal(self):

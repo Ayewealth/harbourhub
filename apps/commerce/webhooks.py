@@ -144,7 +144,7 @@ class PaystackWebhookView(APIView):
             store=order.store,
             order=order,
             listing=order.items.first().listing if order.items.exists() else None,
-            earning_type=order.order_type,
+            earning_type=order.items.first().purchase_type if order.items.exists() else 'buy',
             gross_amount=order.subtotal,
             commission_rate=getattr(
                 order.store, 'commission_rate', 5.00) if order.store else 5.00,

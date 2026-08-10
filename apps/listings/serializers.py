@@ -462,7 +462,7 @@ class PublicRecentSaleSerializer(serializers.Serializer):
     listing_title = serializers.CharField(source="listing.title", read_only=True)
     store_name = serializers.CharField(source="order.store.name", read_only=True)
     store_slug = serializers.CharField(source="order.store.slug", read_only=True)
-    order_type = serializers.CharField(source="order.order_type", read_only=True)
+    order_type = serializers.CharField(source="purchase_type", read_only=True)
     total_amount = serializers.DecimalField(source="order.total_amount", max_digits=14, decimal_places=2, read_only=True)
     currency = serializers.CharField(source="order.currency", read_only=True)
     placed_at = serializers.DateTimeField(source="order.placed_at", read_only=True)

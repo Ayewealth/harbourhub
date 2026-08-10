@@ -31,7 +31,7 @@ class OrderFilter(django_filters.FilterSet):
     status = django_filters.CharFilter(
         field_name="status", lookup_expr="iexact")
     order_type = django_filters.CharFilter(
-        field_name="order_type", lookup_expr="iexact")
+        field_name="items__purchase_type", lookup_expr="iexact")
     buyer = django_filters.NumberFilter(field_name="buyer_id")
     seller = django_filters.NumberFilter(field_name="seller_id")
     date_from = django_filters.DateFilter(method="filter_date_from")
@@ -39,7 +39,7 @@ class OrderFilter(django_filters.FilterSet):
 
     class Meta:
         model = Order
-        fields = ["status", "order_type", "buyer", "seller"]
+        fields = ["status", "buyer", "seller"]
 
     def filter_date_from(self, queryset, name, value):
         if not value:

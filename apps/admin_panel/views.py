@@ -724,7 +724,7 @@ class AdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         from apps.commerce.models import Order
-        return Order.objects.select_related('buyer', 'listing').all()
+        return Order.objects.select_related('buyer').prefetch_related('items__listing').all()
 
     @extend_schema(
         summary="Order statistics for dashboard cards",
