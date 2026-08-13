@@ -43,9 +43,12 @@ def initialize_transaction(email: str, amount_kobo: int,
         if data.get("status"):
             return data["data"]
         logger.error("Paystack initialize failed: %s", data)
+        raise ValueError(data.get("message", "Paystack initialization failed"))
+    except ValueError:
+        raise
     except Exception as exc:
         logger.exception("Paystack initialize error: %s", exc)
-    return None
+        raise ValueError(f"Paystack request failed: {str(exc)}")
 
 
 def verify_transaction(reference: str) -> dict | None:

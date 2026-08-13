@@ -529,6 +529,10 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
     listing_title = serializers.CharField(source="listing.title", default="")
     buyer = serializers.SerializerMethodField()
     seller = serializers.SerializerMethodField()
+    estimated_delivery = serializers.SerializerMethodField()
+    dispute = serializers.SerializerMethodField()
+    timeline = serializers.SerializerMethodField()
+
     class Meta:
         model = Order
         fields = (
@@ -543,7 +547,6 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
             "timeline",
             "tracking_id",
             "delivery_carrier",
-            "carrier",
         )
 
     @extend_schema_field(inline_serializer(name='OrderBuyer', fields={'name': serializers.CharField(), 'email': serializers.EmailField()}))

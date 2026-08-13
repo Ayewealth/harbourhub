@@ -851,21 +851,20 @@ class CheckoutView(APIView):
             status=Payment.Status.PENDING,
         )
 
-        paystack_data = initialize_transaction(
-            email=request.user.email,
-            amount_kobo=int(grand_total * 100),
-            reference=reference,
-            metadata={'checkout_session_id': checkout_session.id},
-            callback_url=settings.PAYSTACK_CALLBACK_URL,
-        )
-
-        if paystack_data:
+        try:
+            paystack_data = initialize_transaction(
+                email=request.user.email,
+                amount_kobo=int(grand_total * 100),
+                reference=reference,
+                metadata={'checkout_session_id': checkout_session.id},
+                callback_url=settings.PAYSTACK_CALLBACK_URL,
+            )
             payment.authorization_url = paystack_data.get('authorization_url', '')
             payment.paystack_access_code = paystack_data.get('access_code', '')
             payment.gateway_response = paystack_data
             payment.save(update_fields=['authorization_url', 'paystack_access_code', 'gateway_response'])
-        else:
-            raise serializers.ValidationError("Failed to initialize payment gateway. Please check your Paystack API keys or try again later.")
+        except ValueError as e:
+            raise serializers.ValidationError(f"Payment gateway error: {str(e)}")
 
         # Remove checked out items from cart
         cart_items.delete()
