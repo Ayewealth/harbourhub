@@ -859,6 +859,8 @@ class CheckoutView(APIView):
                 metadata={'checkout_session_id': checkout_session.id},
                 callback_url=settings.PAYSTACK_CALLBACK_URL,
             )
+            if not paystack_data:
+                raise ValueError("Failed to initialize payment gateway")
             payment.authorization_url = paystack_data.get('authorization_url', '')
             payment.paystack_access_code = paystack_data.get('access_code', '')
             payment.gateway_response = paystack_data

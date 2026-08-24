@@ -15,18 +15,19 @@ def _headers():
         "Content-Type": "application/json",
     }
 
-payload = {
-    "email": "test@example.com",
-    "amount": 0,
-    "reference": "TEST-REF-ZERO-AMOUNT",
-    "metadata": {"custom": "field"},
-}
+if __name__ == '__main__':
+    payload = {
+        "email": "test@example.com",
+        "amount": 0,
+        "reference": "TEST-REF-ZERO-AMOUNT",
+        "metadata": {"custom": "field"},
+    }
 
-response = requests.post(
-    f"{PAYSTACK_BASE_URL}/transaction/initialize",
-    json=payload,
-    headers=_headers(),
-    timeout=30
-)
-print("Status Code:", response.status_code)
-print("Response:", response.json())
+    response = requests.post(
+        f"{PAYSTACK_BASE_URL}/transaction/initialize",
+        json=payload,
+        headers=_headers(),
+        timeout=30
+    )
+    print("Status Code:", response.status_code)
+    print("Response:", response.json())
