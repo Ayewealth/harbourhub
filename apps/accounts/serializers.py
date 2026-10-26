@@ -35,6 +35,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         allow_blank=True,
         style={'input_type': 'password'}
     )
+    role = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = User
@@ -46,6 +47,13 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             'email': {'required': True},
             'full_name': {'required': True},
         }
+
+    def validate_role(self, value):
+        if value and value != User.Role.BUYER:
+            raise serializers.ValidationError(
+                "Registration always creates a buyer account. Use seller onboarding."
+            )
+        return User.Role.BUYER
 
     def validate(self, attrs):
         email = attrs.get("email")
@@ -81,8 +89,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop("password_confirm", None)
+        validated_data.pop("role", None)
         password = validated_data.pop("password", None)
-        email = validated_data.get("email").lower().strip()
+        validated_data["email"] = validated_data["email"].lower().strip()
+        validated_data["role"] = User.Role.BUYER
 
         user = User.objects.create_user(
             password=password or None,

@@ -3,9 +3,15 @@
 Import order matters: settings.py reads .env, so the test module must import it
 first and then override anything that would reach a real service.
 """
+import os
 import tempfile
 
-from .settings import *  # noqa: F401,F403
+# Disable Sentry before settings.py imports it: the local .env contains a real
+# DSN and the SDK would flush failed events at process exit, slowing every run.
+os.environ["SENTRY_DSN"] = ""
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+
+from .settings import *  # noqa: E402,F401,F403
 
 DEBUG = False
 
