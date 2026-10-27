@@ -54,6 +54,14 @@ from .serializers import (
 )
 
 
+# Cart purchase types use ``rent``; orders expose ``hire`` for the same thing.
+PURCHASE_TYPE_MAP = {
+    CartItem.PurchaseType.BUY: Order.OrderType.BUY,
+    CartItem.PurchaseType.RENT: Order.OrderType.HIRE,
+    CartItem.PurchaseType.LEASE: Order.OrderType.LEASE,
+}
+
+
 @extend_schema_view(
     get=extend_schema(summary="List quote requests"),
     post=extend_schema(
@@ -746,7 +754,7 @@ class CartItemView(APIView):
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    ESCROW_RATE = Decimal('0.05')
+    ESCROW_RATE = Decimal('0.00')  # buyers pay no platform fee; commission is seller-side
 
     @transaction.atomic
     def post(self, request):
@@ -767,8 +775,8 @@ class CheckoutView(APIView):
         grand_total = Decimal('0.00')
         for store_key, items in store_groups.items():
             subtotal = sum(Decimal(str(convert_currency(item.subtotal, 'NGN', source_currency=item.listing.currency)[0])) for item in items)
-            escrow_fee = (subtotal * self.ESCROW_RATE).quantize(Decimal('0.01'))
-            total = subtotal + escrow_fee
+            escrow_fee = Decimal('0.00')
+            total = subtotal
             grand_total += total
 
         from apps.commerce.models import CheckoutSession, OrderItem
@@ -784,8 +792,8 @@ class CheckoutView(APIView):
         # 3. Create Orders and OrderItems
         for store_key, items in store_groups.items():
             subtotal = sum(Decimal(str(convert_currency(item.subtotal, 'NGN', source_currency=item.listing.currency)[0])) for item in items)
-            escrow_fee = (subtotal * self.ESCROW_RATE).quantize(Decimal('0.01'))
-            total = subtotal + escrow_fee
+            escrow_fee = Decimal('0.00')
+            total = subtotal
 
             first_item = items[0]
             seller = first_item.listing.user
@@ -820,7 +828,7 @@ class CheckoutView(APIView):
                     order=order,
                     listing=item.listing,
                     quote_request=item.quote_request,
-                    purchase_type=item.purchase_type,
+                    purchase_type=PURCHASE_TYPE_MAP[item.purchase_type],
                     quantity=item.quantity,
                     unit_price=converted_unit_price,
                     delivery_detail=item.delivery_detail,

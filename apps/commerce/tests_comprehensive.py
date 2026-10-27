@@ -98,8 +98,8 @@ class ComprehensiveCommerceTests(APITestCase):
             payment = Payment.objects.first()
             self.assertEqual(payment.authorization_url, 'https://checkout.paystack.com/mock')
             
-            # The grand total (35000 + 5% escrow (1750) = 36750.00)
-            self.assertEqual(payment.amount, Decimal('36750.00'))
+            # Buyers pay no platform fee: the total is the item subtotal.
+            self.assertEqual(payment.amount, Decimal('35000.00'))
 
     def test_checkout_paystack_failure_rollback(self):
         """Test that if Paystack fails to initialize, the transaction rolls back."""
