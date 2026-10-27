@@ -106,10 +106,9 @@ class PayoutCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         user = self.context['request'].user
-        # Check wallet available balance
-        try:
-            wallet = VendorWallet.objects.get(user=user)
-        except VendorWallet.DoesNotExist:
+        store = getattr(user, 'store', None)
+        wallet = VendorWallet.objects.filter(user=user, store=store).first()
+        if wallet is None:
             raise serializers.ValidationError("Wallet not found.")
 
         if attrs['amount'] > wallet.available_balance:

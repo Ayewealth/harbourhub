@@ -4,8 +4,6 @@ import json
 import logging
 
 from django.conf import settings
-from django.db import transaction
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework.response import Response
 from rest_framework import status, serializers
@@ -132,122 +130,36 @@ class PaystackWebhookView(APIView):
         ).update(status=Payment.Status.FAILED)
         return bool(updated)
 
-    @transaction.atomic
-    def _handle_transfer_success(self, data: dict):
+    def _handle_transfer_success(self, data: dict) -> bool:
         """Vendor payout was successful."""
-        from apps.financials.models import Payout, VendorEarning, VendorWallet, WalletTransaction
+        from apps.financials.models import Payout
+        from apps.financials.services import settle_payout
 
         reference = data.get('reference')
-        if not reference:
-            return
-
-        try:
-            payout = Payout.objects.get(reference=reference)
-        except Payout.DoesNotExist:
+        payout = Payout.objects.filter(reference=reference).first()
+        if payout is None:
             logger.warning(
                 "Webhook: Payout not found for reference %s", reference)
-            return
-
-        payout.status = Payout.Status.PAID
-        payout.processed_at = timezone.now()
-        payout.save(update_fields=['status', 'processed_at'])
-
-        # Mark vendor earnings as paid out
-        VendorEarning.objects.filter(
-            payout=payout
-        ).update(status=VendorEarning.Status.PAID_OUT)
-
-        # Update wallet total withdrawn
-        wallet, _ = VendorWallet.objects.get_or_create(user=payout.vendor)
-        wallet.total_withdrawn += payout.amount
-        wallet.save(update_fields=['total_withdrawn'])
-
+            return False
+        settle_payout(payout)
         logger.info(
             "Transfer success processed for reference %s", reference)
+        return True
 
-    @transaction.atomic
-    def _handle_transfer_failed(self, data: dict):
+    def _handle_transfer_failed(self, data: dict) -> bool:
         """Vendor payout failed."""
-        from apps.financials.models import Payout, VendorEarning, VendorWallet, WalletTransaction
+        from apps.financials.models import Payout
+        from apps.financials.services import fail_payout
 
         reference = data.get('reference')
-        if not reference:
-            return
-
-        try:
-            payout = Payout.objects.get(reference=reference)
-        except Payout.DoesNotExist:
-            return
-
-        payout.status = Payout.Status.FAILED
-        payout.failure_reason = data.get(
-            'gateway_response', 'Transfer failed')
-        payout.save(update_fields=['status', 'failure_reason'])
-
-        # Re-credit wallet
-        wallet, _ = VendorWallet.objects.get_or_create(user=payout.vendor)
-        wallet.available_balance += payout.amount
-        wallet.save(update_fields=['available_balance'])
-
-        # Log transaction
-        WalletTransaction.objects.create(
-            wallet=wallet,
-            transaction_type=WalletTransaction.Type.REFUND,
-            amount=payout.amount,
-            description=f"Refunded payout {payout.reference} (Transfer failed)",
-            reference_id=str(payout.id)
-        )
-
-        # Also release earnings back (historical tracking)
-        VendorEarning.objects.filter(
-            payout=payout
-        ).update(
-            status=VendorEarning.Status.AVAILABLE,
-            payout=None
-        )
-
+        payout = Payout.objects.filter(reference=reference).first()
+        if payout is None:
+            return False
+        fail_payout(payout, data.get('reason') or 'Transfer failed')
         logger.info(
             "Transfer failed processed for reference %s", reference)
+        return True
 
-    @transaction.atomic
-    def _handle_transfer_reversed(self, data: dict):
+    def _handle_transfer_reversed(self, data: dict) -> bool:
         """Transfer was reversed, re-credit vendor balance."""
-        from apps.financials.models import Payout, VendorEarning, VendorWallet, WalletTransaction
-
-        reference = data.get('reference')
-        if not reference:
-            return
-
-        try:
-            payout = Payout.objects.get(reference=reference)
-        except Payout.DoesNotExist:
-            return
-
-        payout.status = Payout.Status.FAILED
-        payout.failure_reason = "Transfer reversed by Paystack"
-        payout.save(update_fields=['status', 'failure_reason'])
-
-        # Re-credit wallet
-        wallet, _ = VendorWallet.objects.get_or_create(user=payout.vendor)
-        wallet.available_balance += payout.amount
-        wallet.save(update_fields=['available_balance'])
-
-        # Log transaction
-        WalletTransaction.objects.create(
-            wallet=wallet,
-            transaction_type=WalletTransaction.Type.REFUND,
-            amount=payout.amount,
-            description=f"Refunded payout {payout.reference} (Transfer reversed)",
-            reference_id=str(payout.id)
-        )
-
-        # Re-credit earnings back
-        VendorEarning.objects.filter(
-            payout=payout
-        ).update(
-            status=VendorEarning.Status.AVAILABLE,
-            payout=None
-        )
-
-        logger.info(
-            "Transfer reversed for reference %s", reference)
+        return self._handle_transfer_failed(data)

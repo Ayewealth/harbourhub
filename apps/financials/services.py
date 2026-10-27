@@ -156,3 +156,139 @@ def reverse_earning(earning, reason: str):
         reference_id=str(earning.id),
     )
     return earning
+
+
+@transaction.atomic
+def allocate_payout(payout):
+    """FIFO-allocate released earnings to a payout. Returns the allocated total."""
+    from django.db.models import Sum
+
+    from .models import Payout, PayoutAllocation, VendorEarning
+
+    payout = Payout.objects.select_for_update().get(pk=payout.pk)
+    remaining = money(payout.amount)
+    allocated = ZERO
+
+    open_statuses = (
+        Payout.Status.REQUESTED,
+        Payout.Status.PROCESSING,
+        Payout.Status.FROZEN,
+    )
+
+    earnings = (
+        VendorEarning.objects.select_for_update()
+        .filter(
+            vendor=payout.vendor,
+            store=payout.store,
+            status__in=(
+                VendorEarning.Status.AVAILABLE,
+                VendorEarning.Status.PARTIALLY_RELEASED,
+            ),
+        )
+        .order_by('available_at', 'created_at')
+    )
+
+    for earning in earnings:
+        if remaining <= ZERO:
+            break
+        open_allocated = (
+            earning.payout_allocations.filter(
+                payout__status__in=open_statuses
+            ).aggregate(total=Sum('amount'))['total']
+            or ZERO
+        )
+        available = money(
+            earning.released_amount - earning.paid_out_amount - open_allocated)
+        if available <= ZERO:
+            continue
+        take = min(available, remaining)
+        PayoutAllocation.objects.create(
+            payout=payout, earning=earning, amount=take)
+        remaining -= take
+        allocated += take
+
+    if remaining > ZERO:
+        raise ValueError(
+            f'Payout {payout.pk} is under-allocated by {remaining}; '
+            'wallet balance is inconsistent.'
+        )
+
+    return allocated
+
+
+@transaction.atomic
+def settle_payout(payout):
+    """Mark a payout paid and settle only its allocations."""
+    from .models import Payout, VendorEarning, VendorWallet
+
+    payout = Payout.objects.select_for_update().get(pk=payout.pk)
+    if payout.status == Payout.Status.PAID:
+        return payout
+
+    for allocation in payout.allocations.select_related('earning'):
+        earning = VendorEarning.objects.select_for_update().get(
+            pk=allocation.earning_id)
+        earning.paid_out_amount = money(
+            earning.paid_out_amount + allocation.amount)
+        if earning.paid_out_amount >= earning.net_amount:
+            earning.status = VendorEarning.Status.PAID_OUT
+        elif earning.status == VendorEarning.Status.AVAILABLE:
+            earning.status = VendorEarning.Status.PARTIALLY_RELEASED
+        earning.save(update_fields=['paid_out_amount', 'status'])
+
+    wallet, _ = VendorWallet.objects.select_for_update().get_or_create(
+        user=payout.vendor,
+        store=payout.store,
+        defaults={'currency': payout.currency},
+    )
+    wallet.total_withdrawn = money(wallet.total_withdrawn + payout.amount)
+    wallet.save(update_fields=['total_withdrawn'])
+
+    payout.status = Payout.Status.PAID
+    payout.processed_at = timezone.now()
+    payout.save(update_fields=['status', 'processed_at'])
+    return payout
+
+
+@transaction.atomic
+def fail_payout(payout, reason: str):
+    """Reverse allocations and re-credit the reserved amount."""
+    from .models import Payout, VendorEarning, VendorWallet, WalletTransaction
+
+    payout = Payout.objects.select_for_update().get(pk=payout.pk)
+    if payout.status in (Payout.Status.FAILED, Payout.Status.PAID):
+        return payout
+
+    wallet, _ = VendorWallet.objects.select_for_update().get_or_create(
+        user=payout.vendor,
+        store=payout.store,
+        defaults={'currency': payout.currency},
+    )
+    VendorWallet.objects.filter(pk=wallet.pk).update(
+        available_balance=F('available_balance') + payout.amount
+    )
+
+    for allocation in payout.allocations.select_related('earning'):
+        earning = VendorEarning.objects.select_for_update().get(
+            pk=allocation.earning_id)
+        if earning.status == VendorEarning.Status.PROCESSING:
+            earning.status = (
+                VendorEarning.Status.AVAILABLE
+                if earning.released_amount >= earning.net_amount
+                else VendorEarning.Status.PARTIALLY_RELEASED
+            )
+            earning.save(update_fields=['status'])
+
+    payout.allocations.all().delete()
+    payout.status = Payout.Status.FAILED
+    payout.failure_reason = reason
+    payout.save(update_fields=['status', 'failure_reason'])
+
+    WalletTransaction.objects.create(
+        wallet=wallet,
+        transaction_type=WalletTransaction.Type.REFUND,
+        amount=payout.amount,
+        description=f'Re-credited failed payout {payout.reference}',
+        reference_id=str(payout.pk),
+    )
+    return payout

@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, F
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from dateutil.relativedelta import relativedelta
@@ -142,30 +142,45 @@ class PayoutListCreateView(generics.ListCreateAPIView):
         ).select_related('bank_account')
 
     def perform_create(self, serializer):
+        from rest_framework.exceptions import ValidationError
+
         from .models import VendorWallet, WalletTransaction
+        from .services import allocate_payout
+
         user = self.request.user
+        amount = Decimal(str(self.request.data.get('amount', 0)))
+        if amount <= 0:
+            raise ValidationError(
+                {'amount': 'Amount must be greater than zero.'})
 
         with transaction.atomic():
-            wallet = VendorWallet.objects.select_for_update().get(user=user)
+            store = getattr(user, 'store', None)
+            if store is None:
+                raise ValidationError(
+                    {'store': 'No store is associated with this account.'})
 
-            payout_amount = Decimal(self.request.data.get('amount', 0))
-            if wallet.available_balance < payout_amount:
-                raise Exception("Insufficient wallet balance for this payout.")
+            wallet, _ = VendorWallet.objects.select_for_update().get_or_create(
+                user=user, store=store, defaults={'currency': 'NGN'}
+            )
+            if wallet.available_balance < amount:
+                raise ValidationError(
+                    {'amount': 'Insufficient available balance.'})
 
             payout = serializer.save(
                 vendor=user,
-                reference=f"PAY-{uuid.uuid4().hex[:12].upper()}"
+                store=store,
+                amount=amount,
+                reference=f"PO-{uuid.uuid4().hex[:12].upper()}",
             )
+            allocate_payout(payout)
 
-            # Deduct from wallet
-            wallet.available_balance -= payout.amount
-            wallet.save(update_fields=['available_balance'])
-
-            # Log transaction
+            VendorWallet.objects.filter(pk=wallet.pk).update(
+                available_balance=F('available_balance') - amount
+            )
             WalletTransaction.objects.create(
                 wallet=wallet,
                 transaction_type=WalletTransaction.Type.PAYOUT,
-                amount=-payout.amount,
+                amount=-amount,
                 description=f"Payout request {payout.reference}",
                 reference_id=str(payout.id)
             )

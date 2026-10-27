@@ -689,7 +689,8 @@ class AdminMarkPayoutPaidView(APIView):
         }
     )
     def post(self, request, pk):
-        from apps.financials.models import Payout, VendorEarning
+        from apps.financials.models import Payout
+        from apps.financials.services import settle_payout
 
         payout = get_object_or_404(Payout, pk=pk)
 
@@ -698,16 +699,13 @@ class AdminMarkPayoutPaidView(APIView):
                 {'error': 'Payout already marked as paid.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if not payout.allocations.exists():
+            return Response(
+                {'error': 'Payout has no allocations and cannot be settled.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        payout.status = Payout.Status.PAID
-        payout.processed_at = timezone.now()
-        payout.save(update_fields=['status', 'processed_at'])
-
-        # Mark earnings as paid out
-        VendorEarning.objects.filter(
-            vendor=payout.vendor,
-            status=VendorEarning.Status.AVAILABLE
-        ).update(status=VendorEarning.Status.PAID_OUT)
+        settle_payout(payout)
 
         from apps.notifications.utils import notify_payout_processed
         notify_payout_processed(payout)
