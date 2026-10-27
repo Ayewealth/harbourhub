@@ -73,7 +73,6 @@ LOCAL_APPS = [
     "apps.inquiries",
     "apps.admin_panel",
     "apps.analytics",
-    "apps.health",
     "apps.store",
     "apps.reviews",
     "apps.commerce",
