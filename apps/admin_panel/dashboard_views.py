@@ -6,8 +6,13 @@ from rest_framework.views import APIView
 
 from apps.accounts.models import User
 
-from .auth import can_edit_dashboard_matrix, has_admin_module_permission
+from .auth import (
+    HasAdminModulePermission,
+    can_edit_dashboard_matrix,
+    has_admin_module_permission,
+)
 from .constants import AdminModule, StaffRole
+from .permissions import IsDashboardStaff
 from .dashboard_serializers import (
     AdminUserListSerializer,
     InviteAdminSerializer,
@@ -25,7 +30,9 @@ User = get_user_model()
 class RolesMatrixView(APIView):
     """GET default matrix from DB; PUT bulk-update (super admin / matrix editor)."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.USERS_MANAGEMENT
+    admin_require_manage = True
 
     @extend_schema(
         summary="Update roles & permissions matrix",
@@ -103,7 +110,9 @@ class MeDashboardPermissionsView(APIView):
 
 
 class InviteAdminView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.USERS_MANAGEMENT
+    admin_require_manage = True
 
     @extend_schema(
         summary="Invite dashboard admin",
@@ -157,14 +166,12 @@ Invite a new or existing user as a dashboard admin.
 class DashboardAdminListView(generics.ListAPIView):
     """Staff users with an AdminProfile (invited admins)."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.USERS_MANAGEMENT
+    admin_require_manage = True
     serializer_class = AdminUserListSerializer
 
     def get_queryset(self):
-        if not has_admin_module_permission(
-            self.request.user, AdminModule.VENDORS_ONBOARDING.value, require_manage=False
-        ) and not can_edit_dashboard_matrix(self.request.user):
-            return User.objects.none()
         return (
             User.objects.filter(admin_profile__isnull=False)
             .select_related("admin_profile")
@@ -173,7 +180,9 @@ class DashboardAdminListView(generics.ListAPIView):
 
 
 class DashboardAdminDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.USERS_MANAGEMENT
+    admin_require_manage = True
 
     @extend_schema(
         request=None,
@@ -234,7 +243,13 @@ class AcceptAdminInviteView(APIView):
 
 
 class PlatformConfigView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.OVERVIEW_DASHBOARD
+    admin_require_manage = False
+
+    def get_permissions(self):
+        self.admin_require_manage = self.request.method not in permissions.SAFE_METHODS
+        return super().get_permissions()
 
     @extend_schema(responses={200: PlatformConfigSerializer, 403: inline_serializer(name='PlatformConfigError', fields={'error': serializers.CharField()})})
     def get(self, request):
@@ -272,7 +287,9 @@ class PlatformConfigView(APIView):
 
 class AdminUserEditView(APIView):
     """Edit admin role or disable/enable an admin."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.USERS_MANAGEMENT
+    admin_require_manage = True
 
     @extend_schema(
         request=inline_serializer(name='AdminUserEditRequest', fields={'staff_role': serializers.CharField(required=False), 'status': serializers.CharField(required=False)}),

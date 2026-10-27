@@ -6,7 +6,6 @@ from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.permissions import IsAdminUser
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiTypes, inline_serializer, OpenApiParameter, extend_schema_field
 from rest_framework.views import APIView
 from rest_framework import serializers
@@ -20,8 +19,9 @@ from .serializers import (
     AdminActionLogSerializer,
     AdminOrderListSerializer
 )
-from .permissions import IsAdminOrSuperAdmin
+from .permissions import IsDashboardStaff
 from .auth import has_admin_module_permission, HasAdminModulePermission
+from .constants import AdminModule
 from .tasks import send_verification_decision_email
 
 from apps.accounts.models import VerificationRequest
@@ -41,6 +41,9 @@ from apps.accounts.serializers import VerificationRequestSerializer
 class ReportedContentViewSet(viewsets.ModelViewSet):
     """Content reporting system for users to report inappropriate content."""
 
+    admin_module = AdminModule.SUPPORTS
+    admin_require_manage = True
+
     queryset = ReportedContent.objects.all().select_related(
         "reported_by", "reviewed_by"
     ).order_by("-created_at")
@@ -55,10 +58,10 @@ class ReportedContentViewSet(viewsets.ModelViewSet):
         return ReportedContentSerializer
 
     def get_permissions(self):
-        """Only admins can view/manage; all authenticated users can create."""
+        """Any authenticated user can report; only Supports managers can review."""
         if self.action == "create":
             return [permissions.IsAuthenticated()]
-        return [IsAdminUser()]
+        return [IsDashboardStaff(), HasAdminModulePermission()]
 
     def get_queryset(self):
         """Admins see all; users only create (no listing)."""
@@ -91,7 +94,7 @@ class ReportedContentViewSet(viewsets.ModelViewSet):
         summary="Resolve reported content",
         description="Mark reported content as resolved with optional admin notes."
     )
-    @action(detail=True, methods=["post"], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
         """Resolve a reported content entry."""
         report = self.get_object()
@@ -117,7 +120,7 @@ class ReportedContentViewSet(viewsets.ModelViewSet):
         summary="Dismiss reported content",
         description="Dismiss the reported content as invalid."
     )
-    @action(detail=True, methods=["post"], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=["post"])
     def dismiss(self, request, pk=None):
         """Dismiss a report as invalid or spam."""
         report = self.get_object()
@@ -152,7 +155,9 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
     queryset = VerificationRequest.objects.select_related(
         "user", "reviewed_by").all()
     serializer_class = VerificationRequestSerializer
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.VENDORS_ONBOARDING
+    admin_require_manage = True
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["status"]
     search_fields = ["user__email", "company_name"]
@@ -224,7 +229,9 @@ class VerificationAdminViewSet(viewsets.ModelViewSet):
 
 class AdminVendorListView(generics.ListAPIView):
     """Admin view of all vendors with metrics."""
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.VENDORS_ONBOARDING
+    admin_require_manage = False
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ['user__email', 'name', 'user__company']
 
@@ -291,7 +298,9 @@ class AdminVendorListView(generics.ListAPIView):
 
 class AdminVendorActionView(APIView):
     """Approve, reject, or suspend a vendor."""
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.VENDORS_ONBOARDING
+    admin_require_manage = True
 
     @extend_schema(
         request=inline_serializer(name='AdminVendorActionRequest', fields={'reason': serializers.CharField(required=False, allow_blank=True), 'notes': serializers.CharField(required=False, allow_blank=True), 'duration': serializers.CharField(required=False, allow_blank=True)}),
@@ -384,7 +393,9 @@ class AdminVendorActionView(APIView):
 
 class AdminListingListView(generics.ListAPIView):
     """Admin view of all listings."""
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.LISTINGS_MANAGEMENT
+    admin_require_manage = False
     filter_backends = [
         DjangoFilterBackend,
         filters.SearchFilter,
@@ -407,7 +418,9 @@ class AdminListingListView(generics.ListAPIView):
 
 class AdminListingActionView(APIView):
     """Approve, reject, or deactivate a listing."""
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.LISTINGS_MANAGEMENT
+    admin_require_manage = True
 
     @extend_schema(
         request=inline_serializer(name='AdminListingActionRequest', fields={'reason': serializers.CharField(required=False, allow_blank=True), 'notes': serializers.CharField(required=False, allow_blank=True)}),
@@ -501,7 +514,9 @@ class AdminListingActionView(APIView):
 
 class AdminPaymentListView(generics.ListAPIView):
     """Admin view of all payments/transactions."""
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.PAYMENTS_FINANCE
+    admin_require_manage = False
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     from apps.commerce.filters import PaymentFilter
     filterset_class = PaymentFilter
@@ -527,7 +542,9 @@ class AdminPaymentStatsView(APIView):
     Dedicated stats for Payment module cards.
     Supports ?date_from= and ?date_to= filtering.
     """
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.PAYMENTS_FINANCE
+    admin_require_manage = False
 
     @extend_schema(
         summary="Payment statistics for dashboard cards",
@@ -594,7 +611,9 @@ class AdminReportStatsView(APIView):
     """
     Dedicated stats for Analytics Reports tab.
     """
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.ANALYTICS
+    admin_require_manage = False
 
     @extend_schema(
         summary="Analytics reports metric cards",
@@ -658,7 +677,9 @@ class AdminReportStatsView(APIView):
 
 class AdminMarkPayoutPaidView(APIView):
     """Admin manually marks a payout as paid."""
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.PAYMENTS_FINANCE
+    admin_require_manage = True
 
     @extend_schema(
         request=None,
@@ -704,7 +725,9 @@ class AdminActivityViewSet(viewsets.ReadOnlyModelViewSet):
     """Admin view of platform activity logs."""
     queryset = AdminActionLog.objects.select_related('admin_user').all()
     serializer_class = AdminActionLogSerializer
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.OVERVIEW_DASHBOARD
+    admin_require_manage = False
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['action_type', 'admin_user']
     search_fields = ['description', 'admin_user__email']
@@ -714,7 +737,9 @@ class AdminActivityViewSet(viewsets.ReadOnlyModelViewSet):
 class AdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
     """Admin view of all platform orders."""
     serializer_class = AdminOrderListSerializer
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.ORDERS_BOOKINGS
+    admin_require_manage = False
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     from apps.commerce.filters import OrderFilter
     filterset_class = OrderFilter
@@ -847,7 +872,9 @@ class AdminAnalyticsExportView(APIView):
     """
     Export analytics data to CSV/XLSX.
     """
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.ANALYTICS
+    admin_require_manage = False
 
     @extend_schema(
         summary="Export analytics data",
@@ -879,7 +906,9 @@ class AdminGlobalSearchView(APIView):
     Global search for orders, listings, and vendors.
     Used by the top search bar.
     """
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.OVERVIEW_DASHBOARD
+    admin_require_manage = False
 
     @extend_schema(
         summary="Global admin search",
@@ -896,17 +925,35 @@ class AdminGlobalSearchView(APIView):
         from apps.commerce.models import Order
         from apps.accounts.models import User
 
-        listings = Listing.objects.filter(title__icontains=query)[:5]
-        orders = Order.objects.filter(order_number__icontains=query)[:5]
-        users = User.objects.filter(email__icontains=query)[:5]
+        can_view_listings = has_admin_module_permission(
+            request.user, AdminModule.LISTINGS_MANAGEMENT)
+        can_view_orders = has_admin_module_permission(
+            request.user, AdminModule.ORDERS_BOOKINGS)
+        can_view_vendors = has_admin_module_permission(
+            request.user, AdminModule.VENDORS_ONBOARDING)
 
         results = []
-        for l in listings:
-            results.append({'type': 'listing', 'id': l.id, 'title': l.title})
-        for o in orders:
-            results.append({'type': 'order', 'id': o.id, 'title': o.order_number})
-        for u in users:
-            results.append({'type': 'vendor', 'id': u.id, 'title': u.email})
+        if can_view_listings:
+            for listing in Listing.objects.filter(title__icontains=query)[:5]:
+                results.append({
+                    'type': 'listing',
+                    'id': listing.id,
+                    'title': listing.title,
+                })
+        if can_view_orders:
+            for order in Order.objects.filter(order_number__icontains=query)[:5]:
+                results.append({
+                    'type': 'order',
+                    'id': order.id,
+                    'title': order.order_number,
+                })
+        if can_view_vendors:
+            for user in User.objects.filter(email__icontains=query)[:5]:
+                results.append({
+                    'type': 'vendor',
+                    'id': user.id,
+                    'title': user.email,
+                })
 
         return Response({'results': results})
 
@@ -918,7 +965,9 @@ class AdminOrderTrackingView(generics.RetrieveAPIView):
     """
     Admin-only order tracking detail view with escrow and dispute highlights.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.ORDERS_BOOKINGS
+    admin_require_manage = False
     serializer_class = AdminOrderTrackingSerializer
 
     def get_object(self):
@@ -997,8 +1046,9 @@ class AdminConversationListView(generics.ListAPIView):
     """
     Returns a paginated list of all active buyer-seller chat threads across the platform.
     """
-    permission_classes = [permissions.IsAuthenticated, HasAdminModulePermission]
-    admin_module = "messages_monitoring"
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.MESSAGES_MONITORING
+    admin_require_manage = False
     serializer_class = AdminConversationListSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = [
@@ -1016,8 +1066,9 @@ class AdminConversationMessageHistoryView(generics.ListAPIView):
     """
     Returns the full paginated, chronologically ordered message history for a specific conversation.
     """
-    permission_classes = [permissions.IsAuthenticated, HasAdminModulePermission]
-    admin_module = "messages_monitoring"
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.MESSAGES_MONITORING
+    admin_require_manage = False
     serializer_class = AdminMessageSerializer
 
     def get_queryset(self):
@@ -1036,7 +1087,7 @@ class PublicJobListingViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Public viewset to list active job openings and retrieve a single job opening.
     """
-    permission_classes = [] # Public
+    permission_classes = []  # Public
     authentication_classes = []
     serializer_class = JobListingSerializer
 
@@ -1049,27 +1100,23 @@ class AdminJobListingViewSet(viewsets.ModelViewSet):
     """
     Admin management viewset for Job Listings.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.CAREERS
+    admin_require_manage = True
     serializer_class = JobListingSerializer
 
     def get_queryset(self):
         from .models import JobListing
         return JobListing.objects.all().order_by("-created_at")
 
-    def check_permissions(self, request):
-        super().check_permissions(request)
-        if not has_admin_module_permission(request.user, "careers", require_manage=True):
-            self.permission_denied(
-                request,
-                message="You do not have permission to manage careers."
-            )
-
 
 # ─── Admin User Management ────────────────────────────────────────────────────
 
 class AdminUserListView(generics.ListAPIView):
     """Admin view of all platform users (buyers, sellers, service providers)."""
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.USERS_MANAGEMENT
+    admin_require_manage = False
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = None  # set in __init__ to avoid circular imports
     search_fields = ['email', 'full_name', 'phone', 'company']
@@ -1096,7 +1143,9 @@ class AdminUserListView(generics.ListAPIView):
 
 class AdminUserActionView(APIView):
     """Suspend or resume a platform user."""
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.USERS_MANAGEMENT
+    admin_require_manage = True
 
     @extend_schema(
         request=inline_serializer(name='AdminUserActionRequest', fields={'reason': serializers.CharField(required=False, allow_blank=True)}),

@@ -1,9 +1,15 @@
 from rest_framework import permissions
 
+from .auth import is_dashboard_staff
 
-class IsAdminOrSuperAdmin(permissions.BasePermission):
-    """Custom permission: only Admin or Super Admin users can access."""
+
+class IsDashboardStaff(permissions.BasePermission):
+    """Accept superusers, role=super_admin, and active AdminProfile rows."""
 
     def has_permission(self, request, view):
-        user = request.user
-        return user.is_authenticated and user.role in ["admin", "super_admin"]
+        return is_dashboard_staff(request.user)
+
+
+# Kept temporarily so existing imports keep working while every admin view is
+# migrated to IsDashboardStaff + HasAdminModulePermission.
+IsAdminOrSuperAdmin = IsDashboardStaff

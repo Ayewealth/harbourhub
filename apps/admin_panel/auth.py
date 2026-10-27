@@ -31,13 +31,15 @@ def has_admin_module_permission(
     Check VIEW (default) or MANAGE for a dashboard module slug
     (AdminModule value, e.g. 'listings_management').
     """
-    if not user.is_authenticated:
+    if not user or not user.is_authenticated:
         return False
     if user.is_superuser:
         return True
     role = get_dashboard_staff_role(user)
     if role is None:
         return False
+    if role == StaffRole.SUPER_ADMIN:
+        return True
     try:
         rp = RolePermission.objects.get(role=role, module=module)
     except RolePermission.DoesNotExist:
