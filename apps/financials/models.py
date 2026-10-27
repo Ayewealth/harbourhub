@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -49,6 +51,7 @@ class VendorEarning(models.Model):
 
     class Status(models.TextChoices):
         PENDING = 'pending', _('Pending')
+        PARTIALLY_RELEASED = 'partially_released', _('Partially Released')
         AVAILABLE = 'available', _('Available')
         PROCESSING = 'processing', _('Processing Payout')
         PAID_OUT = 'paid_out', _('Paid Out')
@@ -98,7 +101,7 @@ class VendorEarning(models.Model):
     )
     commission_rate = models.DecimalField(
         max_digits=5, decimal_places=2,
-        default=__import__('decimal').Decimal('5.00'),
+        default=Decimal('5.00'),
         help_text="Platform commission percentage"
     )
     commission_amount = models.DecimalField(
@@ -118,6 +121,14 @@ class VendorEarning(models.Model):
     available_at = models.DateTimeField(
         null=True, blank=True,
         help_text="When funds become available for payout"
+    )
+    released_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        help_text="Amount moved from pending to available",
+    )
+    paid_out_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        help_text="Amount settled in successful payouts",
     )
     is_disputed = models.BooleanField(
         default=False,
@@ -146,6 +157,14 @@ class VendorEarning(models.Model):
 
     def __str__(self):
         return f"Earning {self.pk} for {self.vendor}"
+
+    @property
+    def releasable_amount(self):
+        return max(self.net_amount - self.released_amount, Decimal('0.00'))
+
+    @property
+    def payable_amount(self):
+        return max(self.released_amount - self.paid_out_amount, Decimal('0.00'))
 
 
 class Payout(models.Model):
@@ -255,3 +274,22 @@ class WalletTransaction(models.Model):
     class Meta:
         db_table = 'wallet_transactions'
         ordering = ['-created_at']
+
+
+class PayoutAllocation(models.Model):
+    """Binds a slice of a payout to the earning it settles."""
+
+    payout = models.ForeignKey(
+        Payout, on_delete=models.CASCADE, related_name='allocations')
+    earning = models.ForeignKey(
+        VendorEarning, on_delete=models.PROTECT, related_name='payout_allocations')
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'payout_allocations'
+        unique_together = [('payout', 'earning')]
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.amount} of payout {self.payout_id} -> earning {self.earning_id}"
