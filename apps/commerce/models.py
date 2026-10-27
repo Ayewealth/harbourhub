@@ -428,6 +428,7 @@ class Payment(models.Model):
         PENDING = 'pending', _('Pending')
         SUCCESS = 'success', _('Success')
         FAILED = 'failed', _('Failed')
+        PARTIALLY_REFUNDED = 'partially_refunded', _('Partially refunded')
         REFUNDED = 'refunded', _('Refunded')
 
     class Gateway(models.TextChoices):
@@ -502,6 +503,40 @@ class WebhookEvent(models.Model):
 
     def __str__(self):
         return f"{self.provider}:{self.event_type}:{self.gateway_event_id}"
+
+
+class Refund(models.Model):
+    """A gateway refund against a payment."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        PROCESSED = "processed", _("Processed")
+        FAILED = "failed", _("Failed")
+
+    payment = models.ForeignKey(
+        Payment, on_delete=models.PROTECT, related_name="refunds")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(max_length=3, default="NGN")
+    reason = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20, choices=Status.choices,
+        default=Status.PENDING, db_index=True,
+    )
+    reference = models.CharField(max_length=100, unique=True, blank=True)
+    gateway_response = models.JSONField(default=dict, blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "refunds"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Refund {self.reference} - {self.amount} {self.currency}"
 
 
 class Dispute(models.Model):

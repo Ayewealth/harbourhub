@@ -23,7 +23,7 @@ from django.utils.decorators import method_decorator
 
 from apps.commerce.models import Order, OrderActivity
 from apps.commerce.paystack import initialize_transaction, verify_transaction
-from apps.admin_panel.auth import has_admin_module_permission
+from apps.admin_panel.auth import has_admin_module_permission, HasAdminModulePermission
 from apps.admin_panel.constants import AdminModule
 from apps.core.currency import convert_currency
 from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
@@ -1025,69 +1025,82 @@ class DisputeDetailView(generics.RetrieveAPIView):
 
 
 class DisputeActionView(APIView):
-    """Admin-only: Resolve or Refund a dispute."""
-    permission_classes = [permissions.IsAuthenticated] # Should be IsAdmin
+    """Admin-only: resolve or refund a dispute."""
+
+    permission_classes = [permissions.IsAuthenticated, HasAdminModulePermission]
+    admin_module = AdminModule.SUPPORTS
+    admin_require_manage = True
 
     @extend_schema(
         request=DisputeResolutionSerializer,
-        responses={200: inline_serializer(name='DisputeActionResponse', fields={'message': serializers.CharField()})}
+        responses={200: inline_serializer(
+            name='DisputeActionResponse', fields={'message': serializers.CharField()}
+        )}
     )
     def post(self, request, pk):
+        from apps.commerce.services.refunds import RefundError, request_refund
+        from apps.financials.models import VendorEarning
+
         dispute = get_object_or_404(Dispute, pk=pk)
         serializer = DisputeResolutionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         action = serializer.validated_data['action']
         notes = serializer.validated_data['resolution_notes']
 
-        from apps.financials.models import VendorEarning, VendorWallet, WalletTransaction
+        earning = VendorEarning.objects.filter(order=dispute.order).first()
 
-        with transaction.atomic():
-            earning = VendorEarning.objects.get(order=dispute.order)
-
-            if action == 'resolve':
-                dispute.status = Dispute.Status.RESOLVED
+        if action == 'resolve':
+            if earning:
                 earning.is_disputed = False
                 earning.save(update_fields=['is_disputed'])
-                message = "Dispute resolved. Funds released to vendor escrow."
+            dispute.status = Dispute.Status.RESOLVED
+            message = "Dispute resolved. Funds released to vendor escrow."
 
-            elif action == 'refund':
-                dispute.status = Dispute.Status.REFUNDED
-                earning.status = VendorEarning.Status.REVERSED
-                earning.is_disputed = False
-                earning.save(update_fields=['status', 'is_disputed'])
-
-                # Reverse wallet credit
-                wallet = VendorWallet.objects.get(user=earning.vendor)
-                if earning.status == VendorEarning.Status.PENDING:
-                    wallet.pending_balance -= earning.net_amount
-                    wallet.save(update_fields=['pending_balance'])
-                else:
-                    wallet.available_balance -= earning.net_amount
-                    wallet.save(update_fields=['available_balance'])
-
-                WalletTransaction.objects.create(
-                    wallet=wallet,
-                    transaction_type=WalletTransaction.Type.REFUND,
-                    amount=-earning.net_amount,
-                    description=f"Reversed earning due to dispute refund on order {dispute.order.order_number}",
-                    reference_id=str(dispute.id)
+        elif action == 'refund':
+            payment = Payment.objects.filter(
+                checkout_session=dispute.order.checkout_session
+            ).first()
+            if payment is None:
+                return Response(
+                    {'error': 'No payment is linked to this order.'},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-
-                dispute.order.status = Order.Status.CANCELLED # or REFUNDED
-                dispute.order.save(update_fields=['status'])
-                message = "Dispute resolved with refund. Vendor funds reversed."
-
-            dispute.resolution_notes = notes
-            dispute.resolved_at = timezone.now()
-            dispute.save()
-
-            OrderActivity.objects.create(
-                order=dispute.order,
-                event_type=OrderActivity.EventType.OTHER,
-                message=message
+            if earning:
+                earning.is_disputed = True
+                earning.save(update_fields=['is_disputed'])
+            try:
+                request_refund(
+                    payment,
+                    amount=payment.amount,
+                    reason=notes or dispute.reason,
+                    actor=request.user,
+                )
+            except RefundError as exc:
+                return Response(
+                    {'error': str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            dispute.status = Dispute.Status.UNDER_REVIEW
+            message = (
+                "Refund requested. The dispute closes when the gateway confirms."
             )
 
+        else:
+            return Response(
+                {'error': 'Invalid action.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dispute.resolution_notes = notes
+        dispute.resolved_at = timezone.now() if action == 'resolve' else None
+        dispute.save(
+            update_fields=['status', 'resolution_notes', 'resolved_at'])
+
+        OrderActivity.objects.create(
+            order=dispute.order,
+            event_type=OrderActivity.EventType.OTHER,
+            message=message,
+        )
         return Response({'message': message})
 
 

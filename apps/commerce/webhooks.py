@@ -83,6 +83,8 @@ class PaystackWebhookView(APIView):
             'transfer.success': self._handle_transfer_success,
             'transfer.failed': self._handle_transfer_failed,
             'transfer.reversed': self._handle_transfer_reversed,
+            'refund.processed': self._handle_refund_processed,
+            'refund.failed': self._handle_refund_failed,
         }.get(event)
 
         if handler is None:
@@ -163,3 +165,29 @@ class PaystackWebhookView(APIView):
     def _handle_transfer_reversed(self, data: dict) -> bool:
         """Transfer was reversed, re-credit vendor balance."""
         return self._handle_transfer_failed(data)
+
+    def _handle_refund_processed(self, data: dict) -> bool:
+        from apps.commerce.models import Refund
+        from apps.commerce.services.refunds import finalize_refund
+
+        reference = data.get('reference') or data.get('transaction_reference')
+        refund = Refund.objects.filter(reference=reference).first()
+        if refund is None:
+            refund = Refund.objects.filter(
+                payment__reference=reference).first()
+        if refund is None:
+            return False
+        finalize_refund(refund, data)
+        return True
+
+    def _handle_refund_failed(self, data: dict) -> bool:
+        from apps.commerce.models import Refund
+
+        reference = data.get('reference') or data.get('transaction_reference')
+        refund = Refund.objects.filter(reference=reference).first()
+        if refund is None:
+            return False
+        refund.status = Refund.Status.FAILED
+        refund.gateway_response = data
+        refund.save(update_fields=['status', 'gateway_response'])
+        return True

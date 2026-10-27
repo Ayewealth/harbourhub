@@ -186,3 +186,28 @@ def resolve_account(account_number: str, bank_code: str) -> dict | None:
     except Exception as exc:
         logger.exception("Paystack resolve account error: %s", exc)
     return None
+
+
+def initiate_refund(transaction_reference: str, amount_kobo: int | None = None,
+                    reason: str = "") -> dict | None:
+    """Request a refund. Returns the gateway data or None."""
+    payload = {"transaction": transaction_reference}
+    if amount_kobo is not None:
+        payload["amount"] = amount_kobo
+    if reason:
+        payload["merchant_note"] = reason
+
+    try:
+        response = requests.post(
+            f"{PAYSTACK_BASE_URL}/refund",
+            json=payload,
+            headers=_headers(),
+            timeout=30,
+        )
+        data = response.json()
+        if data.get("status"):
+            return data["data"]
+        logger.error("Paystack refund failed: %s", data)
+    except Exception as exc:
+        logger.exception("Paystack refund error: %s", exc)
+    return None
