@@ -10,6 +10,10 @@ from apps.categories.models import Category
 from apps.store.models import Store
 
 
+class ListingStoreRequired(ValueError):
+    """Raised when a listing is persisted without a store."""
+
+
 class Listing(models.Model):
     """Main listing model for equipment and services"""
 
@@ -84,7 +88,10 @@ class Listing(models.Model):
     views_count = models.PositiveIntegerField(default=0)
     inquiries_count = models.PositiveIntegerField(default=0)
     store = models.ForeignKey(
-        Store, on_delete=models.CASCADE, null=True, blank=True, related_name="listings", help_text=_("The store that the listing belongs to")
+        Store,
+        on_delete=models.PROTECT,
+        related_name="listings",
+        help_text=_("The store that the listing belongs to"),
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -167,6 +174,11 @@ class Listing(models.Model):
             self.save(update_fields=["status"])
 
     def save(self, *args, **kwargs):
+        if not self.store_id:
+            raise ListingStoreRequired(
+                "A listing must belong to a store. Complete seller onboarding first."
+            )
+
         # slug generation
         if not self.slug:
             base_slug = slugify(self.title)

@@ -9,7 +9,7 @@ from apps.categories.models import Category
 
 class Store(models.Model):
     user = models.OneToOneField(
-        User, on_delete=models.CASCADE, limit_choices_to={'role': User.Role.SELLER}, related_name='store', help_text=_('The user who owns the store'))
+        User, on_delete=models.CASCADE, related_name='store', help_text=_('The user who owns the store'))
     slug = models.SlugField(max_length=255, unique=True,
                             help_text=_('The slug of the store'))
     categories = models.ManyToManyField(

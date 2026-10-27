@@ -236,11 +236,12 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
     images = ListingImageSerializer(many=True, read_only=True)
     documents = ListingDocumentSerializer(many=True, read_only=True)
     currency = serializers.CharField(required=False, max_length=3)
+    store = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = Listing
         fields = (
-            "title", "description", "category", "store", "listing_type",
+            "id", "title", "description", "category", "store", "listing_type",
             "price", "currency", "price_unit", "negotiable",
             "location", "country", "state_province", "city",
             "contact_name", "contact_email", "contact_phone",
@@ -304,8 +305,21 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
         images_data = validated_data.pop("images_data", [])
         documents_data = validated_data.pop("documents_data", [])
         request = self.context.get("request")
-        owner = request.user
+        owner = getattr(request, "user", None)
+        if owner is None or not owner.is_authenticated:
+            raise serializers.ValidationError(
+                {"detail": "Authentication is required to create a listing."}
+            )
+
+        store = getattr(owner, "store", None)
+        if store is None:
+            raise serializers.ValidationError(
+                {"store": "Complete seller onboarding before creating a listing."}
+            )
+
+        validated_data.pop("store", None)
         validated_data["user"] = owner
+        validated_data["store"] = store
         featured_flag = validated_data.pop("featured", False)
 
         listing = Listing.objects.create(**validated_data)
@@ -323,6 +337,7 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         images_data = validated_data.pop("images_data", [])
         documents_data = validated_data.pop("documents_data", [])
+        validated_data.pop("store", None)
 
         featured_flag = validated_data.get("featured", None)
 
@@ -335,11 +350,9 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
                 instance.user, exclude_pk=instance.pk)
 
         if images_data:
-            print("images_data:", images_data)
             self._append_images(instance, images_data)
 
         if documents_data:
-            print("documents_data:", documents_data)
             self._append_documents(instance, documents_data)
 
         return instance

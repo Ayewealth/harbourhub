@@ -77,20 +77,19 @@ class ListingViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return queryset.filter(
                 status=Listing.Status.PUBLISHED,
-                store__is_published=True,
                 store__is_active=True,
             )
         elif self.action in ['retrieve']:
             user = self.request.user
             if user and user.is_authenticated:
+                if getattr(user, "is_admin_user", False):
+                    return queryset
                 return queryset.filter(
-                    Q(status=Listing.Status.PUBLISHED) | Q(user=user),
-                    store__is_published=True,
-                    store__is_active=True,
+                    Q(status=Listing.Status.PUBLISHED, store__is_active=True)
+                    | Q(user=user)
                 )
             return queryset.filter(
                 status=Listing.Status.PUBLISHED,
-                store__is_published=True,
                 store__is_active=True,
             )
 
@@ -161,12 +160,8 @@ class ListingViewSet(viewsets.ModelViewSet):
         atomically unset any other featured listing for this owner before saving.
         """
         user = self.request.user
-        # serializer will get request from self.get_serializer_context automatically in DRF
-        # But ensure serializer context includes request (DRF does this). If you ever instantiate serializer manually you MUST pass context={'request': request}.
-        validated_data = getattr(serializer, "validated_data", None)
-        # Save: serializer.create handles featured flag too, but we also ensure no duplicates
-        # call save with user param is supported by serializer.create
-        listing = serializer.save(user=user)
+        # The serializer derives the store from the authenticated owner.
+        listing = serializer.save()
         track_listing_created(user, listing)
 
         if listing.store:
@@ -197,36 +192,33 @@ class ListingViewSet(viewsets.ModelViewSet):
         Delete a listing. Prevent deletion if there are active orders or quotes.
         """
         instance = self.get_object()
-        
-        try:
-            from apps.commerce.models import Order, QuoteRequest
-            
-            # Check for active orders
-            active_orders = Order.objects.filter(
-                listing=instance, 
-                status__in=[Order.Status.PENDING_PAYMENT, Order.Status.PAID]
-            ).exists()
-            
-            if active_orders:
-                return Response(
-                    {'error': 'Cannot delete listing. There are active orders associated with it.'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-                
-            # Check for active quotes
-            active_quotes = QuoteRequest.objects.filter(
-                listing=instance,
-                status__in=[QuoteRequest.Status.PENDING, QuoteRequest.Status.RESPONDED]
-            ).exists()
-            
-            if active_quotes:
-                return Response(
-                    {'error': 'Cannot delete listing. There are pending quote requests.'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-                
-        except Exception as e:
-            logger.exception(f"Error checking listing deletion constraints: {e}")
+
+        from apps.commerce.models import Order, OrderItem, QuoteRequest
+
+        active_orders = OrderItem.objects.filter(
+            listing=instance,
+            order__status__in=[
+                Order.Status.PENDING_PAYMENT,
+                Order.Status.PAID,
+            ],
+        ).exists()
+
+        if active_orders:
+            return Response(
+                {'error': 'Cannot delete listing. There are active orders associated with it.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        active_quotes = QuoteRequest.objects.filter(
+            listing=instance,
+            status__in=[QuoteRequest.Status.PENDING, QuoteRequest.Status.RESPONDED]
+        ).exists()
+
+        if active_quotes:
+            return Response(
+                {'error': 'Cannot delete listing. There are pending quote requests.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
             
         listing_id = instance.id
         title = instance.title
@@ -270,6 +262,12 @@ class ListingViewSet(viewsets.ModelViewSet):
 
         if listing.status != Listing.Status.DRAFT:
             return Response({'error': 'Only draft listings can be published'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not listing.store_id or not listing.store.is_active:
+            return Response(
+                {'error': 'Listing cannot be published until its store is active.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Only owner or admin can publish
         if not (request.user == listing.user or getattr(request.user, "is_admin_user", False)):
@@ -533,7 +531,6 @@ class TopDealsListView(generics.ListAPIView):
         return (
             Listing.objects.filter(
                 status=Listing.Status.PUBLISHED,
-                store__is_published=True,
                 store__is_active=True,
             )
             .select_related("category", "user", "store")
@@ -575,7 +572,6 @@ class BestReviewedListView(generics.ListAPIView):
         return (
             Listing.objects.filter(
                 status=Listing.Status.PUBLISHED,
-                store__is_published=True,
                 store__is_active=True,
             )
             .select_related("category", "user", "store")
@@ -612,7 +608,6 @@ class SavedItemListView(generics.ListAPIView):
         return (
             Listing.objects.filter(
                 id__in=saved_listing_ids,
-                store__is_published=True,
                 store__is_active=True,
             )
             .select_related('category', 'user', 'store')
@@ -635,7 +630,7 @@ class SavedItemToggleView(APIView):
         """Save a listing"""
         listing = get_object_or_404(
             Listing, pk=pk, status=Listing.Status.PUBLISHED,
-            store__is_published=True, store__is_active=True)
+            store__is_active=True)
 
         if listing.user == request.user:
             return Response(
