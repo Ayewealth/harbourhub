@@ -552,6 +552,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.commerce.tasks.advance_rental_order_statuses_task",
         "schedule": crontab(minute=0, hour="*/1"),
     },
+    "reconcile-pending-payments-every-five-minutes": {
+        "task": "apps.commerce.tasks.reconcile_pending_payments_task",
+        "schedule": crontab(minute="*/5"),
+    },
     "update-compliance-statuses-daily": {
         "task": "apps.compliance.tasks.update_compliance_statuses_task",
         "schedule": crontab(hour=1, minute=0),

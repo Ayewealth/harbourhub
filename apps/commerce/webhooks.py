@@ -13,10 +13,8 @@ from rest_framework.views import APIView
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-from apps.notifications.utils import notify_order_paid
-from apps.analytics.posthog_utils import track_payment_success
-
-from .models import Order, OrderActivity, Payment
+from .models import Payment, WebhookEvent
+from .services.payments import finalize_payment
 
 logger = logging.getLogger(__name__)
 
@@ -52,116 +50,87 @@ class PaystackWebhookView(APIView):
             logger.warning("Invalid Paystack webhook signature")
             return Response(
                 {'error': 'Invalid signature'},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
         try:
-            data = json.loads(body)
+            payload = json.loads(body)
         except json.JSONDecodeError:
             return Response(
                 {'error': 'Invalid JSON'},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        event = data.get('event')
-        event_data = data.get('data', {})
+        event = payload.get('event', '')
+        data = payload.get('data', {}) or {}
+
+        event_id = str(
+            data.get('id') or data.get('reference')
+            or hashlib.sha256(body).hexdigest()
+        )
+        event_row, created = WebhookEvent.objects.get_or_create(
+            provider='paystack',
+            event_type=event,
+            gateway_event_id=event_id,
+            defaults={'payload': payload},
+        )
+        if not created:
+            return Response({'status': 'ok', 'detail': 'duplicate'})
 
         logger.info("Paystack webhook received: %s", event)
 
-        handlers = {
+        handler = {
             'charge.success': self._handle_charge_success,
+            'charge.failed': self._handle_charge_failed,
             'transfer.success': self._handle_transfer_success,
             'transfer.failed': self._handle_transfer_failed,
             'transfer.reversed': self._handle_transfer_reversed,
-        }
+        }.get(event)
 
-        handler = handlers.get(event)
-        if handler:
-            try:
-                handler(event_data)
-            except Exception as exc:
-                logger.exception(
-                    "Webhook handler error for %s: %s", event, exc)
-                # Still return 200 to prevent Paystack retries
-                # for non-retryable errors
-
-        return Response({'status': 'ok'})
-
-    @transaction.atomic
-    def _handle_charge_success(self, data: dict):
-        """Payment was successful."""
-        reference = data.get('reference')
-        if not reference:
-            return
+        if handler is None:
+            event_row.status = WebhookEvent.Status.IGNORED
+            event_row.save(update_fields=['status'])
+            return Response({'status': 'ok'})
 
         try:
-            payment = Payment.objects.select_related(
-                'checkout_session'
-            ).get(reference=reference)
+            handled = handler(data)
+        except Exception as exc:
+            logger.exception("Webhook handler failed for %s: %s", event, exc)
+            event_row.status = WebhookEvent.Status.FAILED
+            event_row.error = str(exc)
+            event_row.save(update_fields=['status', 'error'])
+            return Response(
+                {'error': 'handler failed'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        event_row.status = (
+            WebhookEvent.Status.PROCESSED if handled
+            else WebhookEvent.Status.IGNORED
+        )
+        event_row.save(update_fields=['status'])
+        return Response({'status': 'ok'})
+
+    def _handle_charge_success(self, data: dict) -> bool:
+        reference = data.get('reference')
+        if not reference:
+            return False
+        try:
+            payment = Payment.objects.get(reference=reference)
         except Payment.DoesNotExist:
             logger.warning(
                 "Webhook: Payment not found for reference %s", reference)
-            return
+            return False
+        return finalize_payment(payment, data)
 
-        if payment.status == Payment.Status.SUCCESS:
-            return  # Already processed, idempotent
-
-        payment.status = Payment.Status.SUCCESS
-        payment.paid_at = timezone.now()
-        payment.gateway_response = data
-        payment.save(update_fields=[
-            'status', 'paid_at', 'gateway_response'])
-
-        checkout_session = payment.checkout_session
-        if checkout_session:
-            for order in checkout_session.orders.all():
-                order.status = Order.Status.PAID
-                order.save(update_fields=['status'])
-
-                notify_order_paid(order)
-                track_payment_success(order.buyer, order)
-
-                OrderActivity.objects.create(
-                    order=order,
-                    event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
-                    message="Payment confirmed via Paystack. Funds held in escrow."
-                )
-
-                # Create vendor earning
-                self._create_vendor_earning(order)
-
-        logger.info("Charge success processed for reference %s", reference)
-
-    def _create_vendor_earning(self, order: Order):
-        from apps.financials.models import VendorEarning
-        import datetime
-
-        if VendorEarning.objects.filter(order=order).exists():
-            return
-
-        earning = VendorEarning.objects.create(
-            vendor=order.seller,
-            store=order.store,
-            order=order,
-            listing=order.items.first().listing if order.items.exists() else None,
-            earning_type=order.items.first().purchase_type if order.items.exists() else 'buy',
-            gross_amount=order.subtotal,
-            commission_rate=getattr(
-                order.store, 'commission_rate', 5.00) if order.store else 5.00,
-            currency=order.currency,
-            status=VendorEarning.Status.PENDING,
-            available_at=timezone.now() + datetime.timedelta(days=7)
-        )
-
-        # Update wallet pending balance
-        from apps.financials.models import VendorWallet
-        wallet, _ = VendorWallet.objects.get_or_create(
-            user=order.seller,
-            store=order.store,
-            defaults={'currency': order.currency}
-        )
-        wallet.pending_balance += earning.net_amount
-        wallet.save(update_fields=['pending_balance'])
+    def _handle_charge_failed(self, data: dict) -> bool:
+        reference = data.get('reference')
+        if not reference:
+            return False
+        updated = Payment.objects.filter(
+            reference=reference, status=Payment.Status.PENDING,
+        ).update(status=Payment.Status.FAILED)
+        return bool(updated)
 
     @transaction.atomic
     def _handle_transfer_success(self, data: dict):

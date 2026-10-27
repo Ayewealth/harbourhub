@@ -64,3 +64,28 @@ def advance_rental_order_statuses_task():
                 logger.info("Successfully advanced order %s to HIRE_ENDED.", order.order_number)
         except Exception as exc:
             logger.exception("Failed to advance order %s to HIRE_ENDED: %s", order.order_number, exc)
+
+
+@shared_task(name="apps.commerce.tasks.reconcile_pending_payments_task")
+def reconcile_pending_payments_task():
+    """Safety net for lost webhooks. Never double-credits because finalize is idempotent."""
+    from datetime import timedelta
+
+    from apps.commerce.models import Payment
+    from apps.commerce.paystack import verify_transaction
+    from apps.commerce.services.payments import finalize_payment
+
+    cutoff = timezone.now() - timedelta(minutes=10)
+    reconciled = 0
+    candidates = Payment.objects.filter(
+        status=Payment.Status.PENDING, created_at__lt=cutoff
+    ).select_related("checkout_session")
+
+    for payment in candidates.iterator():
+        data = verify_transaction(payment.reference)
+        if not data or data.get("status") != "success":
+            continue
+        finalize_payment(payment, data)
+        reconciled += 1
+
+    return reconciled

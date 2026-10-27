@@ -28,8 +28,7 @@ from apps.admin_panel.constants import AdminModule
 from apps.core.currency import convert_currency
 from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
 from apps.analytics.posthog_utils import (
-    track_quote_requested, track_order_placed, 
-    track_payment_success, track_payment_failed,
+    track_quote_requested, track_order_placed,
     track_item_added_to_cart
 )
 
@@ -946,10 +945,9 @@ class PaymentVerifyView(APIView):
     @extend_schema(
         responses={
             200: inline_serializer(name='PaymentVerifyResponse', fields={'status': serializers.CharField(), 'message': serializers.CharField(), 'checkout_session_id': serializers.IntegerField(required=False)}),
-            400: inline_serializer(name='PaymentVerifyError', fields={'status': serializers.CharField(), 'message': serializers.CharField()})
+            503: inline_serializer(name='PaymentVerifyUnavailable', fields={'status': serializers.CharField(), 'message': serializers.CharField()})
         }
     )
-    @transaction.atomic
     def get(self, request, reference):
         payment = get_object_or_404(
             Payment, reference=reference, buyer=request.user)
@@ -957,50 +955,35 @@ class PaymentVerifyView(APIView):
         if payment.status == Payment.Status.SUCCESS:
             return Response({
                 'status': 'success',
-                'message': 'Payment already verified.',
+                'message': 'Payment confirmed.',
                 'checkout_session_id': payment.checkout_session_id,
             })
-
-        # Use paystack.py client
-        paystack_data = verify_transaction(reference)
-
-        if paystack_data and paystack_data.get('status') == 'success':
-            payment.status = Payment.Status.SUCCESS
-            payment.paid_at = timezone.now()
-            payment.gateway_response = paystack_data
-            payment.save(update_fields=[
-                'status', 'paid_at', 'gateway_response'])
-
-            orders = payment.checkout_session.orders.all() if payment.checkout_session else []
-            for order in orders:
-                order.status = Order.Status.PAID
-                order.save(update_fields=['status'])
-
-                OrderActivity.objects.create(
-                    order=order,
-                    event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
-                    message="Payment confirmed. Funds held in escrow."
-                )
-
-                track_payment_success(request.user, order)
-
+        if payment.status in (Payment.Status.FAILED, Payment.Status.REFUNDED):
             return Response({
-                'status': 'success',
-                'message': 'Payment verified successfully.',
-                'checkout_session_id': payment.checkout_session_id,
+                'status': 'failed',
+                'message': 'Payment was not completed.',
             })
 
-        payment.status = Payment.Status.FAILED
-        payment.save(update_fields=['status'])
-        
-        orders = payment.checkout_session.orders.all() if payment.checkout_session else []
-        for order in orders:
-            track_payment_failed(request.user, order, "Verification failed or cancelled")
-        
-        return Response(
-            {'status': 'failed', 'message': 'Payment not successful.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        paystack_data = verify_transaction(reference)
+        if paystack_data is None:
+            return Response(
+                {
+                    'status': 'unknown',
+                    'message': 'Gateway unavailable. Try again shortly.',
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        if paystack_data.get('status') == 'success':
+            return Response({
+                'status': 'pending_confirmation',
+                'message': 'Awaiting webhook confirmation.',
+            })
+
+        return Response({
+            'status': 'pending',
+            'message': 'Payment not completed.',
+        })
 
 
 class DisputeListCreateView(generics.ListCreateAPIView):

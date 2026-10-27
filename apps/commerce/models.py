@@ -476,6 +476,34 @@ class Payment(models.Model):
         return f"Payment {self.reference} - {self.status}"
 
 
+class WebhookEvent(models.Model):
+    """Idempotency ledger for gateway webhooks."""
+
+    class Status(models.TextChoices):
+        PROCESSED = "processed", _("Processed")
+        IGNORED = "ignored", _("Ignored")
+        FAILED = "failed", _("Failed")
+
+    provider = models.CharField(max_length=30, default="paystack")
+    event_type = models.CharField(max_length=80)
+    gateway_event_id = models.CharField(max_length=120)
+    status = models.CharField(
+        max_length=20, choices=Status.choices,
+        default=Status.PROCESSED, db_index=True,
+    )
+    payload = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "webhook_events"
+        unique_together = [("provider", "event_type", "gateway_event_id")]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.provider}:{self.event_type}:{self.gateway_event_id}"
+
+
 class Dispute(models.Model):
     """A dispute opened by a buyer against an order."""
 
