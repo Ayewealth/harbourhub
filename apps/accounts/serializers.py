@@ -477,13 +477,16 @@ class VerificationRequestSerializer(serializers.ModelSerializer):
 
     def _get_absolute_url(self, obj, field_name):
         file_field = getattr(obj, field_name, None)
-        if file_field:
-            request = self.context.get('request')
-            try:
-                return request.build_absolute_uri(file_field.url) if request else file_field.url
-            except Exception:
-                return None
-        return None
+        if not file_field or not getattr(file_field, 'name', ''):
+            return None
+        name = file_field.name
+        if not name.startswith(('verification/', 'http://', 'https://')):
+            return None
+        request = self.context.get('request')
+        try:
+            return request.build_absolute_uri(file_field.url) if request else file_field.url
+        except Exception:
+            return None
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_business_license(self, obj):
@@ -496,6 +499,33 @@ class VerificationRequestSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_insurance_certificate(self, obj):
         return self._get_absolute_url(obj, 'insurance_certificate')
+
+
+class VerificationRequestCreateSerializer(serializers.ModelSerializer):
+    """Write serializer for the legacy ``/auth/verification/request/`` endpoint."""
+
+    class Meta:
+        model = VerificationRequest
+        fields = (
+            'company_name',
+            'business_type',
+            'business_license',
+            'government_id',
+            'insurance_certificate',
+            'certifications',
+            'references',
+            'additional_info',
+        )
+
+    def validate_business_type(self, value):
+        allowed = {
+            choice[0]
+            for choice in VerificationRequest._meta.get_field(
+                'business_type').choices
+        }
+        if value and value not in allowed:
+            raise serializers.ValidationError("Unknown business type.")
+        return value
 
 
 class DeliveryDetailSerializer(serializers.ModelSerializer):
@@ -782,21 +812,33 @@ class SellerOnboardingStep3Serializer(serializers.Serializer):
                 "You must confirm documents are valid.")
         return value
 
+    def validate_government_id(self, value):
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("Document must be 5 MB or smaller.")
+        return value
+
+    def validate_proof_of_registration(self, value):
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("Document must be 5 MB or smaller.")
+        return value
+
     def save(self, user):
         from apps.accounts.models import VerificationRequest
-        # Create verification request
+
+        data = self.validated_data
         vr, _ = VerificationRequest.objects.update_or_create(
             user=user,
             defaults={
-                'business_license': self.validated_data['proof_of_registration'],
-                'additional_info': self.validated_data['business_type'],
-                'government_id': self.validated_data.get('government_id'),
-            }
+                'business_license': data['proof_of_registration'],
+                'government_id': data['government_id'],
+                'business_type': data['business_type'],
+                'company_name': user.company or user.full_name or user.email,
+            },
         )
 
         # Promote user to seller role if not already
-        if user.role not in ['seller', 'service_provider']:
-            user.role = 'seller'
+        if user.role not in (User.Role.SELLER, User.Role.SERVICE_PROVIDER):
+            user.role = User.Role.SELLER
             user.save(update_fields=['role'])
 
         return vr

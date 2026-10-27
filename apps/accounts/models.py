@@ -206,12 +206,25 @@ class VerificationRequest(models.Model):
         related_name='verification_requests'
     )
     company_name = models.CharField(max_length=200)
+    business_type = models.CharField(
+        max_length=30,
+        blank=True,
+        choices=[
+            ('sole_proprietorship', _('Sole Proprietorship')),
+            ('partnership', _('Partnership')),
+            ('limited_liability', _('Limited Liability Company')),
+            ('corporation', _('Corporation')),
+            ('ngo', _('NGO / Non-profit')),
+        ],
+    )
     business_license = models.FileField(
         upload_to='verification/licenses/',
         help_text=_('Business license document')
     )
     insurance_certificate = models.FileField(
         upload_to='verification/insurance/',
+        null=True,
+        blank=True,
         help_text=_('Insurance certificate')
     )
     government_id = models.FileField(

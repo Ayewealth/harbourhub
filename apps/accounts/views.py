@@ -24,6 +24,7 @@ from .serializers import (
     UserProfileSerializer, UserProfileUpdateSerializer,
     PasswordChangeSerializer, PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer, VerificationRequestSerializer,
+    VerificationRequestCreateSerializer,
     OTPRequestSerializer, OTPVerifySerializer,
     SetPasswordSerializer, DeliveryDetailSerializer,
     UserPreferenceSerializer,
@@ -334,16 +335,11 @@ class VerificationViewSet(viewsets.ViewSet):
                 'error': 'User is already verified'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        verification_request = VerificationRequest.objects.create(
-            user=request.user,
-            company_name=request.data.get('company_name', ''),
-            business_license=request.data.get('business_license', ''),
-            insurance_certificate=request.data.get(
-                'insurance_certificate', ''),
-            certifications=request.data.get('certifications', ''),
-            references=request.data.get('references', ''),
-            additional_info=request.data.get('additional_info', '')
+        serializer = VerificationRequestCreateSerializer(
+            data=request.data, context={'request': request}
         )
+        serializer.is_valid(raise_exception=True)
+        verification_request = serializer.save(user=request.user)
 
         # Notify admins asynchronously
         notify_admins_verification_request.delay(
