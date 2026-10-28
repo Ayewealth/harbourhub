@@ -525,8 +525,8 @@ class OrderTrackingTimelineSerializer(serializers.ModelSerializer):
 class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
     monetary_fields = ["total_amount", "subtotal", "delivery_fee", "escrow_fee"]
 
-    order_id = serializers.CharField(source="order_number")
-    listing_title = serializers.CharField(source="listing.title", default="")
+    order_id = serializers.IntegerField(source="id", read_only=True)
+    listing_title = serializers.SerializerMethodField()
     buyer = serializers.SerializerMethodField()
     seller = serializers.SerializerMethodField()
     estimated_delivery = serializers.SerializerMethodField()
@@ -537,10 +537,15 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
         model = Order
         fields = (
             "order_id",
+            "order_number",
             "status",
             "listing_title",
             "buyer",
             "seller",
+            "total_amount",
+            "subtotal",
+            "delivery_fee",
+            "escrow_fee",
             "created_at",
             "estimated_delivery",
             "dispute",
@@ -548,6 +553,11 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
             "tracking_id",
             "delivery_carrier",
         )
+
+    @extend_schema_field(serializers.CharField())
+    def get_listing_title(self, obj):
+        item = obj.items.select_related("listing").first()
+        return item.listing.title if item and item.listing else ""
 
     @extend_schema_field(inline_serializer(name='OrderBuyer', fields={'name': serializers.CharField(), 'email': serializers.EmailField()}))
     def get_buyer(self, obj):
@@ -648,8 +658,8 @@ class AdminOrderTrackingSerializer(OrderTrackingDetailSerializer):
 
 
 class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
-    order_id = serializers.CharField(source="order_number")
-    listing_title = serializers.CharField(source="listing.title", default="")
+    order_id = serializers.IntegerField(source="id", read_only=True)
+    listing_title = serializers.SerializerMethodField()
     seller_name = serializers.CharField(source="store.name", default="")
     buyer_name = serializers.CharField(source="buyer.full_name", default="")
     last_event = serializers.SerializerMethodField()
@@ -660,10 +670,12 @@ class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
         model = Order
         fields = (
             "order_id",
+            "order_number",
             "listing_title",
             "seller_name",
             "buyer_name",
             "status",
+            "total_amount",
             "last_event",
             "last_event_at",
             "created_at",
@@ -672,17 +684,19 @@ class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
             "carrier",
         )
 
+    @extend_schema_field(serializers.CharField())
+    def get_listing_title(self, obj):
+        # P2 changes the order grain; read through items now so this survives it.
+        item = obj.items.select_related("listing").first()
+        return item.listing.title if item and item.listing else ""
+
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_last_event(self, obj):
-        last_act = obj.activities.all().order_by("-created_at").first()
-        if last_act:
-            return last_act.message
-        return "Order Placed"
+        activities = list(obj.activities.all())
+        return activities[0].message if activities else "Order Placed"
 
     @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_last_event_at(self, obj):
-        last_act = obj.activities.all().order_by("-created_at").first()
-        if last_act:
-            return last_act.created_at
-        return obj.created_at
+        activities = list(obj.activities.all())
+        return activities[0].created_at if activities else obj.created_at
 

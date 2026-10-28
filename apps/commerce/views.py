@@ -1181,10 +1181,13 @@ class OrderTrackingDetailView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         pk_or_num = self.kwargs.get("pk_or_num")
+        queryset = Order.objects.select_related(
+            "buyer", "seller", "store"
+        ).prefetch_related("items__listing", "activities", "disputes")
         if str(pk_or_num).isdigit():
-            order = get_object_or_404(Order, pk=pk_or_num)
+            order = get_object_or_404(queryset, pk=pk_or_num)
         else:
-            order = get_object_or_404(Order, order_number=pk_or_num)
+            order = get_object_or_404(queryset, order_number=pk_or_num)
         
         user = self.request.user
         is_buyer = order.buyer == user
@@ -1229,7 +1232,11 @@ class BuyerMyOrdersListView(generics.ListAPIView):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Order.objects.none()
-        return Order.objects.filter(buyer=self.request.user).order_by("-created_at")
+        return Order.objects.filter(buyer=self.request.user).select_related(
+            "store", "buyer", "seller"
+        ).prefetch_related(
+            "items__listing", "activities"
+        ).order_by("-created_at")
 
 
 class SellerStoreOrdersListView(generics.ListAPIView):
@@ -1244,6 +1251,10 @@ class SellerStoreOrdersListView(generics.ListAPIView):
             return Order.objects.none()
         return Order.objects.filter(
             Q(seller=self.request.user) | Q(store__user=self.request.user)
+        ).select_related(
+            "store", "buyer", "seller"
+        ).prefetch_related(
+            "items__listing", "activities"
         ).distinct().order_by("-created_at")
 
 
