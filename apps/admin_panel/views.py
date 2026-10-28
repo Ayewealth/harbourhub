@@ -520,14 +520,15 @@ class AdminPaymentListView(generics.ListAPIView):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     from apps.commerce.filters import PaymentFilter
     filterset_class = PaymentFilter
-    search_fields = ['reference', 'order__order_number', 'buyer__email']
+    search_fields = ["reference", "buyer__email"]
 
     def get_queryset(self):
         from apps.commerce.models import Payment
         return Payment.objects.select_related(
-            'order', 'buyer',
-            'order__seller', 'order__listing'
-        ).order_by('-created_at')
+            "buyer", "checkout_session"
+        ).prefetch_related(
+            "checkout_session__orders"
+        ).order_by("-created_at")
 
     def get_serializer_class(self):
         from apps.commerce.serializers import PaymentSerializer
@@ -575,10 +576,17 @@ class AdminPaymentStatsView(APIView):
         prev_start = period_start - period_length
 
         def get_metrics(start, end):
+            from apps.financials.models import VendorEarning
+
             payments = Payment.objects.filter(status='success', created_at__gte=start, created_at__lte=end)
             vol = payments.aggregate(t=Sum('amount'))['t'] or 0
-            rev = payments.aggregate(t=Sum('order__escrow_fee'))['t'] or 0
-            
+
+            # Platform revenue is the seller commission. Buyers pay no fee, so
+            # Order.escrow_fee is always zero.
+            rev = VendorEarning.objects.filter(
+                created_at__gte=start, created_at__lte=end
+            ).aggregate(t=Sum('commission_amount'))['t'] or 0
+
             payouts_paid = Payout.objects.filter(status='paid', created_at__gte=start, created_at__lte=end)
             paid_payouts = payouts_paid.aggregate(t=Sum('amount'))['t'] or 0
             
@@ -643,9 +651,11 @@ class AdminReportStatsView(APIView):
         prev_start = period_start - period_length
 
         def get_metrics(start, end):
-            rev = Payment.objects.filter(
-                status='success', created_at__gte=start, created_at__lte=end
-            ).aggregate(t=Sum('order__escrow_fee'))['t'] or 0
+            from apps.financials.models import VendorEarning
+
+            rev = VendorEarning.objects.filter(
+                created_at__gte=start, created_at__lte=end
+            ).aggregate(t=Sum('commission_amount'))['t'] or 0
             
             disputes = Dispute.objects.filter(
                 status__in=['open', 'under_review'], created_at__gte=start, created_at__lte=end
