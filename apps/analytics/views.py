@@ -347,8 +347,10 @@ class AnalyticsViewSet(ViewSet):
         from apps.admin_panel.models import PlatformConfig
 
         def get_rev(since):
+            from apps.commerce.constants import SALES_STATUSES
+
             return Order.objects.filter(
-                status__in=[Order.Status.PAID, Order.Status.FULFILLED],
+                status__in=SALES_STATUSES,
                 created_at__gte=since
             ).aggregate(total=Sum('total_amount'))['total'] or 0
 

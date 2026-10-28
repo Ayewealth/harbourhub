@@ -61,11 +61,9 @@ class Store(models.Model):
 
     @property
     def sales_count(self):
-        """Total number of successful orders (paid or fulfilled)."""
-        from apps.commerce.models import Order
-        return self.orders.filter(
-            status__in=[Order.Status.PAID, Order.Status.FULFILLED]
-        ).count()
+        """Total number of successful orders across the paid lifecycle."""
+        from apps.commerce.constants import SALES_STATUSES
+        return self.orders.filter(status__in=SALES_STATUSES).count()
 
 
 class StoreActivity(models.Model):

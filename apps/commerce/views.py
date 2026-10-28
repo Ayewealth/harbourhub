@@ -1207,9 +1207,11 @@ class RecentSalesView(generics.ListAPIView):
         if not hasattr(user, 'store'):
             return Order.objects.none()
             
+        from apps.commerce.constants import SALES_STATUSES
+
         return Order.objects.filter(
             store=user.store,
-            status__in=[Order.Status.PAID, Order.Status.FULFILLED]
+            status__in=SALES_STATUSES
         ).select_related(
             "buyer"
         ).order_by("-created_at")[:10]  # Return top 10 recent sales
