@@ -1864,12 +1864,6 @@ paths:
     get:
       operationId: auth_delivery_details_list
       parameters:
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
       - name: page
         required: false
         in: query
@@ -3196,6 +3190,27 @@ paths:
               schema:
                 $ref: '#/components/schemas/CheckoutResponse'
           description: ''
+  /commerce/checkout/session/{session_id}/retry/:
+    post:
+      operationId: commerce_checkout_session_retry_create
+      summary: Retry Payment for an existing checkout session
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - commerce
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetryPaymentResponse'
+          description: ''
   /commerce/disputes/:
     get:
       operationId: commerce_disputes_list
@@ -3279,7 +3294,7 @@ paths:
   /commerce/disputes/{id}/action/:
     post:
       operationId: commerce_disputes_action_create
-      description: 'Admin-only: Resolve or Refund a dispute.'
+      description: 'Admin-only: resolve or refund a dispute.'
       parameters:
       - in: path
         name: id
@@ -3370,7 +3385,7 @@ paths:
             examples:
               CreateBuyOrder:
                 value:
-                  order_type: buy
+                  purchase_type: buy
                   seller: 106
                   listing: 104
                   store: 1
@@ -3385,7 +3400,7 @@ paths:
                 summary: Create buy order
               CreateHireOrder:
                 value:
-                  order_type: hire
+                  purchase_type: hire
                   seller: 106
                   listing: 104
                   store: 1
@@ -3563,7 +3578,7 @@ paths:
           description: ''
     post:
       operationId: commerce_orders_cancel_action_post
-      description: Cancel an order
+      description: Cancel an unpaid order, or request a refund for a paid one.
       parameters:
       - in: path
         name: id
@@ -3641,7 +3656,7 @@ paths:
           description: ''
     post:
       operationId: commerce_orders_cancel_action_post_2
-      description: Cancel an order
+      description: Cancel an unpaid order, or request a refund for a paid one.
       parameters:
       - in: path
         name: id
@@ -3757,6 +3772,18 @@ paths:
         required: true
       tags:
       - commerce
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderMarkShippedRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrderMarkShippedRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OrderMarkShippedRequestRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
@@ -3898,11 +3925,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaymentVerifyResponse'
           description: ''
-        '400':
+        '503':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentVerifyError'
+                $ref: '#/components/schemas/PaymentVerifyUnavailable'
           description: ''
   /commerce/payment/webhook/:
     post:
@@ -4752,11 +4779,13 @@ paths:
           enum:
           - available
           - paid_out
+          - partially_released
           - pending
           - processing
           - reversed
         description: |-
           * `pending` - Pending
+          * `partially_released` - Partially Released
           * `available` - Available
           * `processing` - Processing Payout
           * `paid_out` - Paid Out
@@ -6545,6 +6574,106 @@ paths:
               schema:
                 $ref: '#/components/schemas/ListingReviewCreate'
           description: ''
+  /reviews/listings/{id}/:
+    get:
+      operationId: reviews_listings_retrieve
+      summary: Retrieve listing review
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - reviews
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingReview'
+          description: ''
+    put:
+      operationId: reviews_listings_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - reviews
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListingReviewUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ListingReviewUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ListingReviewUpdateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingReviewUpdate'
+          description: ''
+    patch:
+      operationId: reviews_listings_partial_update
+      summary: Edit your listing review
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - reviews
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedListingReviewUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedListingReviewUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedListingReviewUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingReviewUpdate'
+          description: ''
+    delete:
+      operationId: reviews_listings_destroy
+      summary: Delete your listing review
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - reviews
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /reviews/stores/:
     get:
       operationId: reviews_stores_list
@@ -6607,6 +6736,106 @@ paths:
               schema:
                 $ref: '#/components/schemas/StoreReviewCreate'
           description: ''
+  /reviews/stores/{id}/:
+    get:
+      operationId: reviews_stores_retrieve
+      summary: Retrieve store review
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - reviews
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreReview'
+          description: ''
+    put:
+      operationId: reviews_stores_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - reviews
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreReviewUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StoreReviewUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StoreReviewUpdateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreReviewUpdate'
+          description: ''
+    patch:
+      operationId: reviews_stores_partial_update
+      summary: Edit your store review
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - reviews
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStoreReviewUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStoreReviewUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStoreReviewUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreReviewUpdate'
+          description: ''
+    delete:
+      operationId: reviews_stores_destroy
+      summary: Delete your store review
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - reviews
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /search/:
     get:
       operationId: search_retrieve
@@ -7733,14 +7962,16 @@ components:
         Appends root 'currency' and 'currency_symbol' context.
       properties:
         order_id:
+          type: integer
+          readOnly: true
+        order_number:
           type: string
+          maxLength: 40
         status:
           $ref: '#/components/schemas/OrderStatusEnum'
-        order_type:
-          $ref: '#/components/schemas/OrderTypeEnum'
         listing_title:
           type: string
-          default: ''
+          readOnly: true
         buyer:
           allOf:
           - $ref: '#/components/schemas/OrderBuyer'
@@ -7749,6 +7980,23 @@ components:
           allOf:
           - $ref: '#/components/schemas/OrderSeller'
           readOnly: true
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        subtotal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
+        delivery_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        escrow_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         created_at:
           type: string
           format: date-time
@@ -7758,18 +8006,6 @@ components:
           format: date-time
           nullable: true
           readOnly: true
-        rental_start:
-          type: string
-          format: date
-          nullable: true
-        rental_end:
-          type: string
-          format: date
-          nullable: true
-        rental_duration:
-          type: integer
-          readOnly: true
-          nullable: true
         dispute:
           allOf:
           - $ref: '#/components/schemas/OrderDispute'
@@ -7786,9 +8022,6 @@ components:
         delivery_carrier:
           type: string
           maxLength: 100
-        carrier:
-          type: string
-          readOnly: true
         escrow_status:
           type: string
           readOnly: true
@@ -7807,20 +8040,18 @@ components:
           readOnly: true
       required:
       - buyer
-      - carrier
       - created_at
       - dispute
       - dispute_detail
       - escrow_status
       - estimated_delivery
       - internal_notes
+      - listing_title
       - order_id
-      - order_type
-      - rental_duration
-      - rental_end
-      - rental_start
+      - order_number
       - seller
       - timeline
+      - total_amount
       - vendor_earning_status
     AdminPaymentStatsResponse:
       type: object
@@ -10078,6 +10309,9 @@ components:
         Owners can set featured=True; when featured=True we unset any other featured listings
         for that owner automatically.
       properties:
+        id:
+          type: integer
+          readOnly: true
         title:
           type: string
           description: Listing title
@@ -10090,8 +10324,7 @@ components:
           description: Listing category
         store:
           type: integer
-          nullable: true
-          description: The store that the listing belongs to
+          readOnly: true
         listing_type:
           allOf:
           - $ref: '#/components/schemas/ListingTypeEnum'
@@ -10109,7 +10342,6 @@ components:
           nullable: true
         currency:
           type: string
-          description: Currency code (NGN for Naira)
           maxLength: 3
         price_unit:
           type: string
@@ -10178,9 +10410,11 @@ components:
       - contact_name
       - description
       - documents
+      - id
       - images
       - listing_type
       - location
+      - store
       - title
     ListingCreateUpdateRequest:
       type: object
@@ -10201,10 +10435,6 @@ components:
         category:
           type: integer
           description: Listing category
-        store:
-          type: integer
-          nullable: true
-          description: The store that the listing belongs to
         listing_type:
           allOf:
           - $ref: '#/components/schemas/ListingTypeEnum'
@@ -10223,7 +10453,6 @@ components:
         currency:
           type: string
           minLength: 1
-          description: Currency code (NGN for Naira)
           maxLength: 3
         price_unit:
           type: string
@@ -10320,7 +10549,6 @@ components:
           description: Listing category
         store:
           type: integer
-          nullable: true
           description: The store that the listing belongs to
         store_name:
           type: string
@@ -10356,7 +10584,7 @@ components:
           nullable: true
         currency:
           type: string
-          description: Currency code (NGN for Naira)
+          description: Currency code (USD as base)
           maxLength: 3
         currency_symbol:
           type: string
@@ -10431,6 +10659,11 @@ components:
           items:
             $ref: '#/components/schemas/ListingDocument'
           readOnly: true
+        average_rating:
+          type: number
+          format: double
+          nullable: true
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -10449,6 +10682,7 @@ components:
           format: date-time
           nullable: true
       required:
+      - average_rating
       - category
       - category_full_name
       - category_name
@@ -10466,6 +10700,7 @@ components:
       - location_display
       - owner
       - published_at
+      - store
       - store_logo
       - store_name
       - store_slug
@@ -10492,7 +10727,6 @@ components:
           description: Listing category
         store:
           type: integer
-          nullable: true
           description: The store that the listing belongs to
         listing_type:
           allOf:
@@ -10512,7 +10746,7 @@ components:
         currency:
           type: string
           minLength: 1
-          description: Currency code (NGN for Naira)
+          description: Currency code (USD as base)
           maxLength: 3
         price_unit:
           type: string
@@ -10575,6 +10809,7 @@ components:
       - description
       - listing_type
       - location
+      - store
       - title
     ListingDocument:
       type: object
@@ -10690,7 +10925,6 @@ components:
           description: Listing category
         store:
           type: integer
-          nullable: true
           description: The store that the listing belongs to
         store_name:
           type: string
@@ -10721,7 +10955,7 @@ components:
           nullable: true
         currency:
           type: string
-          description: Currency code (NGN for Naira)
+          description: Currency code (USD as base)
           maxLength: 3
         currency_symbol:
           type: string
@@ -10776,7 +11010,7 @@ components:
         inquiries_count:
           type: integer
           readOnly: true
-        rating_average:
+        average_rating:
           type: number
           format: double
           nullable: true
@@ -10814,6 +11048,7 @@ components:
           readOnly: true
           nullable: true
       required:
+      - average_rating
       - category
       - category_full_name
       - category_name
@@ -10831,8 +11066,8 @@ components:
       - owner_name
       - primary_image
       - published_at
-      - rating_average
       - review_count
+      - store
       - store_logo
       - store_name
       - store_slug
@@ -10887,6 +11122,9 @@ components:
     ListingReviewCreate:
       type: object
       properties:
+        id:
+          type: integer
+          readOnly: true
         listing:
           type: integer
         rating:
@@ -10897,6 +11135,7 @@ components:
         comment:
           type: string
       required:
+      - id
       - listing
       - rating
     ListingReviewCreateRequest:
@@ -10913,6 +11152,30 @@ components:
           type: string
       required:
       - listing
+      - rating
+    ListingReviewUpdate:
+      type: object
+      properties:
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+          description: 1–5 stars
+        comment:
+          type: string
+      required:
+      - rating
+    ListingReviewUpdateRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+          description: 1–5 stars
+        comment:
+          type: string
+      required:
       - rating
     ListingStatusEnum:
       enum:
@@ -11120,7 +11383,7 @@ components:
           nullable: true
         currency:
           type: string
-          description: Currency code (NGN for Naira)
+          description: Currency code (USD as base)
           maxLength: 3
         currency_symbol:
           type: string
@@ -11431,8 +11694,6 @@ components:
         order_number:
           type: string
           readOnly: true
-        order_type:
-          $ref: '#/components/schemas/OrderTypeEnum'
         buyer:
           type: integer
         seller:
@@ -11489,32 +11750,10 @@ components:
         carrier:
           type: string
           readOnly: true
-        rental_start_date:
-          type: string
-          format: date
-          nullable: true
-        rental_end_date:
-          type: string
-          format: date
-          nullable: true
-        rental_duration_days:
-          type: integer
-          maximum: 2147483647
-          minimum: 0
-          nullable: true
-        pickup_scheduled_date:
-          type: string
-          format: date
-          nullable: true
-        rental_days_total:
-          type: integer
-          readOnly: true
-        rental_days_elapsed:
-          type: integer
-          readOnly: true
-        rental_progress_percentage:
-          type: number
-          format: double
+        order_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
           readOnly: true
         activities:
           type: array
@@ -11536,11 +11775,8 @@ components:
       - carrier
       - created_at
       - id
+      - order_items
       - order_number
-      - order_type
-      - rental_days_elapsed
-      - rental_days_total
-      - rental_progress_percentage
       - seller
       - store_name
       - store_slug
@@ -11597,8 +11833,6 @@ components:
         Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
         Appends root 'currency' and 'currency_symbol' context.
       properties:
-        order_type:
-          $ref: '#/components/schemas/OrderTypeEnum'
         buyer:
           type: integer
         seller:
@@ -11622,7 +11856,6 @@ components:
         extra: {}
       required:
       - buyer
-      - order_type
       - seller
       - total_amount
     OrderCreateRequest:
@@ -11631,8 +11864,6 @@ components:
         Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
         Appends root 'currency' and 'currency_symbol' context.
       properties:
-        order_type:
-          $ref: '#/components/schemas/OrderTypeEnum'
         buyer:
           type: integer
         seller:
@@ -11657,7 +11888,6 @@ components:
         extra: {}
       required:
       - buyer
-      - order_type
       - seller
       - total_amount
     OrderDispute:
@@ -11675,24 +11905,110 @@ components:
       - id
       - opened_at
       - status
+    OrderItem:
+      type: object
+      description: |-
+        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
+        Appends root 'currency' and 'currency_symbol' context.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        quote_request:
+          type: integer
+          nullable: true
+        listing:
+          type: integer
+          nullable: true
+        listing_title:
+          type: string
+          readOnly: true
+        primary_image:
+          type: string
+          nullable: true
+          readOnly: true
+        purchase_type:
+          $ref: '#/components/schemas/OrderItemPurchaseTypeEnum'
+        quantity:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        subtotal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        rental_start_date:
+          type: string
+          format: date
+          nullable: true
+        rental_end_date:
+          type: string
+          format: date
+          nullable: true
+        duration_days:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          nullable: true
+        pickup_scheduled_date:
+          type: string
+          format: date
+          nullable: true
+        delivery_detail:
+          type: integer
+          nullable: true
+        delivery_detail_data:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+      required:
+      - delivery_detail_data
+      - id
+      - listing_title
+      - primary_image
+      - purchase_type
+      - subtotal
+      - unit_price
+    OrderItemPurchaseTypeEnum:
+      enum:
+      - buy
+      - hire
+      - lease
+      type: string
+      description: |-
+        * `buy` - Buy transaction
+        * `hire` - Hire booking
+        * `lease` - Lease contract
     OrderListTrackingSummary:
       type: object
       properties:
         order_id:
+          type: integer
+          readOnly: true
+        order_number:
           type: string
+          maxLength: 40
         listing_title:
           type: string
-          default: ''
+          readOnly: true
         seller_name:
           type: string
           default: ''
         buyer_name:
           type: string
           default: ''
-        order_type:
-          $ref: '#/components/schemas/OrderTypeEnum'
         status:
           $ref: '#/components/schemas/OrderStatusEnum'
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         last_event:
           type: string
           nullable: true
@@ -11720,8 +12036,10 @@ components:
       - created_at
       - last_event
       - last_event_at
+      - listing_title
       - order_id
-      - order_type
+      - order_number
+      - total_amount
     OrderMarkShippedError:
       type: object
       properties:
@@ -11729,13 +12047,34 @@ components:
           type: string
       required:
       - error
+    OrderMarkShippedRequestRequest:
+      type: object
+      properties:
+        carrier:
+          type: string
+          minLength: 1
+        tracking_id:
+          type: string
+          minLength: 1
+      required:
+      - carrier
+      - tracking_id
     OrderMarkShippedResponse:
       type: object
       properties:
         message:
           type: string
+        status:
+          type: string
+        carrier:
+          type: string
+        tracking_id:
+          type: string
       required:
+      - carrier
       - message
+      - status
+      - tracking_id
     OrderSeller:
       type: object
       properties:
@@ -11781,14 +12120,16 @@ components:
         Appends root 'currency' and 'currency_symbol' context.
       properties:
         order_id:
+          type: integer
+          readOnly: true
+        order_number:
           type: string
+          maxLength: 40
         status:
           $ref: '#/components/schemas/OrderStatusEnum'
-        order_type:
-          $ref: '#/components/schemas/OrderTypeEnum'
         listing_title:
           type: string
-          default: ''
+          readOnly: true
         buyer:
           allOf:
           - $ref: '#/components/schemas/OrderBuyer'
@@ -11797,6 +12138,23 @@ components:
           allOf:
           - $ref: '#/components/schemas/OrderSeller'
           readOnly: true
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        subtotal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
+        delivery_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        escrow_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         created_at:
           type: string
           format: date-time
@@ -11806,18 +12164,6 @@ components:
           format: date-time
           nullable: true
           readOnly: true
-        rental_start:
-          type: string
-          format: date
-          nullable: true
-        rental_end:
-          type: string
-          format: date
-          nullable: true
-        rental_duration:
-          type: integer
-          readOnly: true
-          nullable: true
         dispute:
           allOf:
           - $ref: '#/components/schemas/OrderDispute'
@@ -11834,47 +12180,46 @@ components:
         delivery_carrier:
           type: string
           maxLength: 100
-        carrier:
-          type: string
-          readOnly: true
       required:
       - buyer
-      - carrier
       - created_at
       - dispute
       - estimated_delivery
+      - listing_title
       - order_id
-      - order_type
-      - rental_duration
-      - rental_end
-      - rental_start
+      - order_number
       - seller
       - timeline
+      - total_amount
     OrderTrackingDetailRequest:
       type: object
       description: |-
         Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
         Appends root 'currency' and 'currency_symbol' context.
       properties:
-        order_id:
+        order_number:
           type: string
           minLength: 1
+          maxLength: 40
         status:
           $ref: '#/components/schemas/OrderStatusEnum'
-        order_type:
-          $ref: '#/components/schemas/OrderTypeEnum'
-        listing_title:
+        total_amount:
           type: string
-          minLength: 1
-          default: ''
-        rental_start:
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        subtotal:
           type: string
-          format: date
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
-        rental_end:
+        delivery_fee:
           type: string
-          format: date
-          nullable: true
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        escrow_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         tracking_id:
           type: string
           maxLength: 100
@@ -11882,10 +12227,8 @@ components:
           type: string
           maxLength: 100
       required:
-      - order_id
-      - order_type
-      - rental_end
-      - rental_start
+      - order_number
+      - total_amount
     OrderTrackingTimeline:
       type: object
       properties:
@@ -11916,16 +12259,6 @@ components:
       - is_current
       - label
       - timestamp
-    OrderTypeEnum:
-      enum:
-      - buy
-      - hire
-      - lease
-      type: string
-      description: |-
-        * `buy` - Buy transaction
-        * `hire` - Hire booking
-        * `lease` - Lease contract
     PaginatedAdminActionLogList:
       type: object
       required:
@@ -12998,10 +13331,6 @@ components:
         category:
           type: integer
           description: Listing category
-        store:
-          type: integer
-          nullable: true
-          description: The store that the listing belongs to
         listing_type:
           allOf:
           - $ref: '#/components/schemas/ListingTypeEnum'
@@ -13020,7 +13349,6 @@ components:
         currency:
           type: string
           minLength: 1
-          description: Currency code (NGN for Naira)
           maxLength: 3
         price_unit:
           type: string
@@ -13088,31 +13416,45 @@ components:
             type: string
             format: binary
           writeOnly: true
+    PatchedListingReviewUpdateRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+          description: 1–5 stars
+        comment:
+          type: string
     PatchedOrderTrackingDetailRequest:
       type: object
       description: |-
         Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
         Appends root 'currency' and 'currency_symbol' context.
       properties:
-        order_id:
+        order_number:
           type: string
           minLength: 1
+          maxLength: 40
         status:
           $ref: '#/components/schemas/OrderStatusEnum'
-        order_type:
-          $ref: '#/components/schemas/OrderTypeEnum'
-        listing_title:
+        total_amount:
           type: string
-          minLength: 1
-          default: ''
-        rental_start:
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        subtotal:
           type: string
-          format: date
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
-        rental_end:
+        delivery_fee:
           type: string
-          format: date
-          nullable: true
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        escrow_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         tracking_id:
           type: string
           maxLength: 100
@@ -13242,6 +13584,16 @@ components:
           nullable: true
         is_active:
           type: boolean
+    PatchedStoreReviewUpdateRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+          description: 1–5 stars
+        comment:
+          type: string
     PatchedStoreUpdateRequest:
       type: object
       properties:
@@ -13369,6 +13721,8 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+        business_type:
+          $ref: '#/components/schemas/BusinessTypeEnum'
         certifications:
           type: string
           description: Industry certifications and qualifications
@@ -13443,23 +13797,15 @@ components:
       - pending
       - success
       - failed
+      - partially_refunded
       - refunded
       type: string
       description: |-
         * `pending` - Pending
         * `success` - Success
         * `failed` - Failed
+        * `partially_refunded` - Partially refunded
         * `refunded` - Refunded
-    PaymentVerifyError:
-      type: object
-      properties:
-        status:
-          type: string
-        message:
-          type: string
-      required:
-      - message
-      - status
     PaymentVerifyResponse:
       type: object
       properties:
@@ -13467,8 +13813,18 @@ components:
           type: string
         message:
           type: string
-        order_id:
+        checkout_session_id:
           type: integer
+      required:
+      - message
+      - status
+    PaymentVerifyUnavailable:
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
       required:
       - message
       - status
@@ -13758,6 +14114,31 @@ components:
           type: string
       required:
       - message
+    QuoteDeliveryDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        contact_person:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        phone:
+          type: string
+      required:
+      - address
+      - city
+      - contact_person
+      - country
+      - id
+      - phone
+      - state
     QuoteRequest:
       type: object
       description: |-
@@ -13810,6 +14191,10 @@ components:
         delivery_detail:
           type: integer
           nullable: true
+        delivery_detail_data:
+          allOf:
+          - $ref: '#/components/schemas/QuoteDeliveryDetail'
+          readOnly: true
         notes:
           type: string
         standard_price:
@@ -13849,6 +14234,7 @@ components:
       - buyer_email
       - created_at
       - currency
+      - delivery_detail_data
       - id
       - listing
       - listing_title
@@ -13886,6 +14272,9 @@ components:
         delivery_location:
           type: string
           maxLength: 500
+        delivery_detail:
+          type: integer
+          nullable: true
         notes:
           type: string
       required:
@@ -13918,6 +14307,9 @@ components:
         delivery_location:
           type: string
           maxLength: 500
+        delivery_detail:
+          type: integer
+          nullable: true
         notes:
           type: string
       required:
@@ -14229,6 +14621,14 @@ components:
       required:
       - account_name
       - account_number
+    RetryPaymentResponse:
+      type: object
+      properties:
+        authorization_url:
+          type: string
+          format: uri
+      required:
+      - authorization_url
     RevokeAdminError:
       type: object
       properties:
@@ -15155,7 +15555,7 @@ components:
           nullable: true
         currency:
           type: string
-          description: Currency code (NGN for Naira)
+          description: Currency code (USD as base)
           maxLength: 3
         price_display:
           type: string
@@ -15245,6 +15645,9 @@ components:
     StoreReviewCreate:
       type: object
       properties:
+        id:
+          type: integer
+          readOnly: true
         store:
           type: integer
         rating:
@@ -15255,6 +15658,7 @@ components:
         comment:
           type: string
       required:
+      - id
       - rating
       - store
     StoreReviewCreateRequest:
@@ -15272,6 +15676,30 @@ components:
       required:
       - rating
       - store
+    StoreReviewUpdate:
+      type: object
+      properties:
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+          description: 1–5 stars
+        comment:
+          type: string
+      required:
+      - rating
+    StoreReviewUpdateRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+          description: 1–5 stars
+        comment:
+          type: string
+      required:
+      - rating
     StoreUnpublishError:
       type: object
       properties:
@@ -16077,17 +16505,6 @@ components:
         full_name:
           type: string
           maxLength: 255
-        role:
-          allOf:
-          - $ref: '#/components/schemas/RoleEnum'
-          description: |-
-            User role in the marketplace
-
-            * `buyer` - Buyer
-            * `seller` - Seller
-            * `service_provider` - Service Provider
-            * `admin` - Admin
-            * `super_admin` - Super Admin
         company:
           type: string
           description: Company name (optional)
@@ -16126,16 +16543,8 @@ components:
           type: string
           maxLength: 255
         role:
-          allOf:
-          - $ref: '#/components/schemas/RoleEnum'
-          description: |-
-            User role in the marketplace
-
-            * `buyer` - Buyer
-            * `seller` - Seller
-            * `service_provider` - Service Provider
-            * `admin` - Admin
-            * `super_admin` - Super Admin
+          type: string
+          writeOnly: true
         company:
           type: string
           description: Company name (optional)
@@ -16307,6 +16716,7 @@ components:
     VendorEarningStatusEnum:
       enum:
       - pending
+      - partially_released
       - available
       - processing
       - paid_out
@@ -16314,6 +16724,7 @@ components:
       type: string
       description: |-
         * `pending` - Pending
+        * `partially_released` - Partially Released
         * `available` - Available
         * `processing` - Processing Payout
         * `paid_out` - Paid Out
@@ -16384,6 +16795,8 @@ components:
         company_name:
           type: string
           maxLength: 200
+        business_type:
+          $ref: '#/components/schemas/BusinessTypeEnum'
         certifications:
           type: string
           description: Industry certifications and qualifications
@@ -16434,6 +16847,8 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+        business_type:
+          $ref: '#/components/schemas/BusinessTypeEnum'
         certifications:
           type: string
           description: Industry certifications and qualifications

@@ -994,6 +994,7 @@ class RetryPaymentView(APIView):
 
     @extend_schema(
         summary="Retry Payment for an existing checkout session",
+        request=None,
         responses={200: inline_serializer(name='RetryPaymentResponse', fields={'authorization_url': serializers.URLField()})}
     )
     def post(self, request, session_id):

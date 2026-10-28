@@ -25,7 +25,7 @@ class ListingReviewSerializer(serializers.ModelSerializer):
     store_slug = serializers.CharField(source="listing.store.slug", read_only=True)
     listing_title = serializers.CharField(source="listing.title", read_only=True)
 
-    def get_reviewer_name(self, obj):
+    def get_reviewer_name(self, obj) -> str:
         return getattr(obj.reviewer, "full_name", "") or obj.reviewer.get_full_name() or getattr(obj.reviewer, "username", "") or "Anonymous"
 
     class Meta:
@@ -88,7 +88,7 @@ class StoreReviewSerializer(serializers.ModelSerializer):
     store_name = serializers.CharField(source="store.name", read_only=True)
     store_slug = serializers.CharField(source="store.slug", read_only=True)
 
-    def get_reviewer_name(self, obj):
+    def get_reviewer_name(self, obj) -> str:
         return getattr(obj.reviewer, "full_name", "") or obj.reviewer.get_full_name() or getattr(obj.reviewer, "username", "") or "Anonymous"
 
     class Meta:

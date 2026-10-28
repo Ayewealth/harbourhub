@@ -53,5 +53,6 @@ jobs:
       - run: flake8 apps hb --select=F821 --exclude=migrations
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
-      - run: python manage.py spectacular --file /tmp/schema.yml --validate
+      - name: OpenAPI schema
+        run: python manage.py spectacular --file schema.yml --validate
       - run: pytest -q
