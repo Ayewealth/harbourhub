@@ -394,24 +394,67 @@ class OrderDetailView(generics.RetrieveAPIView):
 
     @extend_schema(operation_id="commerce_orders_cancel_action_post", request=None, responses={200: inline_serializer(name='OrderCancelResponse', fields={'message': serializers.CharField()})})
     def post(self, request, pk=None):
-        """Cancel an order"""
+        """Cancel an unpaid order, or request a refund for a paid one."""
         order = self.get_object()
         if request.user not in (order.buyer, order.seller):
             return Response({'error': 'Permission denied'}, status=403)
-        if order.status not in (Order.Status.DRAFT, Order.Status.PENDING_PAYMENT):
-            return Response({'error': 'Order cannot be cancelled at this stage'}, status=400)
-        order.status = Order.Status.CANCELLED
-        order.save(update_fields=['status'])
 
-        notify_order_cancelled(order, cancelled_by=request.user)
+        if order.status in (Order.Status.DRAFT, Order.Status.PENDING_PAYMENT):
+            order.status = Order.Status.CANCELLED
+            order.save(update_fields=['status'])
 
-        # Log activity
+            notify_order_cancelled(order, cancelled_by=request.user)
+
+            OrderActivity.objects.create(
+                order=order,
+                event_type=OrderActivity.EventType.ORDER_CANCELLED,
+                message="Order has been cancelled.",
+            )
+            return Response({'message': 'Order cancelled successfully'})
+
+        if order.status != Order.Status.PAID:
+            return Response(
+                {'error': 'Order cannot be cancelled at this stage'}, status=400
+            )
+
+        if not order.checkout_session_id:
+            return Response(
+                {'error': 'No successful payment found for this order'}, status=400
+            )
+        payment = Payment.objects.filter(
+            checkout_session=order.checkout_session,
+            status=Payment.Status.SUCCESS,
+        ).first()
+        if payment is None:
+            return Response(
+                {'error': 'No successful payment found for this order'}, status=400
+            )
+
+        from .services.refunds import RefundError, request_refund
+        reason = (request.data.get('reason') or 'Order cancelled by customer').strip()
+        try:
+            refund = request_refund(
+                payment, payment.amount, reason, actor=request.user
+            )
+        except RefundError as exc:
+            return Response({'error': str(exc)}, status=400)
+
         OrderActivity.objects.create(
             order=order,
-            event_type=OrderActivity.EventType.ORDER_CANCELLED,
-            message="Order has been cancelled."
+            event_type=OrderActivity.EventType.ORDER_REFUNDED,
+            message=f"Refund requested: {reason}.",
         )
-        return Response({'message': 'Order cancelled successfully'})
+        return Response(
+            {
+                'message': (
+                    'Refund requested. The order will be cancelled once the '
+                    'gateway confirms.'
+                ),
+                'refund_id': refund.id,
+                'refund_status': refund.status,
+            },
+            status=202,
+        )
 
 
 @extend_schema_view(
@@ -533,13 +576,15 @@ class OrderActivityListView(generics.ListAPIView):
             return OrderActivity.objects.none()
         order_id = self.kwargs['pk']
         user = self.request.user
-        order = get_object_or_404(
-            Order, pk=order_id,
-            **{'buyer': user} if not user.is_staff else {}
+        queryset = Order.objects.filter(
+            Q(buyer=user) | Q(seller=user) | Q(store__user=user)
         )
+        if getattr(user, 'is_admin_user', False) or user.is_staff:
+            queryset = Order.objects.all()
+        order = get_object_or_404(queryset.distinct(), pk=order_id)
         return OrderActivity.objects.filter(
             order=order
-        ).order_by('-created_at')
+        ).select_related("order").order_by('-created_at')
 
 
 class OrderMarkShippedView(APIView):
