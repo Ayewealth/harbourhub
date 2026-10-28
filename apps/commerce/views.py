@@ -1,6 +1,7 @@
 import uuid
 import hmac
 import hashlib
+import logging
 import requests
 
 from datetime import timedelta
@@ -25,7 +26,7 @@ from apps.commerce.models import Order, OrderActivity
 from apps.commerce.paystack import initialize_transaction, verify_transaction
 from apps.admin_panel.auth import has_admin_module_permission, HasAdminModulePermission
 from apps.admin_panel.constants import AdminModule
-from apps.core.currency import convert_currency
+from apps.core.currency import CurrencyRateUnavailable, convert_currency, convert_to_ngn
 from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
 from apps.analytics.posthog_utils import (
     track_quote_requested, track_order_placed,
@@ -59,6 +60,8 @@ PURCHASE_TYPE_MAP = {
     CartItem.PurchaseType.RENT: Order.OrderType.HIRE,
     CartItem.PurchaseType.LEASE: Order.OrderType.LEASE,
 }
+
+logger = logging.getLogger(__name__)
 
 
 @extend_schema_view(
@@ -843,75 +846,112 @@ class CartItemView(APIView):
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    ESCROW_RATE = Decimal('0.00')  # buyers pay no platform fee; commission is seller-side
-
-    @transaction.atomic
     def post(self, request):
         serializer = CheckoutSerializer(
-            data=request.data,
-            context={'request': request}
+            data=request.data, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
-        cart_items = serializer.validated_data['cart_items']
-
-        from collections import defaultdict
-        store_groups = defaultdict(list)
-        for item in cart_items:
-            store_key = item.store_id or 'no_store'
-            store_groups[store_key].append(item)
-
-        # 1. Calculate grand total for CheckoutSession
-        grand_total = Decimal('0.00')
-        for store_key, items in store_groups.items():
-            subtotal = sum(Decimal(str(convert_currency(item.subtotal, 'NGN', source_currency=item.listing.currency)[0])) for item in items)
-            escrow_fee = Decimal('0.00')
-            total = subtotal
-            grand_total += total
-
-        from apps.commerce.models import CheckoutSession, OrderItem
-        # 2. Create CheckoutSession
-        checkout_session = CheckoutSession.objects.create(
-            buyer=request.user,
-            total_amount=grand_total,
-            currency='NGN'
+        cart_items = list(
+            serializer.validated_data["cart_items"].select_related(
+                "listing__store", "delivery_detail", "quote_request"
+            )
         )
 
-        orders_created = []
-
-        # 3. Create Orders and OrderItems
-        for store_key, items in store_groups.items():
-            subtotal = sum(Decimal(str(convert_currency(item.subtotal, 'NGN', source_currency=item.listing.currency)[0])) for item in items)
-            escrow_fee = Decimal('0.00')
-            total = subtotal
-
-            first_item = items[0]
-            seller = first_item.listing.user
-
-            order = Order.objects.create(
-                order_number=f"ORD-{uuid.uuid4().hex[:12].upper()}",
-                buyer=request.user,
-                seller=seller,
-                store=first_item.store if hasattr(first_item, 'store') else first_item.listing.store,
-                checkout_session=checkout_session,
-                currency='NGN',
-                subtotal=subtotal,
-                delivery_fee=Decimal('0.00'),
-                escrow_fee=escrow_fee,
-                total_amount=total,
-                status=Order.Status.PENDING_PAYMENT,
-                placed_at=timezone.now(),
+        missing = [
+            item.listing.title
+            for item in cart_items
+            if item.listing.store_id is None
+        ]
+        if missing:
+            return Response(
+                {
+                    "error": (
+                        "These listings have no store and cannot be checked "
+                        f"out: {', '.join(missing)}."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            
-            # Create OrderItems
-            for item in items:
-                converted_unit_price = Decimal(str(convert_currency(item.unit_price, 'NGN', source_currency=item.listing.currency)[0]))
-                
+
+        priced = []
+        grand_total = Decimal("0.00")
+        for item in cart_items:
+            currency = (item.listing.currency or "NGN").upper()
+            try:
+                subtotal = convert_to_ngn(item.subtotal, currency)
+                unit_price_ngn = convert_to_ngn(item.unit_price, currency)
+            except CurrencyRateUnavailable as exc:
+                return Response(
+                    {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            original_unit = Decimal(str(item.unit_price or 0))
+            if original_unit > 0:
+                exchange_rate = (unit_price_ngn / original_unit).quantize(
+                    Decimal("0.00000001")
+                )
+            else:
+                exchange_rate = Decimal("1.00000000")
+
+            delivery_fee = Decimal("0.00")
+            total = subtotal + delivery_fee
+            grand_total += total
+            priced.append(
+                (
+                    item, subtotal, delivery_fee, total, unit_price_ngn,
+                    original_unit, currency, exchange_rate,
+                )
+            )
+
+        from apps.commerce.models import CheckoutSession, OrderItem
+
+        with transaction.atomic():
+            checkout_session = CheckoutSession.objects.create(
+                buyer=request.user,
+                total_amount=grand_total,
+                currency="NGN",
+            )
+
+            orders_created = []
+            for (
+                item, subtotal, delivery_fee, total, unit_price_ngn,
+                original_unit, currency, exchange_rate,
+            ) in priced:
+                store = item.listing.store
+                order = Order.objects.create(
+                    order_number=f"ORD-{uuid.uuid4().hex[:12].upper()}",
+                    buyer=request.user,
+                    seller=store.user,
+                    store=store,
+                    checkout_session=checkout_session,
+                    currency="NGN",
+                    subtotal=subtotal,
+                    delivery_fee=delivery_fee,
+                    escrow_fee=Decimal("0.00"),
+                    total_amount=total,
+                    commission_rate=store.commission_rate,
+                    commission_amount=Decimal("0.00"),
+                    status=Order.Status.PENDING_PAYMENT,
+                    placed_at=timezone.now(),
+                )
+
                 rental_start = None
                 rental_end = None
-                if item.purchase_type in [CartItem.PurchaseType.RENT, CartItem.PurchaseType.LEASE]:
-                    rental_start = item.quote_request.preferred_delivery_date if item.quote_request_id and item.quote_request and item.quote_request.preferred_delivery_date else timezone.now().date()
+                if item.purchase_type in (
+                    CartItem.PurchaseType.RENT,
+                    CartItem.PurchaseType.LEASE,
+                ):
+                    rental_start = (
+                        item.quote_request.preferred_delivery_date
+                        if item.quote_request_id
+                        and item.quote_request
+                        and item.quote_request.preferred_delivery_date
+                        else timezone.now().date()
+                    )
                     if item.duration_days:
-                        rental_end = rental_start + timedelta(days=item.duration_days)
+                        rental_end = rental_start + timedelta(
+                            days=item.duration_days
+                        )
 
                 OrderItem.objects.create(
                     order=order,
@@ -919,74 +959,99 @@ class CheckoutView(APIView):
                     quote_request=item.quote_request,
                     purchase_type=PURCHASE_TYPE_MAP[item.purchase_type],
                     quantity=item.quantity,
-                    unit_price=converted_unit_price,
+                    unit_price=unit_price_ngn,
+                    original_currency=currency,
+                    original_unit_price=original_unit,
+                    exchange_rate=exchange_rate,
                     delivery_detail=item.delivery_detail,
                     duration_days=item.duration_days,
                     rental_start_date=rental_start,
                     rental_end_date=rental_end,
                 )
 
-            OrderActivity.objects.create(
-                order=order,
-                event_type=OrderActivity.EventType.ORDER_PLACED,
-                message="Order placed successfully."
+                OrderActivity.objects.create(
+                    order=order,
+                    event_type=OrderActivity.EventType.ORDER_PLACED,
+                    message="Order placed successfully.",
+                )
+
+                transaction.on_commit(
+                    lambda order=order: notify_order_placed(order)
+                )
+                track_order_placed(request.user, order)
+                orders_created.append(order)
+
+            payment = Payment.objects.create(
+                checkout_session=checkout_session,
+                buyer=request.user,
+                amount=grand_total,
+                currency="NGN",
+                reference=f"PAY-{uuid.uuid4().hex[:16].upper()}",
+                status=Payment.Status.PENDING,
             )
-
-            notify_order_placed(order)
-            track_order_placed(request.user, order)
-
-            orders_created.append(order)
-
-        # 4. Create single Payment for CheckoutSession
-        reference = f"PAY-{uuid.uuid4().hex[:16].upper()}"
-        payment = Payment.objects.create(
-            checkout_session=checkout_session,
-            buyer=request.user,
-            amount=grand_total,
-            currency='NGN',
-            reference=reference,
-            status=Payment.Status.PENDING,
-        )
 
         try:
             paystack_data = initialize_transaction(
                 email=request.user.email,
                 amount_kobo=int(grand_total * 100),
-                reference=reference,
-                metadata={'checkout_session_id': checkout_session.id},
+                reference=payment.reference,
+                metadata={"checkout_session_id": checkout_session.id},
                 callback_url=settings.PAYSTACK_CALLBACK_URL,
             )
             if not paystack_data:
                 raise ValueError("Failed to initialize payment gateway")
-            payment.authorization_url = paystack_data.get('authorization_url', '')
-            payment.paystack_access_code = paystack_data.get('access_code', '')
-            payment.gateway_response = paystack_data
-            payment.save(update_fields=['authorization_url', 'paystack_access_code', 'gateway_response'])
-        except ValueError as e:
-            raise serializers.ValidationError(f"Payment gateway error: {str(e)}")
-
-        # Remove checked out items from cart
-        cart_items.delete()
-
-        return Response({
-            'message': f'{len(orders_created)} order(s) created.',
-            'orders': [
+        except Exception as exc:
+            logger.exception("Checkout payment initialisation failed: %s", exc)
+            payment.status = Payment.Status.FAILED
+            payment.gateway_response = {"error": str(exc)}
+            payment.save(update_fields=["status", "gateway_response"])
+            return Response(
                 {
-                    'order_id': o.id,
-                    'order_number': o.order_number,
-                    'total_amount': str(o.total_amount),
-                }
-                for o in orders_created
-            ],
-            'payments': [
-                {
-                    'payment_id': payment.id,
-                    'reference': payment.reference,
-                    'authorization_url': payment.authorization_url,
-                    'amount': str(payment.amount),
-                }
+                    "error": "Payment gateway unavailable. Your cart is intact.",
+                    "payment_id": payment.id,
+                    "retry_url": (
+                        f"/commerce/checkout/session/{checkout_session.id}/retry/"
+                    ),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        payment.authorization_url = paystack_data.get("authorization_url", "")
+        payment.paystack_access_code = paystack_data.get("access_code", "")
+        payment.gateway_response = paystack_data
+        payment.save(
+            update_fields=[
+                "authorization_url",
+                "paystack_access_code",
+                "gateway_response",
             ]
-        }, status=status.HTTP_201_CREATED)
+        )
+        CartItem.objects.filter(
+            pk__in=[item.pk for item in cart_items]
+        ).delete()
+
+        return Response(
+            {
+                "message": f"{len(orders_created)} order(s) created.",
+                "orders": [
+                    {
+                        "order_id": o.id,
+                        "order_number": o.order_number,
+                        "total_amount": str(o.total_amount),
+                    }
+                    for o in orders_created
+                ],
+                "payments": [
+                    {
+                        "payment_id": payment.id,
+                        "reference": payment.reference,
+                        "authorization_url": payment.authorization_url,
+                        "amount": str(payment.amount),
+                    }
+                ],
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class RetryPaymentView(APIView):
