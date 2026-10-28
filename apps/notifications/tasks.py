@@ -1,4 +1,8 @@
+from datetime import timedelta
+
 from celery import shared_task
+from django.utils import timezone
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -7,29 +11,39 @@ logger = logging.getLogger(__name__)
 @shared_task
 def send_rental_reminders_task():
     """
-    Check all active hire/lease orders and send reminders
-    if rental is ending in 1 or 3 days.
+    Send a reminder one and three days before each hire/lease period ends.
+
+    Rental dates live on OrderItem, not Order: one order can contain a
+    purchase plus a hire, and P2 makes one order per cart item anyway.
     Run daily via Celery Beat.
     """
-    from django.utils import timezone
-    from datetime import timedelta
-    from apps.commerce.models import Order
+    from apps.commerce.constants import ACTIVE_RENTAL_STATUSES
+    from apps.commerce.models import OrderItem
     from .utils import notify_rental_reminder
 
     today = timezone.now().date()
-    reminder_days = [1, 3]
 
-    for days in reminder_days:
+    for days in (1, 3):
         target_date = today + timedelta(days=days)
-        orders = Order.objects.filter(
-            order_type__in=['hire', 'lease'],
-            status=Order.Status.PAID,
-            rental_end_date=target_date,
-        ).select_related('buyer').prefetch_related('items__listing')
+        items = (
+            OrderItem.objects.filter(
+                purchase_type__in=["hire", "lease"],
+                rental_end_date=target_date,
+                order__status__in=ACTIVE_RENTAL_STATUSES,
+            )
+            .select_related("order", "order__buyer", "listing")
+            .order_by("order_id")
+        )
 
-        for order in orders:
-            notify_rental_reminder(order, days_left=days)
+        notified_order_ids = set()
+        for item in items:
+            # One notification per order, no matter how many hire items it has.
+            if item.order_id in notified_order_ids:
+                continue
+            notified_order_ids.add(item.order_id)
+            notify_rental_reminder(item.order, days_left=days)
             logger.info(
                 "Rental reminder sent for order %s (%d days left)",
-                order.order_number, days
+                item.order.order_number,
+                days,
             )
