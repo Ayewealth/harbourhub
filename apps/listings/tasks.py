@@ -37,7 +37,7 @@ def expire_listings_task(self):
     """
     Archive listings that have expired. Run periodically (via beat).
     """
-    print("Running expire_listings_task ✅")
+    logger.info("Running expire_listings_task")
     now = timezone.now()
     qs = Listing.objects.filter(
         expires_at__lte=now, status=Listing.Status.PUBLISHED)
