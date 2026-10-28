@@ -88,6 +88,10 @@ class OrderFactory(factory.django.DjangoModelFactory):
     currency = "NGN"
     subtotal = Decimal("1000.00")
     total_amount = Decimal("1000.00")
+    commission_rate = Decimal("5.00")
+    commission_amount = Decimal("0.00")
+    delivered_at = None
+    completed_at = None
     status = Order.Status.PENDING_PAYMENT
     placed_at = factory.LazyFunction(timezone.now)
 
@@ -101,6 +105,9 @@ class OrderItemFactory(factory.django.DjangoModelFactory):
     purchase_type = Order.OrderType.BUY
     quantity = 1
     unit_price = Decimal("1000.00")
+    original_currency = "NGN"
+    original_unit_price = Decimal("1000.00")
+    exchange_rate = Decimal("1.00000000")
 
 
 class PaymentFactory(factory.django.DjangoModelFactory):

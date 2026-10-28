@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -169,9 +171,8 @@ class Order(models.Model):
     )
     store = models.ForeignKey(
         "store.Store",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.PROTECT,
+        null=False,
         related_name="orders",
     )
     checkout_session = models.ForeignKey(
@@ -209,10 +210,35 @@ class Order(models.Model):
     delivery_fee = models.DecimalField(
         max_digits=14, decimal_places=2, default=0)
 
+    # Commission snapshot. commission_amount is platform revenue for this order.
+    commission_rate = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("0.00")
+    )
+    commission_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
+
+    # Lifecycle audit timestamps.
+    shipped_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True)
+
     @property
     def listing(self):
         first_item = self.items.first()
         return first_item.listing if first_item else None
+
+    @property
+    def item(self):
+        """The single item of this order (P2 grain)."""
+        return self.items.first()
+
+    @property
+    def purchase_type(self):
+        item = self.item
+        return item.purchase_type if item else None
 
 
 
@@ -236,6 +262,16 @@ class OrderItem(models.Model):
     purchase_type = models.CharField(max_length=16, choices=Order.OrderType.choices)
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2)
+    original_currency = models.CharField(max_length=3, default="NGN")
+    original_unit_price = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    exchange_rate = models.DecimalField(
+        max_digits=18,
+        decimal_places=8,
+        default=Decimal("1.00000000"),
+        help_text="NGN per unit of original_currency at checkout",
+    )
     delivery_detail = models.ForeignKey('accounts.DeliveryDetail', on_delete=models.SET_NULL, null=True, blank=True)
     
     duration_days = models.PositiveIntegerField(null=True, blank=True)
