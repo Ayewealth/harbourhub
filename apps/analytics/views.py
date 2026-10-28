@@ -41,7 +41,7 @@ class AnalyticsViewSet(ViewSet):
             return Response({})  # Safe for schema generation
 
         cached_data = cache.get("analytics:overview_snapshot")
-        if cached_data:
+        if cached_data is not None:
             return Response(cached_data)
 
         now = timezone.now()
@@ -69,10 +69,13 @@ class AnalyticsViewSet(ViewSet):
             "generated_at": now,
         }
 
-        cache.set("analytics:overview_snapshot", payload, 300)
-        serializer = AnalyticsOverviewSerializer(
-            payload, context={"request": request})
-        return Response(serializer.data)
+        # Serialise before caching. A raw dict containing datetime/Decimal is not
+        # JSON-renderable by DRF on the next request.
+        data = AnalyticsOverviewSerializer(
+            payload, context={"request": request}
+        ).data
+        cache.set("analytics:overview_snapshot", data, 300)
+        return Response(data)
 
     # ───────────────────────────────
     # USER ANALYTICS
