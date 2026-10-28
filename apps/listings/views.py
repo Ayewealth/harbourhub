@@ -74,24 +74,20 @@ class ListingViewSet(viewsets.ModelViewSet):
         """Filter queryset based on action and user"""
         queryset = super().get_queryset()
 
+        public_filter = (
+            Q(status=Listing.Status.PUBLISHED)
+            & (Q(store__is_active=True) | Q(store__isnull=True))
+        )
+
         if self.action == 'list':
-            return queryset.filter(
-                status=Listing.Status.PUBLISHED,
-                store__is_active=True,
-            )
+            return queryset.filter(public_filter)
         elif self.action in ['retrieve']:
             user = self.request.user
             if user and user.is_authenticated:
                 if getattr(user, "is_admin_user", False):
                     return queryset
-                return queryset.filter(
-                    Q(status=Listing.Status.PUBLISHED, store__is_active=True)
-                    | Q(user=user)
-                )
-            return queryset.filter(
-                status=Listing.Status.PUBLISHED,
-                store__is_active=True,
-            )
+                return queryset.filter(public_filter | Q(user=user))
+            return queryset.filter(public_filter)
 
         return queryset
 
@@ -193,14 +189,12 @@ class ListingViewSet(viewsets.ModelViewSet):
         """
         instance = self.get_object()
 
-        from apps.commerce.models import Order, OrderItem, QuoteRequest
+        from apps.commerce.constants import LIVE_ORDER_STATUSES
+        from apps.commerce.models import OrderItem, QuoteRequest
 
         active_orders = OrderItem.objects.filter(
             listing=instance,
-            order__status__in=[
-                Order.Status.PENDING_PAYMENT,
-                Order.Status.PAID,
-            ],
+            order__status__in=LIVE_ORDER_STATUSES,
         ).exists()
 
         if active_orders:
@@ -276,11 +270,12 @@ class ListingViewSet(viewsets.ModelViewSet):
         listing.status = Listing.Status.PUBLISHED
         listing.save(update_fields=['status', 'published_at'])
 
-        log_store_activity(
-            listing.store,
-            "listing_published",
-            f"{listing.title} has been published"
-        )
+        if listing.store_id:
+            log_store_activity(
+                listing.store,
+                "listing_published",
+                f"{listing.title} has been published",
+            )
 
         return Response({'message': 'Listing published successfully'}, status=status.HTTP_200_OK)
 
@@ -323,11 +318,12 @@ class ListingViewSet(viewsets.ModelViewSet):
         listing.status = Listing.Status.PAUSED
         listing.save(update_fields=['status'])
 
-        log_store_activity(
-            listing.store,
-            "listing_paused",
-            f"{listing.title} was paused"
-        )
+        if listing.store_id:
+            log_store_activity(
+                listing.store,
+                "listing_paused",
+                f"{listing.title} was paused",
+            )
 
         return Response({'message': 'Listing paused successfully'}, status=status.HTTP_200_OK)
 
@@ -352,11 +348,12 @@ class ListingViewSet(viewsets.ModelViewSet):
         listing.status = Listing.Status.PUBLISHED
         listing.save(update_fields=['status'])
 
-        log_store_activity(
-            listing.store,
-            "listing_resumed",
-            f"{listing.title} has resumed"
-        )
+        if listing.store_id:
+            log_store_activity(
+                listing.store,
+                "listing_resumed",
+                f"{listing.title} has resumed",
+            )
 
         return Response({'message': 'Listing resumed successfully'}, status=status.HTTP_200_OK)
 
@@ -530,8 +527,8 @@ class TopDealsListView(generics.ListAPIView):
 
         return (
             Listing.objects.filter(
-                status=Listing.Status.PUBLISHED,
-                store__is_active=True,
+                Q(status=Listing.Status.PUBLISHED)
+                & (Q(store__is_active=True) | Q(store__isnull=True))
             )
             .select_related("category", "user", "store")
             .prefetch_related("images")
@@ -571,8 +568,8 @@ class BestReviewedListView(generics.ListAPIView):
 
         return (
             Listing.objects.filter(
-                status=Listing.Status.PUBLISHED,
-                store__is_active=True,
+                Q(status=Listing.Status.PUBLISHED)
+                & (Q(store__is_active=True) | Q(store__isnull=True))
             )
             .select_related("category", "user", "store")
             .prefetch_related("images")
@@ -608,7 +605,9 @@ class SavedItemListView(generics.ListAPIView):
         return (
             Listing.objects.filter(
                 id__in=saved_listing_ids,
-                store__is_active=True,
+            )
+            .filter(
+                Q(store__is_active=True) | Q(store__isnull=True)
             )
             .select_related('category', 'user', 'store')
             .prefetch_related('images')
@@ -629,8 +628,12 @@ class SavedItemToggleView(APIView):
     def post(self, request, pk):
         """Save a listing"""
         listing = get_object_or_404(
-            Listing, pk=pk, status=Listing.Status.PUBLISHED,
-            store__is_active=True)
+            Listing.objects.filter(
+                Q(store__is_active=True) | Q(store__isnull=True)
+            ),
+            pk=pk,
+            status=Listing.Status.PUBLISHED,
+        )
 
         if listing.user == request.user:
             return Response(

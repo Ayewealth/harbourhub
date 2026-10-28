@@ -24,8 +24,16 @@ ACTIVE_RENTAL_STATUSES = [
     Order.Status.ACTIVE_HIRE,
 ]
 
-# States that still block deleting the listing behind them.
+# States that still block deleting the listing behind them. FULFILLED is
+# terminal, so it is allowed to drop out of the guard.
 LIVE_ORDER_STATUSES = [
     Order.Status.PENDING_PAYMENT,
-    *SALES_STATUSES,
+    Order.Status.PAID,
+    Order.Status.ORDER_CONFIRMED,
+    Order.Status.ITEM_DISPATCHED,
+    Order.Status.IN_TRANSIT,
+    Order.Status.DELIVERED,
+    Order.Status.ACTIVE_HIRE,
+    Order.Status.HIRE_ENDED,
+    Order.Status.ITEM_RETURNED,
 ]
