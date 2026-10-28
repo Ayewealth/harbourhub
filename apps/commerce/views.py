@@ -1330,7 +1330,8 @@ class OrderTrackingUpdateView(generics.CreateAPIView):
         # Validate event is a valid seller event
         seller_events = [
             'order_confirmed', 'item_dispatched', 'in_transit',
-            'delivered', 'item_returned', 'order_fulfilled', 'order_cancelled'
+            'delivered', 'hire_started', 'hire_ended', 'item_returned',
+            'order_fulfilled', 'order_cancelled'
         ]
         if event not in seller_events:
             return Response(
@@ -1349,6 +1350,15 @@ class OrderTrackingUpdateView(generics.CreateAPIView):
             "hire_ended": [("item_returned", "item_returned")],
             "item_returned": [("order_fulfilled", "fulfilled")],
         }
+
+        # Hire/lease orders continue into an active rental period instead of
+        # completing on delivery.
+        has_rental = order.items.filter(
+            purchase_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE]
+        ).exists()
+        if has_rental:
+            VALID_TRANSITIONS["delivered"] = [("hire_started", "active_hire")]
+            VALID_TRANSITIONS["active_hire"] = [("hire_ended", "hire_ended")]
 
         transitions = VALID_TRANSITIONS.get(order.status, [])
         allowed_matches = [t for t in transitions if t[0] == event]

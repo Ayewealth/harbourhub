@@ -105,3 +105,74 @@ def test_ship_records_tracking_and_dispatches(auth_client):
     assert order.delivery_carrier == "GIG Logistics"
     assert order.tracking_id == "GIG-123"
     assert order.activities.filter(event_type="shipped").exists()
+
+@pytest.mark.django_db
+def test_buy_order_completes_after_delivery(auth_client):
+    order = OrderFactory(status=Order.Status.DELIVERED)
+    OrderItemFactory(order=order, purchase_type=Order.OrderType.BUY)
+    client = auth_client(order.seller)
+
+    response = client.post(
+        f"/commerce/orders/{order.id}/tracking/update/",
+        {"event": "order_fulfilled"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    order.refresh_from_db()
+    assert order.status == Order.Status.FULFILLED
+
+
+@pytest.mark.django_db
+def test_hire_order_runs_the_rental_states(auth_client):
+    order = OrderFactory(status=Order.Status.DELIVERED)
+    OrderItemFactory(order=order, purchase_type=Order.OrderType.HIRE)
+    client = auth_client(order.seller)
+
+    started = client.post(
+        f"/commerce/orders/{order.id}/tracking/update/",
+        {"event": "hire_started"},
+        format="json",
+    )
+    order.refresh_from_db()
+    assert started.status_code == 200
+    assert order.status == Order.Status.ACTIVE_HIRE
+
+    ended = client.post(
+        f"/commerce/orders/{order.id}/tracking/update/",
+        {"event": "hire_ended"},
+        format="json",
+    )
+    order.refresh_from_db()
+    assert ended.status_code == 200
+    assert order.status == Order.Status.HIRE_ENDED
+
+
+@pytest.mark.django_db
+def test_invalid_transition_returns_400(auth_client):
+    order = OrderFactory(status=Order.Status.PAID)
+    OrderItemFactory(order=order)
+    client = auth_client(order.seller)
+
+    response = client.post(
+        f"/commerce/orders/{order.id}/tracking/update/",
+        {"event": "item_dispatched"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_buyer_cannot_advance_tracking(auth_client):
+    order = OrderFactory(status=Order.Status.PAID)
+    OrderItemFactory(order=order)
+    client = auth_client(order.buyer)
+
+    response = client.post(
+        f"/commerce/orders/{order.id}/tracking/update/",
+        {"event": "order_confirmed"},
+        format="json",
+    )
+
+    assert response.status_code == 403
