@@ -93,6 +93,8 @@ def convert_currency(amount, target_currency: str, source_currency: str = "USD")
     """
     Convert amount from source_currency to target_currency.
     Returns (converted_amount_float, symbol_string).
+
+    DISPLAY ONLY. Money movement must use convert_to_ngn/convert_from_ngn.
     """
     if amount is None:
         return 0.0, CURRENCY_SYMBOLS.get(target_currency, target_currency)
@@ -123,6 +125,55 @@ def convert_currency(amount, target_currency: str, source_currency: str = "USD")
     converted = amount_in_usd * Decimal(str(target_rate)) if target_rate else amount_in_usd
 
     return round(float(converted), 2), CURRENCY_SYMBOLS.get(target_currency, target_currency)
+
+
+class CurrencyRateUnavailable(Exception):
+    """Raised when a rate needed for a real money movement is missing."""
+
+
+def money(value) -> Decimal:
+    """Quantise to two decimal places with ROUND_HALF_UP. Never returns a float."""
+    from decimal import ROUND_HALF_UP
+
+    return Decimal(str(value or 0)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+
+
+def _usd_rate(currency: str) -> Decimal:
+    currency = (currency or "USD").upper().strip()
+    if currency == "USD":
+        return Decimal("1")
+    rates = get_exchange_rates() or {}
+    rate = rates.get(currency)
+    if rate in (None, 0):
+        raise CurrencyRateUnavailable(
+            f"No exchange rate available for {currency}."
+        )
+    return Decimal(str(rate))
+
+
+def convert_to_ngn(amount, source_currency: str) -> Decimal:
+    """
+    Convert a real money amount to NGN once, returning Decimal.
+
+    Display code keeps using convert_currency(); money movement uses this.
+    """
+    value = Decimal(str(amount or 0))
+    source = (source_currency or "NGN").upper().strip()
+    if source == "NGN":
+        return money(value)
+    ngn_rate = _usd_rate("NGN")
+    source_rate = _usd_rate(source)
+    return money(value / source_rate * ngn_rate)
+
+
+def convert_from_ngn(amount, target_currency: str) -> Decimal:
+    value = Decimal(str(amount or 0))
+    target = (target_currency or "NGN").upper().strip()
+    if target == "NGN":
+        return money(value)
+    return money(value / _usd_rate("NGN") * _usd_rate(target))
 
 
 class CurrencyConverterMixin(object):
