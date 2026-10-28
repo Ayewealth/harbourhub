@@ -1,8 +1,23 @@
 from rest_framework import serializers
 
+from apps.commerce.constants import SALES_STATUSES
+from apps.commerce.models import OrderItem
 from apps.listings.models import Listing
 
 from .models import ListingReview, StoreReview
+
+
+def _has_paid_order(user, *, listing=None, store=None):
+    """A buyer may only review something they actually bought."""
+    items = OrderItem.objects.filter(
+        order__buyer=user,
+        order__status__in=SALES_STATUSES,
+    )
+    if listing is not None:
+        items = items.filter(listing=listing)
+    if store is not None:
+        items = items.filter(listing__store=store)
+    return items.exists()
 
 
 class ListingReviewSerializer(serializers.ModelSerializer):
@@ -33,7 +48,8 @@ class ListingReviewSerializer(serializers.ModelSerializer):
 class ListingReviewCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ListingReview
-        fields = ("listing", "rating", "comment")
+        fields = ("id", "listing", "rating", "comment")
+        read_only_fields = ("id",)
 
     def validate_listing(self, value):
         if value.status != Listing.Status.PUBLISHED:
@@ -49,6 +65,10 @@ class ListingReviewCreateSerializer(serializers.ModelSerializer):
             if listing.user_id == request.user.id:
                 raise serializers.ValidationError(
                     "You cannot review your own listing."
+                )
+            if not _has_paid_order(request.user, listing=listing):
+                raise serializers.ValidationError(
+                    "You can only review a listing you have purchased."
                 )
             if ListingReview.objects.filter(
                 listing=listing, reviewer=request.user
@@ -91,7 +111,8 @@ class StoreReviewSerializer(serializers.ModelSerializer):
 class StoreReviewCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoreReview
-        fields = ("store", "rating", "comment")
+        fields = ("id", "store", "rating", "comment")
+        read_only_fields = ("id",)
 
     def validate_store(self, value):
         if not value.is_published or not value.is_active:
@@ -108,6 +129,10 @@ class StoreReviewCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "You cannot review your own store."
                 )
+            if not _has_paid_order(request.user, store=store):
+                raise serializers.ValidationError(
+                    "You can only review a store you have purchased from."
+                )
             if StoreReview.objects.filter(
                 store=store, reviewer=request.user
             ).exists():
@@ -119,3 +144,15 @@ class StoreReviewCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data["reviewer"] = self.context["request"].user
         return super().create(validated_data)
+
+
+class ListingReviewUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ListingReview
+        fields = ("rating", "comment")
+
+
+class StoreReviewUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StoreReview
+        fields = ("rating", "comment")

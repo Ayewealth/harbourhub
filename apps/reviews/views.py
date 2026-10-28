@@ -3,11 +3,14 @@ from rest_framework import generics, permissions
 from apps.analytics.posthog_utils import track_review_submitted
 
 from .models import ListingReview, StoreReview
+from .permissions import IsReviewerOrReadOnly
 from .serializers import (
     ListingReviewCreateSerializer,
     ListingReviewSerializer,
+    ListingReviewUpdateSerializer,
     StoreReviewCreateSerializer,
     StoreReviewSerializer,
+    StoreReviewUpdateSerializer,
 )
 
 
@@ -77,3 +80,33 @@ class StoreReviewListCreateView(generics.ListCreateAPIView):
             review.store_id, 
             review.rating
         )
+
+
+@extend_schema_view(
+    get=extend_schema(summary="Retrieve listing review"),
+    patch=extend_schema(summary="Edit your listing review"),
+    delete=extend_schema(summary="Delete your listing review"),
+)
+class ListingReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsReviewerOrReadOnly]
+    queryset = ListingReview.objects.select_related("reviewer", "listing")
+
+    def get_serializer_class(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return ListingReviewUpdateSerializer
+        return ListingReviewSerializer
+
+
+@extend_schema_view(
+    get=extend_schema(summary="Retrieve store review"),
+    patch=extend_schema(summary="Edit your store review"),
+    delete=extend_schema(summary="Delete your store review"),
+)
+class StoreReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsReviewerOrReadOnly]
+    queryset = StoreReview.objects.select_related("reviewer", "store")
+
+    def get_serializer_class(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return StoreReviewUpdateSerializer
+        return StoreReviewSerializer
