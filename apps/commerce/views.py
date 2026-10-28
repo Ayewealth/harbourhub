@@ -448,53 +448,79 @@ class OrderExtendRentalView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        try:
-            order = Order.objects.get(
-                pk=pk, buyer=request.user,
-                items__purchase_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE]
+        order = get_object_or_404(
+            Order.objects.filter(buyer=request.user).distinct(), pk=pk
+        )
+        items = list(
+            order.items.filter(
+                purchase_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE]
+            ).order_by("rental_end_date")
+        )
+        if not items:
+            return Response(
+                {"error": "This order has no rental items to extend."},
+                status=400,
             )
-        except Order.DoesNotExist:
-            return Response({'error': 'Order not found'}, status=404)
 
-        from django.utils.dateparse import parse_date
-        from datetime import timedelta
+        duration_days = request.data.get("duration_days")
+        new_end_date = request.data.get("new_end_date")
+        today = timezone.now().date()
 
-        duration_days = request.data.get('duration_days')
-        new_end_date = request.data.get('new_end_date')
+        current_end = max(
+            (item.rental_end_date for item in items if item.rental_end_date),
+            default=today,
+        )
 
         if duration_days:
             try:
                 duration_days = int(duration_days)
             except (TypeError, ValueError):
-                return Response({'error': 'duration_days must be an integer'}, status=400)
+                return Response(
+                    {"error": "duration_days must be an integer"}, status=400
+                )
             if duration_days <= 0:
-                return Response({'error': 'duration_days must be positive'}, status=400)
-            base_date = order.rental_end_date or timezone.now().date()
-            parsed = base_date + timedelta(days=duration_days)
+                return Response(
+                    {"error": "duration_days must be positive"}, status=400
+                )
+            parsed = current_end + timedelta(days=duration_days)
         elif new_end_date:
             parsed = parse_date(new_end_date)
             if not parsed:
-                return Response({'error': 'Invalid date format. Use YYYY-MM-DD'}, status=400)
+                return Response(
+                    {"error": "Invalid date format. Use YYYY-MM-DD"},
+                    status=400,
+                )
         else:
-            return Response({'error': 'new_end_date or duration_days is required'}, status=400)
+            return Response(
+                {"error": "new_end_date or duration_days is required"},
+                status=400,
+            )
 
-        if order.rental_end_date and parsed <= order.rental_end_date:
-            return Response({'error': 'New end date must be after current end date'}, status=400)
+        if parsed <= current_end:
+            return Response(
+                {"error": "New end date must be after current end date"},
+                status=400,
+            )
 
-        order.rental_end_date = parsed
-        order.rental_duration_days = (parsed - order.rental_start_date).days if order.rental_start_date else None
-        order.save(update_fields=['rental_end_date', 'rental_duration_days'])
+        delta = parsed - current_end
+        with transaction.atomic():
+            for item in items:
+                item.rental_end_date = (item.rental_end_date or current_end) + delta
+                item.duration_days = (item.duration_days or 0) + delta.days
+                item.save(update_fields=["rental_end_date", "duration_days"])
 
         OrderActivity.objects.create(
             order=order,
             event_type=OrderActivity.EventType.RENTAL_EXTENDED,
-            message=f"Rental extended to {parsed}."
+            message=f"Rental extended to {parsed}.",
         )
 
         return Response({
-            'message': 'Rental extended successfully',
-            'new_end_date': str(parsed),
-            'rental_days_total': order.rental_days_total,
+            "message": "Rental extended successfully",
+            "new_end_date": str(parsed),
+            "rental_days_total": max(
+                (item.rental_days_total or 0 for item in items), default=0
+            ),
         })
 
 
@@ -520,37 +546,56 @@ class OrderMarkShippedView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
-        request=None,
+        request=inline_serializer(
+            name="OrderMarkShippedRequest",
+            fields={
+                "carrier": serializers.CharField(required=True),
+                "tracking_id": serializers.CharField(required=True),
+            },
+        ),
         responses={
-            200: inline_serializer(name='OrderMarkShippedResponse', fields={'message': serializers.CharField()}),
+            200: inline_serializer(name='OrderMarkShippedResponse', fields={'message': serializers.CharField(), 'status': serializers.CharField(), 'carrier': serializers.CharField(), 'tracking_id': serializers.CharField()}),
             400: inline_serializer(name='OrderMarkShippedError', fields={'error': serializers.CharField()})
         }
     )
     def post(self, request, pk):
-        order = get_object_or_404(
-            Order,
-            pk=pk,
-            seller=request.user
-        )
+        order = get_object_or_404(Order, pk=pk, seller=request.user)
 
-        if order.status != Order.Status.PAID:
+        if order.status not in (Order.Status.PAID, Order.Status.ORDER_CONFIRMED):
             return Response(
-                {"error": "Only paid orders can be shipped"},
-                status=400
+                {"error": "Only paid or confirmed orders can be shipped"},
+                status=400,
             )
 
-        order.status = Order.Status.FULFILLED
-        order.save(update_fields=["status"])
+        carrier = (request.data.get("carrier") or "").strip()
+        tracking_id = (request.data.get("tracking_id") or "").strip()
+        if not carrier or not tracking_id:
+            return Response(
+                {"error": "carrier and tracking_id are required"},
+                status=400,
+            )
 
-        OrderActivity.objects.create(
-            order=order,
-            event_type=OrderActivity.EventType.SHIPPED,
-            message="Order has been shipped"
-        )
+        with transaction.atomic():
+            order.status = Order.Status.ITEM_DISPATCHED
+            order.delivery_carrier = carrier
+            order.tracking_id = tracking_id
+            order.save(
+                update_fields=["status", "delivery_carrier", "tracking_id"]
+            )
+            OrderActivity.objects.create(
+                order=order,
+                event_type=OrderActivity.EventType.SHIPPED,
+                message=f"Dispatched via {carrier}. Tracking: {tracking_id}.",
+            )
 
         notify_order_shipped(order)
 
-        return Response({"message": "Order marked as shipped"})
+        return Response({
+            "message": "Order marked as shipped",
+            "status": order.status,
+            "carrier": carrier,
+            "tracking_id": tracking_id,
+        })
 
 
 class MarketplaceBreakdownView(APIView):
