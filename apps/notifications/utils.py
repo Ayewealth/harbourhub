@@ -313,6 +313,47 @@ def notify_rental_reminder(order, days_left: int):
     )
 
 
+def notify_rental_extended(order, item=None):
+    """Notify both sides that a paid rental extension has been applied."""
+    end_date = (
+        item.rental_end_date
+        if item is not None
+        else order.items.order_by("-rental_end_date").values_list(
+            "rental_end_date", flat=True
+        ).first()
+    )
+    suffix = f" to {end_date}" if end_date else ""
+
+    create_notification(
+        recipient=order.buyer,
+        notification_type='rental_extended',
+        title='Rental Extended',
+        message=(
+            f"Your rental for order #{order.order_number} "
+            f"has been extended{suffix}."
+        ),
+        priority='medium',
+        action_url=f"/orders/{order.id}",
+        action_label="View Order",
+        related_object_type='order',
+        related_object_id=order.id,
+    )
+    create_notification(
+        recipient=order.seller,
+        notification_type='rental_extended',
+        title='Rental Extended',
+        message=(
+            f"Order #{order.order_number} was extended{suffix} "
+            f"and the extension has been paid."
+        ),
+        priority='medium',
+        action_url=f"/vendor/orders/{order.id}",
+        action_label="View Order",
+        related_object_type='order',
+        related_object_id=order.id,
+    )
+
+
 def dispatch_tracking_notification(event_type: str, order):
     """
     Dispatch order tracking notifications to stakeholders according to Section 7.7 triggers.

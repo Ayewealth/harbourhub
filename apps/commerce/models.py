@@ -513,6 +513,52 @@ class Payment(models.Model):
         return f"Payment {self.reference} - {self.status}"
 
 
+class RentalExtension(models.Model):
+    """A payable extension of one hire/lease item.
+
+    The item's dates change only when the payment is finalised.
+    """
+
+    class Status(models.TextChoices):
+        PENDING_PAYMENT = "pending_payment", _("Pending payment")
+        PAID = "paid", _("Paid")
+        CANCELLED = "cancelled", _("Cancelled")
+
+    order_item = models.ForeignKey(
+        OrderItem, on_delete=models.PROTECT, related_name="extensions"
+    )
+    additional_days = models.PositiveIntegerField()
+    previous_end_date = models.DateField()
+    new_end_date = models.DateField()
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(max_length=3, default="NGN")
+    payment = models.OneToOneField(
+        Payment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rental_extension",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING_PAYMENT,
+        db_index=True,
+    )
+    applied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "rental_extensions"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"Extension {self.additional_days}d for item "
+            f"{self.order_item_id}"
+        )
+
+
 class WebhookEvent(models.Model):
     """Idempotency ledger for gateway webhooks."""
 

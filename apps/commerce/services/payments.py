@@ -79,4 +79,10 @@ def finalize_payment(payment, gateway_payload: dict):
             )
             accrue_earning(order)
 
+    extension = getattr(payment, "rental_extension", None)
+    if extension is not None:
+        from .rental import apply_rental_extension
+
+        apply_rental_extension(extension)
+
     return True

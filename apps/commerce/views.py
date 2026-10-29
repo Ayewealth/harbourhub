@@ -27,6 +27,7 @@ from apps.commerce.paystack import initialize_transaction, verify_transaction
 from apps.admin_panel.auth import has_admin_module_permission, HasAdminModulePermission
 from apps.admin_panel.constants import AdminModule
 from apps.core.currency import CurrencyRateUnavailable, convert_currency, convert_to_ngn
+from apps.financials.services import money
 from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
 from apps.analytics.posthog_utils import (
     track_quote_requested, track_order_placed,
@@ -35,7 +36,17 @@ from apps.analytics.posthog_utils import (
 
 
 from .filters import OrderFilter, QuoteRequestFilter
-from .models import Cart, CartItem, Order, OrderActivity, Payment, QuoteRequest, Dispute
+from .models import (
+    Cart,
+    CartItem,
+    Order,
+    OrderActivity,
+    OrderItem,
+    Payment,
+    QuoteRequest,
+    Dispute,
+    RentalExtension,
+)
 from .serializers import (
     CartItemCreateSerializer,
     CartItemSerializer,
@@ -465,73 +476,138 @@ class OrderDetailView(generics.RetrieveAPIView):
 
 @extend_schema_view(
     post=extend_schema(
-        summary="Extend order rental period",
-        request=inline_serializer(
-            name="ExtendRentalRequest",
-            fields={
-                "new_end_date": serializers.DateField(
-                    help_text="New rental end date (YYYY-MM-DD)"),
-                "duration_days": serializers.IntegerField(
-                    required=False,
-                    help_text="Alternative: number of days to extend from current end date"),
-            },
+        summary="Legacy rental extension (per order)",
+        description=(
+            "Deprecated. Rentals are extended per item and require payment; "
+            "this endpoint returns the correct item endpoint to use."
         ),
-        examples=[
-            OpenApiExample(
-                "Extend by date",
-                value={"new_end_date": "2026-04-20"}
-            ),
-            OpenApiExample(
-                "Extend by days",
-                value={"duration_days": 7}
-            ),
-        ],
+        request=None,
         responses={
-            200: inline_serializer(name='ExtendRentalResponse', fields={'message': serializers.CharField(), 'new_end_date': serializers.CharField(), 'rental_days_total': serializers.IntegerField()}),
-            400: inline_serializer(name='ExtendRentalError', fields={'error': serializers.CharField()}),
-            404: inline_serializer(name='ExtendRentalNotFound', fields={'error': serializers.CharField()}),
-        }
+            400: inline_serializer(
+                name='LegacyExtendRentalError',
+                fields={
+                    'error': serializers.CharField(),
+                    'item_id': serializers.IntegerField(),
+                    'endpoint': serializers.CharField(),
+                },
+            ),
+        },
     )
 )
 class OrderExtendRentalView(APIView):
+    """Legacy per-order endpoint kept only to redirect clients."""
+
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk, buyer=request.user)
+        item = order.items.order_by("id").first()
+        if item is None:
+            return Response({"error": "Order has no item."}, status=400)
+        return Response(
+            {
+                "error": (
+                    "Rentals are extended per item and require payment. "
+                    "Use the item endpoint."
+                ),
+                "item_id": item.id,
+                "endpoint": (
+                    f"/commerce/orders/{order.id}/items/{item.id}"
+                    "/extend-rental/"
+                ),
+            },
+            status=400,
+        )
+
+
+class OrderItemExtendRentalView(APIView):
+    """Create a payable extension for one hire/lease item.
+
+    The item's dates only move once the extension payment is confirmed.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        summary="Extend one rental item (paid)",
+        request=inline_serializer(
+            name="OrderItemExtendRentalRequest",
+            fields={
+                "duration_days": serializers.IntegerField(
+                    required=False,
+                    help_text="Number of extra days",
+                ),
+                "new_end_date": serializers.DateField(
+                    required=False,
+                    help_text="Alternative: the new rental end date",
+                ),
+            },
+        ),
+        responses={
+            201: inline_serializer(
+                name='OrderItemExtendRentalResponse',
+                fields={
+                    'message': serializers.CharField(),
+                    'extension_id': serializers.IntegerField(),
+                    'amount': serializers.CharField(),
+                    'authorization_url': serializers.CharField(),
+                    'new_end_date': serializers.CharField(),
+                },
+            ),
+            400: inline_serializer(
+                name='OrderItemExtendRentalError',
+                fields={'error': serializers.CharField()},
+            ),
+            502: inline_serializer(
+                name='OrderItemExtendRentalGatewayError',
+                fields={'error': serializers.CharField()},
+            ),
+        },
+    )
+    def post(self, request, pk, item_id):
         order = get_object_or_404(
-            Order.objects.filter(buyer=request.user).distinct(), pk=pk
+            Order.objects.filter(buyer=request.user), pk=pk
         )
-        items = list(
-            order.items.filter(
-                purchase_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE]
-            ).order_by("rental_end_date")
+        item = get_object_or_404(
+            OrderItem.objects.filter(
+                pk=item_id,
+                order=order,
+                purchase_type__in=[
+                    Order.OrderType.HIRE, Order.OrderType.LEASE
+                ],
+            )
         )
-        if not items:
+
+        if order.status not in (
+            Order.Status.PAID,
+            Order.Status.ORDER_CONFIRMED,
+            Order.Status.ACTIVE_HIRE,
+        ):
             return Response(
-                {"error": "This order has no rental items to extend."},
-                status=400,
+                {"error": "This order cannot be extended yet."}, status=400
             )
 
-        duration_days = request.data.get("duration_days")
+        if not item.rental_end_date:
+            return Response(
+                {"error": "This item has no rental end date."}, status=400
+            )
+
+        additional_days = request.data.get("duration_days")
         new_end_date = request.data.get("new_end_date")
         today = timezone.now().date()
 
-        current_end = max(
-            (item.rental_end_date for item in items if item.rental_end_date),
-            default=today,
-        )
-
-        if duration_days:
+        if additional_days:
             try:
-                duration_days = int(duration_days)
+                additional_days = int(additional_days)
             except (TypeError, ValueError):
                 return Response(
                     {"error": "duration_days must be an integer"}, status=400
                 )
-            if duration_days <= 0:
+            if additional_days <= 0:
                 return Response(
                     {"error": "duration_days must be positive"}, status=400
                 )
-            parsed = current_end + timedelta(days=duration_days)
+            parsed = item.rental_end_date + timedelta(days=additional_days)
         elif new_end_date:
             parsed = parse_date(new_end_date)
             if not parsed:
@@ -539,38 +615,88 @@ class OrderExtendRentalView(APIView):
                     {"error": "Invalid date format. Use YYYY-MM-DD"},
                     status=400,
                 )
+            additional_days = (parsed - item.rental_end_date).days
+            if additional_days <= 0:
+                return Response(
+                    {"error": "New end date must be after the current end date"},
+                    status=400,
+                )
         else:
             return Response(
-                {"error": "new_end_date or duration_days is required"},
+                {"error": "duration_days or new_end_date is required"},
                 status=400,
             )
 
-        if parsed <= current_end:
+        if parsed <= today:
             return Response(
-                {"error": "New end date must be after current end date"},
+                {"error": "The new end date must be in the future"},
                 status=400,
             )
 
-        delta = parsed - current_end
-        with transaction.atomic():
-            for item in items:
-                item.rental_end_date = (item.rental_end_date or current_end) + delta
-                item.duration_days = (item.duration_days or 0) + delta.days
-                item.save(update_fields=["rental_end_date", "duration_days"])
-
-        OrderActivity.objects.create(
-            order=order,
-            event_type=OrderActivity.EventType.RENTAL_EXTENDED,
-            message=f"Rental extended to {parsed}.",
+        amount = money(
+            item.unit_price * item.quantity * additional_days
         )
 
-        return Response({
-            "message": "Rental extended successfully",
-            "new_end_date": str(parsed),
-            "rental_days_total": max(
-                (item.rental_days_total or 0 for item in items), default=0
-            ),
-        })
+        with transaction.atomic():
+            extension = RentalExtension.objects.create(
+                order_item=item,
+                additional_days=additional_days,
+                previous_end_date=item.rental_end_date,
+                new_end_date=parsed,
+                amount=amount,
+                currency="NGN",
+            )
+            payment = Payment.objects.create(
+                buyer=request.user,
+                amount=amount,
+                currency="NGN",
+                reference=f"PAY-{uuid.uuid4().hex[:16].upper()}",
+                status=Payment.Status.PENDING,
+            )
+            extension.payment = payment
+            extension.save(update_fields=["payment"])
+
+        try:
+            data = initialize_transaction(
+                email=request.user.email,
+                amount_kobo=int(amount * 100),
+                reference=payment.reference,
+                metadata={"rental_extension_id": extension.id},
+                callback_url=settings.PAYSTACK_CALLBACK_URL,
+            )
+            if not data:
+                raise ValueError("Failed to initialize payment gateway")
+        except Exception as exc:
+            logger.exception("Rental extension payment failed: %s", exc)
+            payment.status = Payment.Status.FAILED
+            payment.save(update_fields=["status"])
+            extension.status = RentalExtension.Status.CANCELLED
+            extension.save(update_fields=["status"])
+            return Response(
+                {"error": "Payment gateway unavailable."}, status=502
+            )
+
+        payment.authorization_url = data.get("authorization_url", "")
+        payment.paystack_access_code = data.get("access_code", "")
+        payment.gateway_response = data
+        payment.save(
+            update_fields=[
+                "authorization_url",
+                "paystack_access_code",
+                "gateway_response",
+            ]
+        )
+
+        return Response(
+            {
+                "message": "Complete payment to extend the rental.",
+                "extension_id": extension.id,
+                "amount": str(amount),
+                "authorization_url": payment.authorization_url,
+                "new_end_date": str(parsed),
+            },
+            status=201,
+        )
 
 
 class OrderActivityListView(generics.ListAPIView):

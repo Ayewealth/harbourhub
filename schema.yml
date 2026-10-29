@@ -3706,7 +3706,9 @@ paths:
   /commerce/orders/{id}/extend-rental/:
     post:
       operationId: commerce_orders_extend_rental_create
-      summary: Extend order rental period
+      description: Deprecated. Rentals are extended per item and require payment;
+        this endpoint returns the correct item endpoint to use.
+      summary: Legacy rental extension (per order)
       parameters:
       - in: path
         name: id
@@ -3715,56 +3717,14 @@ paths:
         required: true
       tags:
       - commerce
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExtendRentalRequestRequest'
-            examples:
-              ExtendByDate:
-                value:
-                  new_end_date: '2026-04-20'
-                summary: Extend by date
-              ExtendByDays:
-                value:
-                  duration_days: 7
-                summary: Extend by days
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ExtendRentalRequestRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ExtendRentalRequestRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtendRentalResponse'
-              examples:
-                ExtendByDate:
-                  value:
-                    new_end_date: '2026-04-20'
-                  summary: Extend by date
-                ExtendByDays:
-                  value:
-                    duration_days: 7
-                  summary: Extend by days
-          description: ''
         '400':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExtendRentalError'
-          description: ''
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtendRentalNotFound'
+                $ref: '#/components/schemas/LegacyExtendRentalError'
           description: ''
   /commerce/orders/{id}/invoice/pdf/:
     get:
@@ -3789,6 +3749,59 @@ paths:
               schema:
                 type: string
                 format: binary
+          description: ''
+  /commerce/orders/{id}/items/{item_id}/extend-rental/:
+    post:
+      operationId: commerce_orders_items_extend_rental_create
+      description: |-
+        Create a payable extension for one hire/lease item.
+
+        The item's dates only move once the extension payment is confirmed.
+      summary: Extend one rental item (paid)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: item_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - commerce
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderItemExtendRentalRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrderItemExtendRentalRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OrderItemExtendRentalRequestRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderItemExtendRentalResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderItemExtendRentalError'
+          description: ''
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderItemExtendRentalGatewayError'
           description: ''
   /commerce/orders/{id}/ship/:
     post:
@@ -9633,45 +9646,6 @@ components:
         * `dispute_resolved` - Dispute Resolved
         * `order_refunded` - Order Refunded
         * `other` - Other Event
-    ExtendRentalError:
-      type: object
-      properties:
-        error:
-          type: string
-      required:
-      - error
-    ExtendRentalNotFound:
-      type: object
-      properties:
-        error:
-          type: string
-      required:
-      - error
-    ExtendRentalRequestRequest:
-      type: object
-      properties:
-        new_end_date:
-          type: string
-          format: date
-          description: New rental end date (YYYY-MM-DD)
-        duration_days:
-          type: integer
-          description: 'Alternative: number of days to extend from current end date'
-      required:
-      - new_end_date
-    ExtendRentalResponse:
-      type: object
-      properties:
-        message:
-          type: string
-        new_end_date:
-          type: string
-        rental_days_total:
-          type: integer
-      required:
-      - message
-      - new_end_date
-      - rental_days_total
     FeedbackEnum:
       enum:
       - helpful
@@ -10310,6 +10284,19 @@ components:
       description: |-
         * `en_us` - English (American)
         * `en_gb` - English (British)
+    LegacyExtendRentalError:
+      type: object
+      properties:
+        error:
+          type: string
+        item_id:
+          type: integer
+        endpoint:
+          type: string
+      required:
+      - endpoint
+      - error
+      - item_id
     ListingAnalytics:
       type: object
       properties:
@@ -12021,6 +12008,49 @@ components:
       - purchase_type
       - subtotal
       - unit_price
+    OrderItemExtendRentalError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
+    OrderItemExtendRentalGatewayError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
+    OrderItemExtendRentalRequestRequest:
+      type: object
+      properties:
+        duration_days:
+          type: integer
+          description: Number of extra days
+        new_end_date:
+          type: string
+          format: date
+          description: 'Alternative: the new rental end date'
+    OrderItemExtendRentalResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        extension_id:
+          type: integer
+        amount:
+          type: string
+        authorization_url:
+          type: string
+        new_end_date:
+          type: string
+      required:
+      - amount
+      - authorization_url
+      - extension_id
+      - message
+      - new_end_date
     OrderItemPurchaseTypeEnum:
       enum:
       - buy
