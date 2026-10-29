@@ -52,6 +52,7 @@ from .serializers import (
     OrderTrackingDetailSerializer,
     OrderListTrackingSummarySerializer,
 )
+from .services.orders import InvalidTransition, transition
 
 
 # Cart purchase types use ``rent``; orders expose ``hire`` for the same thing.
@@ -403,16 +404,18 @@ class OrderDetailView(generics.RetrieveAPIView):
             return Response({'error': 'Permission denied'}, status=403)
 
         if order.status in (Order.Status.DRAFT, Order.Status.PENDING_PAYMENT):
-            order.status = Order.Status.CANCELLED
-            order.save(update_fields=['status'])
+            try:
+                transition(
+                    order,
+                    "order_cancelled",
+                    actor=request.user,
+                    reason=(request.data.get("reason") or "").strip(),
+                    message="Order has been cancelled.",
+                )
+            except InvalidTransition as exc:
+                return Response({'error': str(exc)}, status=400)
 
             notify_order_cancelled(order, cancelled_by=request.user)
-
-            OrderActivity.objects.create(
-                order=order,
-                event_type=OrderActivity.EventType.ORDER_CANCELLED,
-                message="Order has been cancelled.",
-            )
             return Response({'message': 'Order cancelled successfully'})
 
         if order.status != Order.Status.PAID:
@@ -609,12 +612,6 @@ class OrderMarkShippedView(APIView):
     def post(self, request, pk):
         order = get_object_or_404(Order, pk=pk, seller=request.user)
 
-        if order.status not in (Order.Status.PAID, Order.Status.ORDER_CONFIRMED):
-            return Response(
-                {"error": "Only paid or confirmed orders can be shipped"},
-                status=400,
-            )
-
         carrier = (request.data.get("carrier") or "").strip()
         tracking_id = (request.data.get("tracking_id") or "").strip()
         if not carrier or not tracking_id:
@@ -623,18 +620,19 @@ class OrderMarkShippedView(APIView):
                 status=400,
             )
 
-        with transaction.atomic():
-            order.status = Order.Status.ITEM_DISPATCHED
-            order.delivery_carrier = carrier
-            order.tracking_id = tracking_id
-            order.save(
-                update_fields=["status", "delivery_carrier", "tracking_id"]
+        try:
+            order = transition(
+                order,
+                "item_dispatched",
+                actor=request.user,
+                carrier=carrier,
+                tracking_id=tracking_id,
+                message=(
+                    f"Dispatched via {carrier}. Tracking: {tracking_id}."
+                ),
             )
-            OrderActivity.objects.create(
-                order=order,
-                event_type=OrderActivity.EventType.SHIPPED,
-                message=f"Dispatched via {carrier}. Tracking: {tracking_id}.",
-            )
+        except InvalidTransition as exc:
+            return Response({"error": str(exc)}, status=400)
 
         notify_order_shipped(order)
 
@@ -644,6 +642,48 @@ class OrderMarkShippedView(APIView):
             "carrier": carrier,
             "tracking_id": tracking_id,
         })
+
+
+class OrderConfirmReceiptView(APIView):
+    """Buyer confirms delivery, completing the order and releasing held funds."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        summary="Confirm receipt of an order",
+        request=None,
+        responses={
+            200: inline_serializer(
+                name='OrderConfirmReceiptResponse',
+                fields={
+                    'message': serializers.CharField(),
+                    'status': serializers.CharField(),
+                },
+            ),
+            400: inline_serializer(
+                name='OrderConfirmReceiptError',
+                fields={'error': serializers.CharField()},
+            ),
+        },
+    )
+    def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk)
+        if order.buyer_id != request.user.id:
+            raise exceptions.PermissionDenied(
+                "Only the buyer can confirm receipt of this order."
+            )
+
+        try:
+            order = transition(order, "order_fulfilled", actor=request.user)
+        except InvalidTransition as exc:
+            return Response({"error": str(exc)}, status=400)
+
+        from apps.notifications.utils import dispatch_tracking_notification
+        dispatch_tracking_notification("order_fulfilled", order)
+
+        return Response(
+            {"message": "Receipt confirmed", "status": order.status}
+        )
 
 
 class MarketplaceBreakdownView(APIView):
@@ -1404,51 +1444,24 @@ class OrderTrackingUpdateView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Enforce state machine rules
-        VALID_TRANSITIONS = {
-            "pending_payment": [("order_cancelled", "cancelled")],
-            "paid": [("order_confirmed", "order_confirmed")],
-            "order_confirmed": [("item_dispatched", "item_dispatched")],
-            "item_dispatched": [("in_transit", "in_transit")],
-            "in_transit": [("delivered", "delivered")],
-            "delivered": [("order_fulfilled", "fulfilled")],
-            "hire_ended": [("item_returned", "item_returned")],
-            "item_returned": [("order_fulfilled", "fulfilled")],
-        }
-
-        # Hire/lease orders continue into an active rental period instead of
-        # completing on delivery.
-        has_rental = order.items.filter(
-            purchase_type__in=[Order.OrderType.HIRE, Order.OrderType.LEASE]
-        ).exists()
-        if has_rental:
-            VALID_TRANSITIONS["delivered"] = [("hire_started", "active_hire")]
-            VALID_TRANSITIONS["active_hire"] = [("hire_ended", "hire_ended")]
-
-        transitions = VALID_TRANSITIONS.get(order.status, [])
-        allowed_matches = [t for t in transitions if t[0] == event]
-        if not allowed_matches:
+        try:
+            order = transition(
+                order,
+                event,
+                actor=request.user,
+                message=note or None,
+                carrier=request.data.get("carrier"),
+                tracking_id=request.data.get("tracking_id"),
+                reason=request.data.get("reason"),
+            )
+        except InvalidTransition as exc:
             return Response(
-                {"error": f"Invalid status transition from current status '{order.status}' via event '{event}'."},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        next_status = allowed_matches[0][1]
-
-        with transaction.atomic():
-            order.status = next_status
-            order.save(update_fields=['status'])
-
-            # Log order activity
-            OrderActivity.objects.create(
-                order=order,
-                event_type=event,
-                message=note or f"Order advanced to {next_status.replace('_', ' ')}."
-            )
-
-            # Trigger notification
-            from apps.notifications.utils import dispatch_tracking_notification
-            dispatch_tracking_notification(event, order)
+        # Trigger notification
+        from apps.notifications.utils import dispatch_tracking_notification
+        dispatch_tracking_notification(event, order)
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)

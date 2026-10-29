@@ -3674,6 +3674,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/OrderCancelResponse'
           description: ''
+  /commerce/orders/{id}/confirm-receipt/:
+    post:
+      operationId: commerce_orders_confirm_receipt_create
+      description: Buyer confirms delivery, completing the order and releasing held
+        funds.
+      summary: Confirm receipt of an order
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - commerce
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderConfirmReceiptResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderConfirmReceiptError'
+          description: ''
   /commerce/orders/{id}/extend-rental/:
     post:
       operationId: commerce_orders_extend_rental_create
@@ -11827,6 +11856,23 @@ components:
           type: string
       required:
       - message
+    OrderConfirmReceiptError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
+    OrderConfirmReceiptResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        status:
+          type: string
+      required:
+      - message
+      - status
     OrderCreate:
       type: object
       description: |-

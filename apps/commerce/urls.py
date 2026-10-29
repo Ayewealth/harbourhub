@@ -25,6 +25,7 @@ from .views import (
     BuyerSentQuotesView,
     SellerReceivedQuotesView,
     OrderInvoicePDFView,
+    OrderConfirmReceiptView,
 )
 from .webhooks import PaystackWebhookView
 
@@ -54,6 +55,8 @@ urlpatterns = [
          OrderActivityListView.as_view(), name="order-activity"),
     path("orders/<int:pk>/ship/", OrderMarkShippedView.as_view(),
          name="mark-order-as-shipped"),
+    path("orders/<int:pk>/confirm-receipt/",
+         OrderConfirmReceiptView.as_view(), name="order-confirm-receipt"),
     path("orders/<str:pk_or_num>/tracking/", OrderTrackingDetailView.as_view(), name="order-tracking-detail"),
     path("orders/<str:pk_or_num>/tracking/update/", OrderTrackingUpdateView.as_view(), name="order-tracking-update"),
 

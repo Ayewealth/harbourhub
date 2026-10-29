@@ -104,7 +104,7 @@ def test_ship_records_tracking_and_dispatches(auth_client):
     assert order.status == Order.Status.ITEM_DISPATCHED
     assert order.delivery_carrier == "GIG Logistics"
     assert order.tracking_id == "GIG-123"
-    assert order.activities.filter(event_type="shipped").exists()
+    assert order.activities.filter(event_type="item_dispatched").exists()
 
 @pytest.mark.django_db
 def test_buy_order_completes_after_delivery(auth_client):
