@@ -316,6 +316,9 @@ ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@harbourhub.com")
 SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@harbourhubglobal.com")
 SECURITY_EMAIL = config("SECURITY_EMAIL", default="security@harbourhub.com")
 SEND_WELCOME_EMAIL = config("SEND_WELCOME_EMAIL", default=True, cast=bool)
+# Sample data seeding is opt-in. `create_sample_data` refuses to run unless this
+# is true (or it is called with --force), so it can never fire in production.
+SEED_SAMPLE_DATA = config("SEED_SAMPLE_DATA", default=False, cast=bool)
 
 # Notification channels. Every one is optional; empty means the adapter no-ops.
 SMS_PROVIDER = config("SMS_PROVIDER", default="")

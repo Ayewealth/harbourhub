@@ -147,8 +147,6 @@ def test_owner_can_publish_a_draft(auth_client):
     ],
 )
 def test_listing_with_live_order_cannot_be_deleted(auth_client, order_status):
-    from apps.commerce.models import Order
-
     from .factories import OrderFactory, OrderItemFactory
 
     listing = ListingFactory()

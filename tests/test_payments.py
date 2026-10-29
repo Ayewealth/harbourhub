@@ -4,7 +4,6 @@ import json
 
 import pytest
 from django.conf import settings
-from rest_framework import status
 
 from apps.commerce.models import Payment, WebhookEvent
 from apps.commerce.services.payments import finalize_payment
