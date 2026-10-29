@@ -66,6 +66,10 @@ class VendorEarning(models.Model):
         RENT = 'rent', _('Rent/Hire')
         LEASE = 'lease', _('Lease')
 
+    class ReleasePolicy(models.TextChoices):
+        SPLIT_50_50 = 'split_50_50', _('50/50 tranches')
+        FULL = 'full', _('Release in full after the hold period')
+
     vendor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -87,12 +91,6 @@ class VendorEarning(models.Model):
         'listings.Listing',
         on_delete=models.SET_NULL,
         null=True, blank=True,
-        related_name='earnings'
-    )
-    payout = models.ForeignKey(
-        'financials.Payout',
-        null=True, blank=True,
-        on_delete=models.SET_NULL,
         related_name='earnings'
     )
     earning_type = models.CharField(
@@ -125,6 +123,20 @@ class VendorEarning(models.Model):
     available_at = models.DateTimeField(
         null=True, blank=True,
         help_text="When funds become available for payout"
+    )
+    release_policy = models.CharField(
+        max_length=20,
+        choices=ReleasePolicy.choices,
+        default=ReleasePolicy.SPLIT_50_50,
+        help_text="How the net amount is released to the vendor",
+    )
+    first_release_at = models.DateTimeField(
+        null=True, blank=True, db_index=True,
+        help_text="When the first tranche becomes available",
+    )
+    final_release_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the remaining balance becomes available",
     )
     released_amount = models.DecimalField(
         max_digits=14, decimal_places=2, default=0,

@@ -119,6 +119,9 @@ def _release_final_tranche(order):
     if earning is None or earning.is_disputed:
         return earning
 
+    earning.final_release_at = timezone.now()
+    earning.save(update_fields=["final_release_at"])
+
     remaining = money(earning.net_amount - earning.released_amount)
     if remaining > Decimal("0.00"):
         release_earning(earning, remaining)

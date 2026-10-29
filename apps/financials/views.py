@@ -283,10 +283,6 @@ class PayoutFreezeView(APIView):
         payout.failure_reason = reason or 'Frozen by admin'
         payout.save(update_fields=['status', 'failure_reason'])
 
-        VendorEarning.objects.filter(
-            payout=payout, status=VendorEarning.Status.PROCESSING
-        ).update(status=VendorEarning.Status.PENDING)
-
         AdminActionLog.log_action(
             admin_user=request.user,
             action_type=AdminActionLog.ActionType.USER_BANNED,

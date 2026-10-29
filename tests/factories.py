@@ -164,7 +164,9 @@ class VendorEarningFactory(factory.django.DjangoModelFactory):
     net_amount = Decimal("950.00")
     currency = "NGN"
     status = VendorEarning.Status.PENDING
+    release_policy = VendorEarning.ReleasePolicy.SPLIT_50_50
     available_at = factory.LazyFunction(timezone.now)
+    first_release_at = factory.LazyFunction(timezone.now)
 
 
 class PayoutFactory(factory.django.DjangoModelFactory):

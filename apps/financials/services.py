@@ -47,6 +47,7 @@ def accrue_earning(order):
     if commission <= ZERO:
         commission = money(subtotal * (rate or Decimal("0.00")) / Decimal("100"))
     net = money(gross - commission)
+    first_release_at = timezone.now() + timedelta(days=7)
 
     earning, created = VendorEarning.objects.get_or_create(
         order=order,
@@ -61,7 +62,10 @@ def accrue_earning(order):
             "net_amount": net,
             "currency": order.currency,
             "status": VendorEarning.Status.PENDING,
-            "available_at": timezone.now() + timedelta(days=7),
+            "release_policy": VendorEarning.ReleasePolicy.SPLIT_50_50,
+            "first_release_at": first_release_at,
+            "final_release_at": None,
+            "available_at": first_release_at,
         },
     )
 

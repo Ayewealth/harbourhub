@@ -83,26 +83,60 @@ def process_payout_task(self, payout_id):
 
 @shared_task
 def release_pending_earnings_task():
-    """Release earnings whose escrow window has elapsed."""
-    from .models import VendorEarning
-    from .services import release_earning
+    """
+    Release the first tranche on day 7 and the remainder on completion.
+
+    Rows are locked with skip_locked so concurrent workers cannot
+    double-release the same tranche.
+    """
+    from django.db import transaction
+    from django.db.models import Q
     from django.utils import timezone
+
+    from .models import VendorEarning
+    from .services import money, release_earning
 
     now = timezone.now()
     released = 0
-    candidates = VendorEarning.objects.filter(
-        status=VendorEarning.Status.PENDING,
-        available_at__lte=now,
-        is_disputed=False,
-    ).select_related('order', 'store')
 
-    for earning in candidates.iterator():
-        if earning.order_id is None:
-            logger.warning("Skipping orphan earning %s (no order)", earning.pk)
-            continue
-        release_earning(earning, earning.net_amount)
-        released += 1
+    with transaction.atomic():
+        candidates = (
+            VendorEarning.objects.select_for_update(skip_locked=True)
+            .filter(is_disputed=False)
+            .filter(
+                Q(
+                    status=VendorEarning.Status.PENDING,
+                    first_release_at__lte=now,
+                )
+                | Q(
+                    status=VendorEarning.Status.PARTIALLY_RELEASED,
+                    final_release_at__lte=now,
+                )
+            )
+            .order_by('first_release_at')
+        )
+
+        for earning in candidates.iterator():
+            if earning.order_id is None:
+                logger.warning(
+                    "Skipping orphan earning %s (no order)", earning.pk)
+                continue
+
+            if earning.status == VendorEarning.Status.PENDING:
+                if earning.release_policy == VendorEarning.ReleasePolicy.FULL:
+                    amount = money(
+                        earning.net_amount - earning.released_amount)
+                else:
+                    target = money(earning.net_amount / 2)
+                    amount = money(target - earning.released_amount)
+            else:
+                amount = money(earning.net_amount - earning.released_amount)
+
+            if amount <= 0:
+                continue
+            release_earning(earning, amount)
+            released += 1
 
     if released:
-        logger.info("Released %d earnings", released)
+        logger.info("Released %d earning tranches", released)
     return released
