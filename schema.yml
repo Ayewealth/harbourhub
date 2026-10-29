@@ -6316,6 +6316,7 @@ paths:
           - order_delivered
           - order_paid
           - order_placed
+          - order_refunded
           - order_shipped
           - payment_failed
           - payment_success
@@ -6337,6 +6338,7 @@ paths:
           * `order_delivered` - Order Delivered
           * `order_cancelled` - Order Cancelled
           * `order_completed` - Order Completed
+          * `order_refunded` - Order Refunded
           * `quote_received` - Quote Received
           * `quote_responded` - Quote Responded
           * `quote_cancelled` - Quote Cancelled
@@ -11578,6 +11580,7 @@ components:
       - order_delivered
       - order_cancelled
       - order_completed
+      - order_refunded
       - quote_received
       - quote_responded
       - quote_cancelled
@@ -11605,6 +11608,7 @@ components:
         * `order_delivered` - Order Delivered
         * `order_cancelled` - Order Cancelled
         * `order_completed` - Order Completed
+        * `order_refunded` - Order Refunded
         * `quote_received` - Quote Received
         * `quote_responded` - Quote Responded
         * `quote_cancelled` - Quote Cancelled

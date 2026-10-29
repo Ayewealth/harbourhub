@@ -316,6 +316,17 @@ ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@harbourhub.com")
 SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@harbourhubglobal.com")
 SECURITY_EMAIL = config("SECURITY_EMAIL", default="security@harbourhub.com")
 SEND_WELCOME_EMAIL = config("SEND_WELCOME_EMAIL", default=True, cast=bool)
+
+# Notification channels. Every one is optional; empty means the adapter no-ops.
+SMS_PROVIDER = config("SMS_PROVIDER", default="")
+TERMII_API_KEY = config("TERMII_API_KEY", default="")
+TERMII_SENDER_ID = config("TERMII_SENDER_ID", default="HarbourHub")
+TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default="")
+TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default="")
+TWILIO_FROM_NUMBER = config("TWILIO_FROM_NUMBER", default="")
+VAPID_PUBLIC_KEY = config("VAPID_PUBLIC_KEY", default="")
+VAPID_PRIVATE_KEY = config("VAPID_PRIVATE_KEY", default="")
+OPS_WEBHOOK_URL = config("OPS_WEBHOOK_URL", default="")
 # DRF
 # =============================================================================
 

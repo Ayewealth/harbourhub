@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.financials.services import money, reverse_earning_amount
+from apps.notifications.utils import notify_order_refunded
 
 from ..models import Order, OrderActivity, Payment, Refund
 from ..paystack import initiate_refund
@@ -101,6 +102,11 @@ def finalize_refund(refund: Refund, payload: dict | None = None):
                 order=order,
                 event_type=OrderActivity.EventType.ORDER_REFUNDED,
                 message=f"Refunded: {refund.reason}",
+            )
+            transaction.on_commit(
+                lambda order=order, refund=refund: notify_order_refunded(
+                    order, refund.amount, refund.reason
+                )
             )
 
     return refund

@@ -14,6 +14,7 @@ class Notification(models.Model):
         ORDER_DELIVERED = 'order_delivered', _('Order Delivered')
         ORDER_CANCELLED = 'order_cancelled', _('Order Cancelled')
         ORDER_COMPLETED = 'order_completed', _('Order Completed')
+        ORDER_REFUNDED = 'order_refunded', _('Order Refunded')
 
         # Quotes
         QUOTE_RECEIVED = 'quote_received', _('Quote Received')
@@ -108,3 +109,82 @@ class Notification(models.Model):
             self.is_read = True
             self.read_at = timezone.now()
             self.save(update_fields=['is_read', 'read_at'])
+
+
+class NotificationPreference(models.Model):
+    """Per-user, per-category channel opt-in."""
+
+    class Category(models.TextChoices):
+        TRANSACTIONAL = "transactional", _("Transactional")
+        MESSAGES = "messages", _("Messages")
+        MARKETING = "marketing", _("Marketing")
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_preferences",
+    )
+    category = models.CharField(max_length=20, choices=Category.choices)
+    in_app = models.BooleanField(default=True)
+    email = models.BooleanField(default=True)
+    sms = models.BooleanField(default=False)
+    push = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "notification_preferences"
+        unique_together = [("user", "category")]
+
+    def __str__(self):
+        return f"{self.user_id} / {self.category} preferences"
+
+
+class NotificationDelivery(models.Model):
+    """One row per channel attempt for one notification."""
+
+    class Channel(models.TextChoices):
+        IN_APP = "in_app", _("In-app")
+        EMAIL = "email", _("Email")
+        SMS = "sms", _("SMS")
+        PUSH = "push", _("Push")
+        STAFF_WEBHOOK = "staff_webhook", _("Staff webhook")
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", _("Queued")
+        SENT = "sent", _("Sent")
+        FAILED = "failed", _("Failed")
+        # Deliberate addition to the spec's three statuses: without it a
+        # no-op adapter would have to lie and report "sent".
+        SKIPPED = "skipped", _("Skipped (no credentials or opted out)")
+
+    notification = models.ForeignKey(
+        Notification,
+        on_delete=models.CASCADE,
+        related_name="deliveries",
+        null=True,
+        blank=True,
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_deliveries",
+    )
+    event_key = models.CharField(max_length=50, db_index=True)
+    channel = models.CharField(max_length=20, choices=Channel.choices)
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.QUEUED,
+        db_index=True,
+    )
+    provider_id = models.CharField(max_length=120, blank=True)
+    error = models.TextField(blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "notification_deliveries"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.channel} {self.status} -> {self.recipient_id}"

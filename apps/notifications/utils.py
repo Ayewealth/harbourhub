@@ -33,6 +33,11 @@ def create_notification(
             related_object_type=related_object_type,
             related_object_id=related_object_id,
         )
+
+        # Queue the out-of-band channels. A dispatcher failure must never
+        # break the business action that produced the notification.
+        from .services import enqueue_deliveries
+        enqueue_deliveries(notif)
         return notif
     except Exception as exc:
         logger.exception("Failed to create notification: %s", exc)
@@ -308,6 +313,41 @@ def notify_rental_reminder(order, days_left: int):
         priority='high',
         action_url=f"/orders/{order.id}",
         action_label="Extend Rental",
+        related_object_type='order',
+        related_object_id=order.id,
+    )
+
+
+def notify_order_refunded(order, amount=None, reason=""):
+    """Notify both sides that a refund has been processed."""
+    amount_text = f" of {amount}" if amount is not None else ""
+    reason_text = f" Reason: {reason}" if reason else ""
+
+    create_notification(
+        recipient=order.buyer,
+        notification_type='order_refunded',
+        title='Refund Processed',
+        message=(
+            f"A refund{amount_text} for order #{order.order_number} "
+            f"has been processed.{reason_text}"
+        ),
+        priority='high',
+        action_url=f"/orders/{order.id}",
+        action_label="View Order",
+        related_object_type='order',
+        related_object_id=order.id,
+    )
+    create_notification(
+        recipient=order.seller,
+        notification_type='order_refunded',
+        title='Order Refunded',
+        message=(
+            f"Order #{order.order_number} was refunded{amount_text} "
+            f"to the buyer.{reason_text}"
+        ),
+        priority='high',
+        action_url=f"/vendor/orders/{order.id}",
+        action_label="View Order",
         related_object_type='order',
         related_object_id=order.id,
     )
