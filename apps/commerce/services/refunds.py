@@ -1,12 +1,13 @@
 import logging
 import uuid
+from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
 
-from apps.financials.services import money, reverse_earning
+from apps.financials.services import money, reverse_earning_amount
 
-from ..models import Order, Payment, Refund
+from ..models import Order, OrderActivity, Payment, Refund
 from ..paystack import initiate_refund
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ def request_refund(payment: Payment, amount, reason: str, actor) -> Refund:
 
 @transaction.atomic
 def finalize_refund(refund: Refund, payload: dict | None = None):
-    """Apply a gateway-confirmed refund exactly once."""
+    """Apply a gateway-confirmed refund exactly once, proportionally."""
     from apps.financials.models import VendorEarning
 
     refund = Refund.objects.select_for_update().get(pk=refund.pk)
@@ -61,22 +62,45 @@ def finalize_refund(refund: Refund, payload: dict | None = None):
         refund.gateway_response = payload
     refund.save(update_fields=["status", "processed_at", "gateway_response"])
 
+    full_refund = refund.amount >= payment.amount
     payment.status = (
         Payment.Status.REFUNDED
-        if refund.amount >= payment.amount
+        if full_refund
         else Payment.Status.PARTIALLY_REFUNDED
     )
     payment.save(update_fields=["status"])
 
+    ratio = (
+        Decimal("1")
+        if payment.amount == 0
+        else (refund.amount / payment.amount)
+    )
+
     if payment.checkout_session_id:
         for order in payment.checkout_session.orders.select_for_update():
-            order.status = Order.Status.CANCELLED
-            order.save(update_fields=["status"])
             earning = VendorEarning.objects.filter(order=order).first()
-            if earning:
-                reverse_earning(
+            if earning is not None:
+                reverse_earning_amount(
                     earning,
+                    money(earning.net_amount * ratio),
                     f"Refund {refund.reference} for order {order.order_number}",
                 )
+
+            if not full_refund:
+                continue
+
+            order.status = Order.Status.CANCELLED
+            order.cancelled_at = timezone.now()
+            order.cancellation_reason = refund.reason
+            order.save(
+                update_fields=[
+                    "status", "cancelled_at", "cancellation_reason"
+                ]
+            )
+            OrderActivity.objects.create(
+                order=order,
+                event_type=OrderActivity.EventType.ORDER_REFUNDED,
+                message=f"Refunded: {refund.reason}",
+            )
 
     return refund

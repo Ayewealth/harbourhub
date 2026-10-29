@@ -208,6 +208,53 @@ def reverse_earning(earning, reason: str):
 
 
 @transaction.atomic
+def reverse_earning_amount(earning, amount, reason: str):
+    """Reverse ``amount`` of net earnings, held funds first."""
+    from .models import VendorEarning, VendorWallet, WalletTransaction
+
+    earning = VendorEarning.objects.select_for_update().get(pk=earning.pk)
+    amount = money(amount)
+    if amount <= ZERO or earning.status == VendorEarning.Status.REVERSED:
+        return earning
+
+    # Never reverse more than the vendor still stands to receive.
+    amount = min(amount, money(earning.net_amount))
+    if amount <= ZERO:
+        return earning
+
+    unreleased = money(earning.net_amount - earning.released_amount)
+    from_pending = min(unreleased, amount)
+    from_available = money(amount - from_pending)
+
+    wallet = wallet_for_earning(earning, lock=True)
+    if wallet is None:
+        return earning
+
+    if from_pending > ZERO:
+        VendorWallet.objects.filter(pk=wallet.pk).update(
+            pending_balance=F("pending_balance") - from_pending
+        )
+    if from_available > ZERO:
+        VendorWallet.objects.filter(pk=wallet.pk).update(
+            available_balance=F("available_balance") - from_available
+        )
+
+    earning.net_amount = money(earning.net_amount - amount)
+    if earning.net_amount <= ZERO:
+        earning.status = VendorEarning.Status.REVERSED
+    earning.save(update_fields=["net_amount", "status"])
+
+    WalletTransaction.objects.create(
+        wallet=wallet,
+        transaction_type=WalletTransaction.Type.REFUND,
+        amount=-amount,
+        description=reason,
+        reference_id=str(earning.id),
+    )
+    return earning
+
+
+@transaction.atomic
 def allocate_payout(payout):
     """FIFO-allocate released earnings to a payout. Returns the allocated total."""
     from django.db.models import Sum
