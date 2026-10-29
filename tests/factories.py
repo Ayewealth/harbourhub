@@ -160,6 +160,8 @@ class VendorEarningFactory(factory.django.DjangoModelFactory):
     earning_type = VendorEarning.EarningType.BUY
     gross_amount = Decimal("1000.00")
     commission_rate = Decimal("5.00")
+    commission_amount = Decimal("50.00")
+    net_amount = Decimal("950.00")
     currency = "NGN"
     status = VendorEarning.Status.PENDING
     available_at = factory.LazyFunction(timezone.now)

@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
@@ -50,17 +51,32 @@ def finalize_payment(payment, gateway_payload: dict):
     checkout_session = payment.checkout_session
     if checkout_session:
         for order in checkout_session.orders.select_for_update():
-            if order.status == Order.Status.PENDING_PAYMENT:
-                order.status = Order.Status.PAID
-                order.save(update_fields=["status"])
+            if order.status != Order.Status.PENDING_PAYMENT:
+                continue
 
-                transaction.on_commit(
-                    lambda order=order: notify_order_paid(order))
-                OrderActivity.objects.create(
-                    order=order,
-                    event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
-                    message="Payment confirmed. Funds held in escrow.",
-                )
-                accrue_earning(order)
+            # Snapshot the commission now: the store rate may change later and
+            # must never rewrite the history of a completed sale.
+            rate = order.store.commission_rate
+            order.commission_rate = rate
+            order.commission_amount = money(
+                (order.subtotal or Decimal("0.00")) * rate / Decimal("100")
+            )
+            order.status = Order.Status.PAID
+            order.save(
+                update_fields=[
+                    "status",
+                    "commission_rate",
+                    "commission_amount",
+                ]
+            )
+
+            transaction.on_commit(
+                lambda order=order: notify_order_paid(order))
+            OrderActivity.objects.create(
+                order=order,
+                event_type=OrderActivity.EventType.PAYMENT_CONFIRMED,
+                message="Payment confirmed.",
+            )
+            accrue_earning(order)
 
     return True

@@ -47,7 +47,11 @@ class BankAccount(models.Model):
 
 
 class VendorEarning(models.Model):
-    """Earnings record per completed order for a vendor."""
+    """Earnings record per completed order for a vendor.
+
+    Monetary fields are always written explicitly: commission is charged on
+    goods only and delivery passes through to the vendor in full.
+    """
 
     class Status(models.TextChoices):
         PENDING = 'pending', _('Pending')
@@ -144,16 +148,6 @@ class VendorEarning(models.Model):
             models.Index(fields=['vendor', '-created_at']),
             models.Index(fields=['status', '-created_at']),
         ]
-
-    def save(self, *args, **kwargs):
-        # Auto-calculate commission and net
-        if self.gross_amount and self.commission_rate:
-            from decimal import Decimal
-            self.commission_amount = (
-                self.gross_amount * (self.commission_rate / Decimal('100'))
-            ).quantize(Decimal('0.01'))
-            self.net_amount = self.gross_amount - self.commission_amount
-        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Earning {self.pk} for {self.vendor}"

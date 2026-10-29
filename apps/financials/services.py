@@ -38,6 +38,16 @@ def accrue_earning(order):
     }
     purchase_type = first_item.purchase_type if first_item else "buy"
 
+    # Commission is charged on goods only; delivery passes through in full.
+    subtotal = money(order.subtotal or Decimal("0.00"))
+    delivery = money(order.delivery_fee or Decimal("0.00"))
+    gross = money(subtotal + delivery)
+    rate = order.commission_rate or order.store.commission_rate
+    commission = money(order.commission_amount or Decimal("0.00"))
+    if commission <= ZERO:
+        commission = money(subtotal * (rate or Decimal("0.00")) / Decimal("100"))
+    net = money(gross - commission)
+
     earning, created = VendorEarning.objects.get_or_create(
         order=order,
         defaults={
@@ -45,13 +55,21 @@ def accrue_earning(order):
             "store": order.store,
             "listing": first_item.listing if first_item else None,
             "earning_type": type_map.get(purchase_type, VendorEarning.EarningType.BUY),
-            "gross_amount": order.subtotal or order.total_amount,
-            "commission_rate": order.store.commission_rate,
+            "gross_amount": gross,
+            "commission_rate": rate,
+            "commission_amount": commission,
+            "net_amount": net,
             "currency": order.currency,
             "status": VendorEarning.Status.PENDING,
             "available_at": timezone.now() + timedelta(days=7),
         },
     )
+
+    # Keep the order row authoritative for platform revenue reporting.
+    if created and commission > ZERO and not order.commission_amount:
+        order.commission_rate = rate
+        order.commission_amount = commission
+        order.save(update_fields=["commission_rate", "commission_amount"])
 
     if created:
         wallet, _ = VendorWallet.objects.get_or_create(
