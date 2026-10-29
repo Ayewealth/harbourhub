@@ -7,7 +7,6 @@ from .models import VendorWallet
 def create_vendor_wallet(sender, instance, created, **kwargs):
     if created:
         VendorWallet.objects.get_or_create(
-            user=instance.user,
             store=instance,
-            currency='NGN'
+            defaults={'user': instance.user, 'currency': 'NGN'},
         )

@@ -190,9 +190,9 @@ class Payout(models.Model):
     )
     store = models.ForeignKey(
         'store.Store',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='payouts'
+        on_delete=models.PROTECT,
+        related_name='payouts',
+        null=False,
     )
     bank_account = models.ForeignKey(
         BankAccount,
@@ -227,7 +227,11 @@ class Payout(models.Model):
 
 
 class VendorWallet(models.Model):
-    """Internal balance tracking for a vendor."""
+    """Internal balance tracking for a store.
+
+    One wallet per store. ``user`` is derived from ``store.user`` and kept for
+    backwards-compatible reads; all writes resolve the wallet by ``store``.
+    """
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -238,7 +242,7 @@ class VendorWallet(models.Model):
         'store.Store',
         on_delete=models.CASCADE,
         related_name='wallet',
-        null=True, blank=True
+        null=False,
     )
     pending_balance = models.DecimalField(
         max_digits=14, decimal_places=2, default=0)

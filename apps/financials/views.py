@@ -24,6 +24,7 @@ from .serializers import (
     WalletTransactionSerializer,
 )
 from .models import BankAccount, VendorEarning, Payout, VendorWallet, WalletTransaction
+from .services import wallet_for_store
 from apps.admin_panel.permissions import IsAdminOrSuperAdmin
 from apps.admin_panel.models import AdminActionLog
 
@@ -86,11 +87,8 @@ class EarningsSummaryView(APIView):
 
     @extend_schema(responses={200: EarningsSummarySerializer})
     def get(self, request):
-        from .models import VendorWallet
-        wallet, _ = VendorWallet.objects.get_or_create(
-            user=request.user,
-            defaults={'currency': 'NGN'}
-        )
+        store = getattr(request.user, 'store', None)
+        wallet = wallet_for_store(store, user=request.user) if store else None
 
         # For % change, we still need to query earnings records
         now = timezone.now()
@@ -115,12 +113,21 @@ class EarningsSummaryView(APIView):
             return round(float((current - previous) / previous * 100), 1)
 
         return Response({
-            'total_revenue': wallet.available_balance + wallet.total_withdrawn,
-            'pending_balance': wallet.pending_balance,
-            'available_balance': wallet.available_balance,
-            'total_withdrawn': wallet.total_withdrawn,
+            'total_revenue': (
+                wallet.available_balance + wallet.total_withdrawn
+                if wallet else Decimal('0.00')
+            ),
+            'pending_balance': (
+                wallet.pending_balance if wallet else Decimal('0.00')
+            ),
+            'available_balance': (
+                wallet.available_balance if wallet else Decimal('0.00')
+            ),
+            'total_withdrawn': (
+                wallet.total_withdrawn if wallet else Decimal('0.00')
+            ),
             'revenue_change_percent': pct_change(this_month, last_month),
-            'currency': wallet.currency,
+            'currency': wallet.currency if wallet else 'NGN',
         })
 
 
@@ -159,9 +166,7 @@ class PayoutListCreateView(generics.ListCreateAPIView):
                 raise ValidationError(
                     {'store': 'No store is associated with this account.'})
 
-            wallet, _ = VendorWallet.objects.select_for_update().get_or_create(
-                user=user, store=store, defaults={'currency': 'NGN'}
-            )
+            wallet = wallet_for_store(store, user=user, lock=True)
             if wallet.available_balance < amount:
                 raise ValidationError(
                     {'amount': 'Insufficient available balance.'})
@@ -237,11 +242,11 @@ class VendorWalletView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        wallet, _ = VendorWallet.objects.get_or_create(
-            user=self.request.user,
-            defaults={'currency': 'NGN'}
-        )
-        return wallet
+        store = getattr(self.request.user, 'store', None)
+        if store is None:
+            from django.http import Http404
+            raise Http404('No store wallet for this account.')
+        return wallet_for_store(store, user=self.request.user)
 
 
 class WalletTransactionListView(generics.ListAPIView):
@@ -256,7 +261,10 @@ class WalletTransactionListView(generics.ListAPIView):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return WalletTransaction.objects.none()
-        wallet, _ = VendorWallet.objects.get_or_create(user=self.request.user)
+        store = getattr(self.request.user, 'store', None)
+        if store is None:
+            return WalletTransaction.objects.none()
+        wallet = wallet_for_store(store, user=self.request.user)
         return wallet.transactions.all()
 
 

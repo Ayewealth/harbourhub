@@ -15,6 +15,40 @@ def money(value) -> Decimal:
     return Decimal(value or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def wallet_for_store(store, user=None, currency="NGN", *, lock=False):
+    """Return (creating if needed) the single wallet for ``store``.
+
+    Writes are always keyed by store; ``user`` is derived from the store when
+    it is not supplied.
+    """
+    from .models import VendorWallet
+
+    if store is None:
+        return None
+    if user is None:
+        user = store.user
+    manager = VendorWallet.objects
+    if lock:
+        manager = manager.select_for_update()
+    wallet, _ = manager.get_or_create(
+        store=store,
+        defaults={"user": user, "currency": currency or "NGN"},
+    )
+    return wallet
+
+
+def wallet_for_earning(earning, *, lock=False):
+    """Resolve the wallet for an earning, tolerating legacy store-less rows."""
+    store = earning.store or getattr(earning.vendor, "store", None)
+    if store is None:
+        logger.warning(
+            "Earning %s has no store; wallet movement skipped", earning.pk)
+        return None
+    return wallet_for_store(
+        store, user=earning.vendor, currency=earning.currency, lock=lock
+    )
+
+
 @transaction.atomic
 def accrue_earning(order):
     """Create exactly one earning for a paid order and credit pending balance."""
@@ -76,11 +110,8 @@ def accrue_earning(order):
         order.save(update_fields=["commission_rate", "commission_amount"])
 
     if created:
-        wallet, _ = VendorWallet.objects.get_or_create(
-            user=order.seller,
-            store=order.store,
-            defaults={"currency": order.currency},
-        )
+        wallet = wallet_for_store(
+            order.store, user=order.seller, currency=order.currency)
         VendorWallet.objects.filter(pk=wallet.pk).update(
             pending_balance=F("pending_balance") + earning.net_amount
         )
@@ -112,11 +143,9 @@ def release_earning(earning, amount):
         if amount <= ZERO:
             return earning
 
-    wallet, _ = VendorWallet.objects.get_or_create(
-        user=earning.vendor,
-        store=earning.store,
-        defaults={"currency": earning.currency},
-    )
+    wallet = wallet_for_earning(earning)
+    if wallet is None:
+        return earning
     VendorWallet.objects.filter(pk=wallet.pk).update(
         pending_balance=F("pending_balance") - amount,
         available_balance=F("available_balance") + amount,
@@ -151,11 +180,9 @@ def reverse_earning(earning, reason: str):
     if earning.status == VendorEarning.Status.REVERSED:
         return earning
 
-    wallet, _ = VendorWallet.objects.get_or_create(
-        user=earning.vendor,
-        store=earning.store,
-        defaults={"currency": earning.currency},
-    )
+    wallet = wallet_for_earning(earning)
+    if wallet is None:
+        return earning
 
     unreleased = money(earning.net_amount - earning.released_amount)
     if unreleased > ZERO:
@@ -258,11 +285,8 @@ def settle_payout(payout):
             earning.status = VendorEarning.Status.PARTIALLY_RELEASED
         earning.save(update_fields=['paid_out_amount', 'status'])
 
-    wallet, _ = VendorWallet.objects.select_for_update().get_or_create(
-        user=payout.vendor,
-        store=payout.store,
-        defaults={'currency': payout.currency},
-    )
+    wallet = wallet_for_store(
+        payout.store, user=payout.vendor, currency=payout.currency, lock=True)
     wallet.total_withdrawn = money(wallet.total_withdrawn + payout.amount)
     wallet.save(update_fields=['total_withdrawn'])
 
@@ -281,11 +305,8 @@ def fail_payout(payout, reason: str):
     if payout.status in (Payout.Status.FAILED, Payout.Status.PAID):
         return payout
 
-    wallet, _ = VendorWallet.objects.select_for_update().get_or_create(
-        user=payout.vendor,
-        store=payout.store,
-        defaults={'currency': payout.currency},
-    )
+    wallet = wallet_for_store(
+        payout.store, user=payout.vendor, currency=payout.currency, lock=True)
     VendorWallet.objects.filter(pk=wallet.pk).update(
         available_balance=F('available_balance') + payout.amount
     )
