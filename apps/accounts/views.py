@@ -28,11 +28,9 @@ from .serializers import (
     OTPRequestSerializer, OTPVerifySerializer,
     SetPasswordSerializer, DeliveryDetailSerializer,
     UserPreferenceSerializer,
-    TwoFactorSetupSerializer,
     TwoFactorEnableSerializer,
     TwoFactorDisableSerializer,
     TwoFactorVerifyLoginSerializer,
-    TwoFactorStatusSerializer,
     UserSessionSerializer,
     SellerOnboardingStep1Serializer,
     SellerOnboardingStep2Serializer,
@@ -41,7 +39,6 @@ from .serializers import (
 )
 from .permissions import IsOwnerOrAdmin
 from .models import DeliveryDetail, UserPreference, VerificationRequest, OneTimePassword, UserTwoFactor, UserSession
-from .emails import EmailService
 from apps.accounts.tasks import send_welcome_email_task, send_password_reset_email_task, send_password_reset_confirmation_email_task, notify_admins_verification_request
 from apps.analytics.posthog_utils import (
     track_user_registered, track_user_login, 
@@ -163,7 +160,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             user_id = user_data.get('id')
             if user_id:
                 try:
-                    tf = UserTwoFactor.objects.get(
+                    UserTwoFactor.objects.get(
                         user_id=user_id, is_enabled=True)
                     # Return partial response — frontend must
                     # complete 2FA verification using the secure token

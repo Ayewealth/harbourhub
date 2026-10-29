@@ -6,4 +6,4 @@ class FinancialsConfig(AppConfig):
     name = "apps.financials"
 
     def ready(self):
-        import apps.financials.signals
+        import apps.financials.signals  # noqa: F401

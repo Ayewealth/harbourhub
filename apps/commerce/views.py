@@ -1,8 +1,5 @@
 import uuid
-import hmac
-import hashlib
 import logging
-import requests
 
 from datetime import timedelta
 from decimal import Decimal
@@ -10,23 +7,20 @@ from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.utils.dateparse import parse_date
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer, OpenApiParameter
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer
 from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, permissions, status, exceptions, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.generics import get_object_or_404
 from django.conf import settings
-from django.db import transaction
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 
 from apps.commerce.models import Order, OrderActivity
 from apps.commerce.paystack import initialize_transaction, verify_transaction
 from apps.admin_panel.auth import has_admin_module_permission, HasAdminModulePermission
 from apps.admin_panel.constants import AdminModule
-from apps.core.currency import CurrencyRateUnavailable, convert_currency, convert_to_ngn
+from apps.core.currency import CurrencyRateUnavailable, convert_to_ngn
 from apps.financials.services import money
 from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
 from apps.analytics.posthog_utils import (

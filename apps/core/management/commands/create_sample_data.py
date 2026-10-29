@@ -62,7 +62,7 @@ class Command(BaseCommand):
         self.create_verification_requests(sellers + providers, admins[0] if admins else None)
 
         # 4. Stores (for Sellers)
-        stores = self.create_stores(sellers)
+        self.create_stores(sellers)
 
         # 5. Listings
         listings = self.create_listings(options["listings"], sellers, providers)
@@ -74,7 +74,7 @@ class Command(BaseCommand):
         self.create_inquiries(listings, buyers)
 
         # 8. Quote Requests
-        quotes = self.create_quote_requests(listings, buyers)
+        self.create_quote_requests(listings, buyers)
 
         # 9. Saved Items
         self.create_saved_items(listings, buyers)

@@ -1,10 +1,9 @@
-from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, inline_serializer
-from rest_framework import generics, permissions, serializers, status, filters
+from rest_framework import generics, permissions, serializers, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -119,7 +118,6 @@ class ComplianceSummaryView(APIView):
         now = timezone.now()
         this_month = now.replace(day=1, hour=0, minute=0, second=0)
         last_month_start = (this_month - timedelta(days=1)).replace(day=1)
-        expiry_warning_days = 10
 
         qs = ComplianceDocument.objects.all()
 

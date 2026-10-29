@@ -2,7 +2,6 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from django.db import transaction
-from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from apps.listings.models import Listing

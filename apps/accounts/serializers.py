@@ -618,7 +618,7 @@ class TwoFactorEnableSerializer(serializers.Serializer):
                     validated = auth.get_validated_token(raw_token)
                     current_jti = str(validated.get('jti', ''))
                     UserSession.objects.filter(user=request.user).exclude(token_jti=current_jti).delete()
-            except Exception as e:
+            except Exception:
                 import logging
                 logging.getLogger(__name__).exception("Failed to clear sessions on 2FA toggle.")
 
@@ -654,7 +654,7 @@ class TwoFactorDisableSerializer(serializers.Serializer):
                     validated = auth.get_validated_token(raw_token)
                     current_jti = str(validated.get('jti', ''))
                     UserSession.objects.filter(user=request.user).exclude(token_jti=current_jti).delete()
-            except Exception as e:
+            except Exception:
                 pass
                 
         return self._tf
@@ -745,7 +745,6 @@ class SellerOnboardingStep1Serializer(serializers.Serializer):
 
         # Create or update store
         from apps.store.models import Store
-        import re
         from django.utils.text import slugify
         base_slug = slugify(self.validated_data['business_name'])
         slug = base_slug

@@ -49,8 +49,8 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements-dev.txt
-      # P0 gates on undefined names only. P3 expands this to F401/F841 after cleanup.
-      - run: flake8 apps hb --select=F821 --exclude=migrations
+      # Undefined names, unused imports, and unused locals.
+      - run: flake8 apps hb --select=F401,F821,F841 --exclude=migrations
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
       - name: OpenAPI schema

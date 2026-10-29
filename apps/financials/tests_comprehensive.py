@@ -2,9 +2,8 @@ from decimal import Decimal
 from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
-from unittest.mock import patch
 from django.contrib.auth import get_user_model
-from apps.financials.models import VendorWallet, Payout, BankAccount
+from apps.financials.models import VendorWallet, BankAccount
 from apps.store.models import Store
 from apps.categories.models import Category
 

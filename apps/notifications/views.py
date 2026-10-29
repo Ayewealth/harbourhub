@@ -1,4 +1,3 @@
-from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, permissions, status, serializers
@@ -7,7 +6,7 @@ from rest_framework.views import APIView
 from django.utils import timezone
 
 from .models import Notification
-from .serializers import NotificationSerializer, NotificationCountSerializer
+from .serializers import NotificationSerializer
 
 
 class NotificationListView(generics.ListAPIView):

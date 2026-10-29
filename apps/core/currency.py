@@ -6,9 +6,7 @@ Integrates free open API exchange rates with a 1-hour Redis cache TTL fallback.
 import logging
 import requests
 from decimal import Decimal
-from django.conf import settings
 from django.core.cache import cache
-from rest_framework import serializers
 from rest_framework.pagination import PageNumberPagination
 
 logger = logging.getLogger(__name__)

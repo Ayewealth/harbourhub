@@ -1,5 +1,3 @@
-from decimal import Decimal
-from django.db.models import Q, Count, Avg, F
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
@@ -8,7 +6,7 @@ from rest_framework import generics, permissions, status, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import serializers
-from drf_spectacular.utils import extend_schema, inline_serializer, OpenApiResponse
+from drf_spectacular.utils import extend_schema, inline_serializer
 
 from apps.admin_panel.permissions import IsAdminOrSuperAdmin
 from .models import SupportTicket
@@ -16,7 +14,6 @@ from .serializers import (
     SupportTicketSerializer,
     SupportTicketCreateSerializer,
     MarkResolvedSerializer,
-    SupportTicketSummarySerializer,
     ContactSerializer,
 )
 

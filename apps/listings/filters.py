@@ -1,9 +1,7 @@
 # listings/filters.py
-import django_filters
 from django.db.models import Q
 from django_filters import rest_framework as filters
 from .models import Listing
-from datetime import datetime
 
 
 class ListingFilter(filters.FilterSet):

@@ -3,7 +3,6 @@ import logging
 from django.utils import timezone
 from celery import shared_task
 from django.db import transaction
-from django.db.models import Q
 from apps.commerce.models import Order, OrderActivity
 from apps.notifications.utils import dispatch_tracking_notification
 

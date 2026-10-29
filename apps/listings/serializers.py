@@ -1,12 +1,9 @@
 # listings/serializers.py
 from rest_framework import serializers
 from django.db import transaction
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema_field
 
-from .models import Listing, ListingImage, ListingDocument, ListingView
-from apps.categories.models import Category
-from apps.accounts.models import User
+from .models import Listing, ListingImage, ListingDocument
 from apps.core.currency import CurrencyConverterMixin
 
 

@@ -2,7 +2,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from apps.categories.models import Category
-from apps.listings.models import Listing
 from drf_spectacular.utils import extend_schema_field
 
 User = get_user_model()

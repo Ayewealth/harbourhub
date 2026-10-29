@@ -12,7 +12,7 @@ from rest_framework import serializers
 
 from apps.notifications.utils import notify_verification_approved, notify_verification_rejected
 
-from .models import ReportedContent, AdminActionLog, PlatformConfig
+from .models import ReportedContent, AdminActionLog
 from .serializers import (
     ReportedContentSerializer,
     ReportedContentCreateSerializer,
@@ -629,7 +629,7 @@ class AdminReportStatsView(APIView):
         responses={200: inline_serializer(name='AdminReportStatsResponse', fields={'total_revenue': serializers.DictField(), 'active_disputes': serializers.DictField(), 'new_inquiries': serializers.DictField()})}
     )
     def get(self, request):
-        from apps.commerce.models import Payment, Dispute, QuoteRequest
+        from apps.commerce.models import Dispute, QuoteRequest
         from django.db.models import Sum
         from django.utils.dateparse import parse_date
 
@@ -892,7 +892,6 @@ class AdminAnalyticsExportView(APIView):
     def get(self, request):
         import csv
         from django.http import HttpResponse
-        from django.utils.dateparse import parse_date
 
         raw_from = request.query_params.get("date_from")
         raw_to = request.query_params.get("date_to")

@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions, serializers
 from django.db.models import Q
-from drf_spectacular.utils import extend_schema, OpenApiParameter, inline_serializer, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiParameter, inline_serializer
 
 from apps.listings.models import Listing
 from apps.categories.models import Category

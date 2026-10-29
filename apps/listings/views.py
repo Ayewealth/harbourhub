@@ -18,7 +18,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Listing, ListingView, SavedItem
+from .models import Listing, SavedItem
 from .serializers import (
     ListingListSerializer, ListingDetailSerializer,
     ListingCreateUpdateSerializer, MyListingSerializer,
@@ -173,9 +173,6 @@ class ListingViewSet(viewsets.ModelViewSet):
         """
         Update listing. For featured toggles, serializer.update handles unsetting other featured listings.
         """
-        instance = serializer.instance
-        user = self.request.user
-
         # Only owner or admin may toggle featured on an existing listing. Serializer enforces this; we keep the operation here.
         updated = serializer.save()
         return updated

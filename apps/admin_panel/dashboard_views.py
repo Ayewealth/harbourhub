@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer
+from drf_spectacular.utils import extend_schema, OpenApiExample, inline_serializer
 from rest_framework import generics, permissions, status, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -17,7 +17,6 @@ from .dashboard_serializers import (
     AdminUserListSerializer,
     InviteAdminSerializer,
     RolesMatrixSerializer,
-    RolePermissionSerializer,
     matrix_from_db,
     AcceptAdminInviteSerializer
 )

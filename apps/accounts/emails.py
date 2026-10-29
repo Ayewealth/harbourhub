@@ -2,11 +2,10 @@
 """
 Email handling for user authentication and notifications
 """
-from django.core.mail import send_mail, EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.utils import timezone
-from django.urls import reverse
 import logging
 
 logger = logging.getLogger(__name__)

@@ -1,8 +1,5 @@
 # apps/inquiries/views.py
 from django.db.models import Q
-from django.urls import reverse
-from django.conf import settings
-from django.db import transaction
 
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action

@@ -2,11 +2,10 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from django.db.utils import IntegrityError
 from apps.listings.models import Listing
 from apps.categories.models import Category
 from apps.store.models import Store
-from apps.reviews.models import ListingReview, StoreReview
+from apps.reviews.models import ListingReview
 
 User = get_user_model()
 

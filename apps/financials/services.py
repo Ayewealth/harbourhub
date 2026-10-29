@@ -315,7 +315,7 @@ def allocate_payout(payout):
 @transaction.atomic
 def settle_payout(payout):
     """Mark a payout paid and settle only its allocations."""
-    from .models import Payout, VendorEarning, VendorWallet
+    from .models import Payout, VendorEarning
 
     payout = Payout.objects.select_for_update().get(pk=payout.pk)
     if payout.status == Payout.Status.PAID:
