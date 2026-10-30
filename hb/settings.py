@@ -368,11 +368,63 @@ SPECTACULAR_SETTINGS = {
     "TITLE": config("API_TITLE", default="Harbour Hub API"),
     "DESCRIPTION": config(
         "API_DESCRIPTION",
-        default="Oil & Gas / Marine Equipment Marketplace API"
+        default=(
+            "Harbour Hub is an oil & gas / marine equipment marketplace. This "
+            "schema is the source of truth for the REST API used by the web and "
+            "mobile clients.\n\n"
+            "**Authentication.** Send `Authorization: Bearer <access_token>`. "
+            "Obtain tokens from `POST /auth/login/` (or the OTP flow), and rotate "
+            "them with `POST /auth/refresh/`. Logout blacklists the refresh token.\n\n"
+            "**Money.** Every stored amount is Decimal NGN. Buyers pay the item "
+            "subtotal plus delivery only; there is no buyer-side platform fee. The "
+            "platform earns a seller commission snapshot at payment time. Foreign "
+            "listing prices are converted once at checkout and the rate is stored "
+            "on the order item. Display conversion never mutates stored money.\n\n"
+            "**Pagination.** List endpoints use page-number pagination with "
+            "`?page=` and a configurable `PAGE_SIZE` (default 20). Responses "
+            "contain `count`, `next`, `previous`, and `results`.\n\n"
+            "**Errors.** Validation failures return `400` with DRF field errors "
+            "(`{\"field\": [\"message\"]}`). Business-rule failures return "
+            "`{\"error\": \"...\"}` with `400`, `403`, or `404`. Gateway "
+            "failures return `502`/`503`. See `docs/api/messages.md` for the "
+            "complete catalogue.\n\n"
+            "**Ids.** Integer `id` values are the API keys. `order_number`, "
+            "`reference`, and slugs are display-only unless an endpoint explicitly "
+            "accepts them.\n\n"
+            "The human-readable reference lives in `docs/api/`."
+        ),
     ),
     "VERSION": config("API_VERSION", default="1.0.0"),
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    "CONTACT": {
+        "name": "Harbour Hub",
+        "url": "https://harbourhubglobal.com",
+    },
+    "LICENSE": {"name": "Proprietary"},
+    "SERVERS": [
+        {"url": "https://api.harbourhubglobal.com", "description": "Production"},
+        {"url": "http://localhost:8000", "description": "Local development"},
+    ],
+    "TAGS": [
+        {"name": "auth", "description": "Registration, login, OTP, 2FA, password, sessions, onboarding, profile, delivery addresses."},
+        {"name": "listings", "description": "Listing CRUD, images, publish/pause/archive, saved items."},
+        {"name": "stores", "description": "Public store directory, store profile, store analytics, shipping profiles."},
+        {"name": "categories", "description": "Public category tree and admin category management."},
+        {"name": "commerce", "description": "Cart, checkout, payments, orders, rentals, disputes, and admin marketplace reporting."},
+        {"name": "quotes", "description": "Quote requests, vendor responses, and conversion to cart."},
+        {"name": "financials", "description": "Bank accounts, vendor wallets, earnings, and payouts."},
+        {"name": "notifications", "description": "In-app notifications and per-user channel preferences."},
+        {"name": "messages", "description": "Conversations and messages attached to listings and quotes."},
+        {"name": "inquiries", "description": "Listing inquiries, replies, spam, and close actions."},
+        {"name": "reviews", "description": "Listing and store reviews with rating aggregates."},
+        {"name": "admin-panel", "description": "Staff dashboard: vendors, listings, orders, payments, users, roles, settings, reports, careers."},
+        {"name": "analytics", "description": "Admin analytics and exports."},
+        {"name": "compliance", "description": "Compliance documents and status."},
+        {"name": "support", "description": "Support tickets and ticket messages."},
+        {"name": "search", "description": "Global search, suggestions, history, and feedback."},
+        {"name": "careers", "description": "Public job openings."},
+    ],
     # Shows enum values in description
     "ENUM_GENERATE_CHOICE_DESCRIPTION": True,
     "ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE": False,
