@@ -5,7 +5,10 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.categories.models import Category
-from apps.commerce.models import Cart, CartItem, CheckoutSession, Order, OrderItem, Payment
+from apps.commerce.models import (
+    Cart, CartItem, CheckoutSession, Dispute, Order, OrderItem, Payment,
+    QuoteRequest,
+)
 from apps.financials.models import Payout, VendorEarning, VendorWallet
 from apps.listings.models import Listing
 from apps.store.models import Store
@@ -108,6 +111,28 @@ class OrderItemFactory(factory.django.DjangoModelFactory):
     original_currency = "NGN"
     original_unit_price = Decimal("1000.00")
     exchange_rate = Decimal("1.00000000")
+
+
+class QuoteRequestFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = QuoteRequest
+
+    listing = factory.SubFactory(ListingFactory)
+    buyer = factory.SubFactory(UserFactory)
+    store = factory.SelfAttribute("listing.store")
+    purchase_type = QuoteRequest.PurchaseType.RENT
+    quantity = 1
+    standard_price = Decimal("1000.00")
+
+
+class DisputeFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Dispute
+
+    order = factory.SubFactory(OrderFactory)
+    buyer = factory.SelfAttribute("order.buyer")
+    reason = "Item not as described"
+    description = "The delivered item differs from the listing."
 
 
 class PaymentFactory(factory.django.DjangoModelFactory):

@@ -4,7 +4,7 @@ import logging
 from datetime import timedelta
 from decimal import Decimal
 from django.db import transaction
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Prefetch, Q
 from django.utils.dateparse import parse_date
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer
@@ -17,6 +17,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.commerce.models import Order, OrderActivity
+from apps.listings.models import ListingImage
 from apps.commerce.paystack import initialize_transaction, verify_transaction
 from apps.admin_panel.auth import has_admin_module_permission, HasAdminModulePermission
 from apps.admin_panel.constants import AdminModule
@@ -68,6 +69,21 @@ PURCHASE_TYPE_MAP = {
 }
 
 logger = logging.getLogger(__name__)
+
+
+def order_list_prefetches():
+    """Eager-load every relation OrderSerializer walks on a list page."""
+    return [
+        "items__listing",
+        "items__delivery_detail",
+        Prefetch(
+            "items__listing__images",
+            queryset=ListingImage.objects.filter(is_primary=True).order_by(
+                "sort_order", "id"),
+            to_attr="primary_images",
+        ),
+        "activities",
+    ]
 
 
 @extend_schema_view(
@@ -383,6 +399,8 @@ class OrderListCreateView(generics.ListCreateAPIView):
         user = self.request.user
         qs = Order.objects.select_related(
             "buyer", "seller", "store"
+        ).prefetch_related(
+            *order_list_prefetches()
         ).order_by("-created_at")
         if user.is_staff and self.request.query_params.get("all") == "true":
             return qs
@@ -1312,8 +1330,10 @@ class DisputeListCreateView(generics.ListCreateAPIView):
             return Dispute.objects.none()
         user = self.request.user
         if getattr(user, 'is_admin_user', False):
-            return Dispute.objects.all()
-        return Dispute.objects.filter(Q(buyer=user) | Q(order__seller=user))
+            return Dispute.objects.select_related("order", "order__store", "buyer").all()
+        return Dispute.objects.select_related(
+            "order", "order__store", "buyer"
+        ).filter(Q(buyer=user) | Q(order__seller=user))
 
     def perform_create(self, serializer):
         with transaction.atomic():
@@ -1336,8 +1356,10 @@ class DisputeDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         user = self.request.user
         if getattr(user, 'is_admin_user', False):
-            return Dispute.objects.all()
-        return Dispute.objects.filter(Q(buyer=user) | Q(order__seller=user))
+            return Dispute.objects.select_related("order", "order__store", "buyer").all()
+        return Dispute.objects.select_related(
+            "order", "order__store", "buyer"
+        ).filter(Q(buyer=user) | Q(order__seller=user))
 
 
 class DisputeActionView(APIView):
@@ -1439,7 +1461,9 @@ class RecentSalesView(generics.ListAPIView):
             store=user.store,
             status__in=SALES_STATUSES
         ).select_related(
-            "buyer"
+            "buyer", "store", "seller"
+        ).prefetch_related(
+            *order_list_prefetches()
         ).order_by("-created_at")[:10]  # Return top 10 recent sales
 
 
@@ -1597,7 +1621,11 @@ class BuyerSentQuotesView(generics.ListAPIView):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return QuoteRequest.objects.none()
-        return QuoteRequest.objects.filter(buyer=self.request.user).order_by("-created_at")
+        return QuoteRequest.objects.filter(
+            buyer=self.request.user
+        ).select_related(
+            "listing", "buyer", "store", "listing__store", "delivery_detail"
+        ).order_by("-created_at")
 
 
 class SellerReceivedQuotesView(generics.ListAPIView):
@@ -1612,6 +1640,8 @@ class SellerReceivedQuotesView(generics.ListAPIView):
             return QuoteRequest.objects.none()
         return QuoteRequest.objects.filter(
             Q(store__user=self.request.user) | Q(listing__store__user=self.request.user)
+        ).select_related(
+            "listing", "buyer", "store", "listing__store", "delivery_detail"
         ).distinct().order_by("-created_at")
 
 

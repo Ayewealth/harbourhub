@@ -171,8 +171,14 @@ class OrderItemSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_primary_image(self, obj):
-        if not obj.listing: return None
-        primary = obj.listing.images.filter(is_primary=True).first()
+        if not obj.listing:
+            return None
+        # List views prefetch the primary images; fall back for detail views.
+        prefetched = getattr(obj.listing, "primary_images", None)
+        if prefetched is not None:
+            primary = prefetched[0] if prefetched else None
+        else:
+            primary = obj.listing.images.filter(is_primary=True).first()
         if primary:
             request = self.context.get('request')
             return request.build_absolute_uri(primary.image.url) if request else primary.image.url
@@ -686,8 +692,8 @@ class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.CharField())
     def get_listing_title(self, obj):
-        # P2 changes the order grain; read through items now so this survives it.
-        item = obj.items.select_related("listing").first()
+        # P2 changes the order grain; read through the (prefetched) items.
+        item = next(iter(obj.items.all()), None)
         return item.listing.title if item and item.listing else ""
 
     @extend_schema_field(serializers.CharField(allow_null=True))
