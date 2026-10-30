@@ -99,8 +99,8 @@ class ComprehensiveCommerceTests(APITestCase):
             # Buyers pay no platform fee: the total is the item subtotal.
             self.assertEqual(payment.amount, Decimal('35000.00'))
 
-    def test_checkout_paystack_failure_rollback(self):
-        """Test that if Paystack fails to initialize, the transaction rolls back."""
+    def test_checkout_paystack_failure_keeps_cart_and_records_failed_payment(self):
+        """A gateway failure returns 502, keeps the cart, and records a failed payment."""
         self.client.force_authenticate(user=self.buyer)
         cart = Cart.objects.create(buyer=self.buyer)
         CartItem.objects.create(
@@ -110,7 +110,7 @@ class ComprehensiveCommerceTests(APITestCase):
 
         with patch('apps.commerce.views.initialize_transaction') as mock_paystack:
             mock_paystack.return_value = None  # SIMULATE FAILURE
-            
+
             data = {
                 'cart_item_ids': [item.id for item in cart.items.all()],
                 'terms_accepted': True
@@ -118,14 +118,17 @@ class ComprehensiveCommerceTests(APITestCase):
             url = reverse('checkout')
             response = self.client.post(url, data, format='json')
 
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-            print("ROLLBACK RESPONSE:", response.data)
-            self.assertIn("Failed to initialize payment gateway", str(response.data))
+            self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+            self.assertIn("Your cart is intact", response.data["error"])
 
-            # Ensure nothing was created and cart is NOT deleted!
+            # The database rows exist so the buyer can retry the same session.
             self.assertEqual(CartItem.objects.count(), 1)
-            self.assertEqual(Order.objects.count(), 0)
-            self.assertEqual(Payment.objects.count(), 0)
+            self.assertEqual(CheckoutSession.objects.count(), 1)
+            self.assertEqual(Order.objects.count(), 1)
+            self.assertEqual(OrderItem.objects.count(), 1)
+            self.assertEqual(Payment.objects.count(), 1)
+            self.assertEqual(Payment.objects.first().status, Payment.Status.FAILED)
+            self.assertEqual(Order.objects.first().status, Order.Status.PENDING_PAYMENT)
 
     def test_retry_payment_success(self):
         """Test retrying a pending payment."""
@@ -169,10 +172,10 @@ class ComprehensiveCommerceTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("already successful", response.data['message'])
 
-    def test_payment_verify_webhook_updates_order(self):
-        """Test that successfully verifying a payment sets orders to PAID."""
+    def test_payment_verify_is_read_only_and_awaits_webhook(self):
+        """Verify never mutates: a gateway success only reports pending confirmation."""
         self.client.force_authenticate(user=self.buyer)
-        
+
         session = CheckoutSession.objects.create(buyer=self.buyer, total_amount=Decimal('10000.00'), currency='NGN')
         payment = Payment.objects.create(
             checkout_session=session, buyer=self.buyer, amount=Decimal('10000.00'),
@@ -180,20 +183,23 @@ class ComprehensiveCommerceTests(APITestCase):
         )
         order = Order.objects.create(
             order_number="ORD-TEST", buyer=self.buyer, seller=self.seller1,
-            checkout_session=session, currency="NGN", status=Order.Status.PENDING_PAYMENT,
+            store=self.store1, checkout_session=session, currency="NGN",
+            status=Order.Status.PENDING_PAYMENT, subtotal=Decimal('10000.00'),
             total_amount=Decimal('10000.00')
         )
 
         with patch('apps.commerce.views.verify_transaction') as mock_verify:
             mock_verify.return_value = {'status': 'success'}
-            
+
             url = reverse('payment-verify', kwargs={'reference': 'REF-VERIFY'})
             response = self.client.get(url)
-            
+
             self.assertEqual(response.status_code, status.HTTP_200_OK)
-            
+            self.assertEqual(response.data['status'], 'pending_confirmation')
+            self.assertEqual(response.data['message'], 'Awaiting webhook confirmation.')
+
             payment.refresh_from_db()
             order.refresh_from_db()
-            
-            self.assertEqual(payment.status, Payment.Status.SUCCESS)
-            self.assertEqual(order.status, Order.Status.PAID)
+
+            self.assertEqual(payment.status, Payment.Status.PENDING)
+            self.assertEqual(order.status, Order.Status.PENDING_PAYMENT)

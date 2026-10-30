@@ -71,6 +71,7 @@ class ListingEdgeCaseTests(APITestCase):
         """
         listing = Listing.objects.create(
             user=self.user,
+            store=self.store,
             title="Listing to be archived",
             description="This listing will be archived shortly.",
             category=self.category,
@@ -98,6 +99,7 @@ class ListingEdgeCaseTests(APITestCase):
         past_date = timezone.now() - timedelta(days=2)
         listing = Listing.objects.create(
             user=self.user,
+            store=self.store,
             title="Expired Listing Test",
             description="This listing should be auto-archived.",
             category=self.category,

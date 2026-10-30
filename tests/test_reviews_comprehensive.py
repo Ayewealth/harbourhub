@@ -22,6 +22,7 @@ class ReviewEdgeCaseTests(APITestCase):
         
         self.listing = Listing.objects.create(
             user=self.seller,
+            store=self.store,
             title="Review Listing",
             description="Test review description",
             category=self.category,

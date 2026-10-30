@@ -22,6 +22,7 @@ class InquiryEdgeCaseTests(APITestCase):
         
         self.listing = Listing.objects.create(
             user=self.seller,
+            store=self.store,
             title="Inquiry Listing",
             description="Test inquiry description",
             category=self.category,
@@ -62,13 +63,10 @@ class InquiryEdgeCaseTests(APITestCase):
         self.assertFalse(inquiry.is_replied)
         
         self.client.force_authenticate(user=self.seller)
-        url = reverse('inquiry-reply', args=[inquiry.id]) if 'inquiry-reply' in reverse.__globals__ else reverse('inquiry-detail', args=[inquiry.id]) + 'reply/'
-        data = {'message': 'It is red.'}
-        
-        # We assume there is an endpoint like /inquiries/{id}/reply/
-        response = self.client.post(url, data, format='json')
-        # If the endpoint exists it should be 201 or 200. If 404, we skip or it just tests routing.
-        if response.status_code in [status.HTTP_200_OK, status.HTTP_201_CREATED]:
-            inquiry.refresh_from_db()
-            self.assertTrue(inquiry.is_replied)
-            self.assertEqual(inquiry.status, Inquiry.Status.REPLIED)
+        url = reverse('inquiry-reply', args=[inquiry.id])
+        response = self.client.post(url, {'message': 'It is red.'}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        inquiry.refresh_from_db()
+        self.assertTrue(inquiry.is_replied)
+        self.assertEqual(inquiry.status, Inquiry.Status.REPLIED)
