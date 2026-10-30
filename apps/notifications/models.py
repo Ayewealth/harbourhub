@@ -185,6 +185,9 @@ class NotificationDelivery(models.Model):
     class Meta:
         db_table = "notification_deliveries"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "channel"]),
+        ]
 
     def __str__(self):
         return f"{self.channel} {self.status} -> {self.recipient_id}"

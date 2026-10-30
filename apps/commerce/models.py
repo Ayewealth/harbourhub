@@ -248,6 +248,9 @@ class Order(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["-created_at"]),
+            models.Index(fields=["store", "status", "-created_at"]),
+            models.Index(fields=["seller", "status", "-created_at"]),
+            models.Index(fields=["buyer", "-created_at"]),
         ]
 
     def __str__(self):
@@ -281,6 +284,9 @@ class OrderItem(models.Model):
 
     class Meta:
         db_table = "commerce_order_items"
+        indexes = [
+            models.Index(fields=["order", "purchase_type"]),
+        ]
 
     @property
     def rental_days_total(self):

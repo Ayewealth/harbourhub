@@ -159,6 +159,8 @@ class VendorEarning(models.Model):
         indexes = [
             models.Index(fields=['vendor', '-created_at']),
             models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['status', 'first_release_at']),
+            models.Index(fields=['store', 'status']),
         ]
 
     def __str__(self):
