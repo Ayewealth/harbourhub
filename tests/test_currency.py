@@ -40,3 +40,17 @@ def test_missing_rate_raises(rates):
     rates.return_value = {"USD": 1.0}
     with pytest.raises(CurrencyRateUnavailable):
         convert_to_ngn(Decimal("10.00"), "XYZ")
+
+
+def test_cached_rates_never_hit_the_network():
+    """The autouse cache fixture must make display conversion offline-safe."""
+    from apps.core.currency import convert_currency
+
+    with patch(
+        "apps.core.currency.requests.get",
+        side_effect=AssertionError("network call attempted"),
+    ):
+        amount, symbol = convert_currency(100, "NGN", "USD")
+
+    assert amount == 150000.0
+    assert symbol == "₦"
