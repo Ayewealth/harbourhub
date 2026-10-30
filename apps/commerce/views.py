@@ -488,6 +488,22 @@ class OrderDetailView(generics.RetrieveAPIView):
 
 @extend_schema_view(
     post=extend_schema(
+        operation_id="commerce_order_cancel",
+        request=None,
+        responses={
+            200: inline_serializer(
+                name='OrderCancelSuccessResponse',
+                fields={'message': serializers.CharField()},
+            )
+        },
+    ),
+)
+class OrderCancelView(OrderDetailView):
+    """Dedicated cancel route; shares the behaviour of ``OrderDetailView.post``."""
+
+
+@extend_schema_view(
+    post=extend_schema(
         summary="Legacy rental extension (per order)",
         description=(
             "Deprecated. Rentals are extended per item and require payment; "
@@ -908,20 +924,15 @@ class CartView(APIView):
         return Response({'message': 'Cart cleared.'})
 
 
-@extend_schema_view(
-    post=extend_schema(operation_id="commerce_cart_items_add", request=CartItemCreateSerializer, responses={201: CartItemSerializer}),
-    patch=extend_schema(
-        operation_id="commerce_cart_items_update_item",
-        request=inline_serializer(name='CartItemUpdateRequest', fields={'quantity': serializers.IntegerField(required=False), 'duration_days': serializers.IntegerField(required=False)}),
-        responses={200: CartItemSerializer}
-    ),
-    delete=extend_schema(operation_id="commerce_cart_items_remove_item", responses={200: inline_serializer(name='CartItemDeleteResponse', fields={'message': serializers.CharField()})}),
-)
 class CartItemView(APIView):
-    """Add, update, or remove cart items."""
+    """Add an item to the cart (collection route)."""
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(operation_id="commerce_cart_items_add_item")
+    @extend_schema(
+        operation_id="commerce_cart_item_add",
+        request=CartItemCreateSerializer,
+        responses={201: CartItemSerializer},
+    )
     def post(self, request):
         """Add item to cart."""
         cart, _ = Cart.objects.get_or_create(buyer=request.user)
@@ -931,7 +942,7 @@ class CartItemView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         item = serializer.save()
-        
+
         track_item_added_to_cart(request.user, item.listing, item.quantity)
 
         return Response(
@@ -939,7 +950,16 @@ class CartItemView(APIView):
             status=status.HTTP_201_CREATED
         )
 
-    @extend_schema(operation_id="commerce_cart_items_update_item_qty")
+
+class CartItemDetailView(APIView):
+    """Update or remove a single cart item (detail route)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        operation_id="commerce_cart_item_update",
+        request=inline_serializer(name='CartItemUpdateRequest', fields={'quantity': serializers.IntegerField(required=False), 'duration_days': serializers.IntegerField(required=False)}),
+        responses={200: CartItemSerializer}
+    )
     def patch(self, request, item_id):
         """Update cart item quantity or duration."""
         cart = get_object_or_404(Cart, buyer=request.user)
@@ -962,7 +982,10 @@ class CartItemView(APIView):
             CartItemSerializer(item, context={'request': request}).data
         )
 
-    @extend_schema(operation_id="commerce_cart_items_remove_item_id")
+    @extend_schema(
+        operation_id="commerce_cart_item_remove",
+        responses={200: inline_serializer(name='CartItemDeleteResponse', fields={'message': serializers.CharField()})},
+    )
     def delete(self, request, item_id):
         """Remove specific item from cart."""
         cart = get_object_or_404(Cart, buyer=request.user)

@@ -3014,7 +3014,7 @@ paths:
           description: ''
   /commerce/cart/items/:
     post:
-      operationId: commerce_cart_items_add
+      operationId: commerce_cart_item_add
       description: Add item to cart.
       tags:
       - commerce
@@ -3038,81 +3038,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CartItem'
-          description: ''
-    patch:
-      operationId: commerce_cart_items_update_item
-      description: Update cart item quantity or duration.
-      tags:
-      - commerce
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedCartItemUpdateRequestRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedCartItemUpdateRequestRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedCartItemUpdateRequestRequest'
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CartItem'
-          description: ''
-    delete:
-      operationId: commerce_cart_items_remove_item
-      description: Remove specific item from cart.
-      tags:
-      - commerce
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CartItemDeleteResponse'
           description: ''
   /commerce/cart/items/{item_id}/:
-    post:
-      operationId: commerce_cart_items_add_2
-      description: Add item to cart.
-      parameters:
-      - in: path
-        name: item_id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - commerce
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CartItemCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/CartItemCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/CartItemCreateRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CartItem'
-          description: ''
     patch:
-      operationId: commerce_cart_items_update_item_2
+      operationId: commerce_cart_item_update
       description: Update cart item quantity or duration.
       parameters:
       - in: path
@@ -3143,7 +3072,7 @@ paths:
                 $ref: '#/components/schemas/CartItem'
           description: ''
     delete:
-      operationId: commerce_cart_items_remove_item_2
+      operationId: commerce_cart_item_remove
       description: Remove specific item from cart.
       parameters:
       - in: path
@@ -3637,6 +3566,7 @@ paths:
   /commerce/orders/{id}/cancel/:
     get:
       operationId: commerce_orders_cancel_retrieve
+      description: Dedicated cancel route; shares the behaviour of ``OrderDetailView.post``.
       parameters:
       - in: path
         name: id
@@ -3655,7 +3585,7 @@ paths:
                 $ref: '#/components/schemas/Order'
           description: ''
     post:
-      operationId: commerce_orders_cancel_action_post_2
+      operationId: commerce_order_cancel
       description: Cancel an unpaid order, or request a refund for a paid one.
       parameters:
       - in: path
@@ -3672,7 +3602,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderCancelResponse'
+                $ref: '#/components/schemas/OrderCancelSuccessResponse'
           description: ''
   /commerce/orders/{id}/confirm-receipt/:
     post:
@@ -11841,6 +11771,13 @@ components:
       - email
       - name
     OrderCancelResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+      - message
+    OrderCancelSuccessResponse:
       type: object
       properties:
         message:
