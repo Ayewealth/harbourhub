@@ -107,5 +107,5 @@ python manage.py spectacular --file schema.yml --validate
 - `order_id` / `id` is the API key. `order_number` is display-only.
 - Identifiers in the examples come from the sample dataset or are illustrative; a real run
   generates different values.
-- Known limitations are labelled as debt, not omitted. The phase records in
-  [`superpowers/plans/`](superpowers/plans/) carry the current list.
+- Known limitations are labelled as debt, not omitted. The current list is in
+  [`superpowers/plans/P4-COMPLETE.md`](superpowers/plans/P4-COMPLETE.md).
