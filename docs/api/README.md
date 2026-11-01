@@ -13,6 +13,8 @@ docs.
 | [`../sample-data.md`](../sample-data.md) | The deterministic sample dataset and how to seed it safely. |
 | [`../../schema.yml`](../../schema.yml) | The OpenAPI contract itself. |
 
+The documentation index for the whole repository is [`../README.md`](../README.md).
+
 Interactive documentation is served by the application:
 
 | URL | UI |
@@ -52,7 +54,7 @@ Authorization: Bearer <access_token>
 | Register | `POST /auth/register/` | Always creates a **buyer**. Sending `role` other than `buyer` returns `400`. |
 | Login | `POST /auth/login/` | Body: `{"email": "...", "password": "..."}`. Returns `access`, `refresh`, and `user`. |
 | Refresh | `POST /auth/refresh/` | Body: `{"refresh": "..."}`. Rotation is enabled and the old token is blacklisted. |
-| Logout | `POST /auth/logout/` | Blacklists the supplied refresh token. |
+| Logout | no dedicated route | Discard both tokens client-side, or blacklist a session with `DELETE /auth/sessions/{id}/` (current or another of your sessions) or `DELETE /auth/sessions/remove-all/` (all except the current one). |
 | OTP request | `POST /auth/otp/request/` | Body: `{"email": "...", "purpose": "registration"}`. |
 | OTP verify | `POST /auth/otp/verify/` | Body: `{"email": "...", "code": "123456", "purpose": "registration"}`. |
 | Set password | `POST /auth/set-password/` | Completes an OTP-first registration. |

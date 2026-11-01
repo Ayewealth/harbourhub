@@ -64,7 +64,7 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 | `200` | `message` | `2FA verified successfully.` | `POST /auth/2fa/verify/` |
 | `200` | `message` | `Please complete 2FA verification.` | `POST /auth/login/` when 2FA is enabled (returns `requires_2fa` and a signed token) |
 | `200` | `message` | `Session removed successfully.` | `DELETE /auth/sessions/{id}/` |
-| `200` | `message` | `All other sessions removed.` | `POST /auth/sessions/remove-all/` |
+| `200` | `message` | `All other sessions removed.` | `DELETE /auth/sessions/remove-all/` |
 | `200` | `message` | `Account upgraded to seller.` | `POST /auth/become-seller/` |
 | `200` | `message` | `Business details saved.` | `POST /auth/onboarding/step-1/` |
 | `200` | `message` | `Categories saved.` | `POST /auth/onboarding/step-2/` |
@@ -210,9 +210,14 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 | `200` | `message` | `Order cancelled successfully` | Cancel an unpaid order |
 | `202` | `message` | `Refund requested. The order will be cancelled once the gateway confirms.` | Cancel a paid order; response also contains `refund_id` and `refund_status` |
 | `201` | `message` | `Complete payment to extend the rental.` | `POST /commerce/orders/{id}/items/{item_id}/extend-rental/`; response contains the payment/authorization URL |
-| `200` | `message` | `Quote {action}ed successfully` | `POST /commerce/quotes/{id}/{action}/`; `action` is `respond`, `cancel`, or `convert` |
+| `200` | `message` | `Quote {action}ed successfully` | `POST /commerce/quotes/{id}/{action}/`; `action` is `respond`, `cancel`, `decline`, or `convert`. `decline` produces `Quote declineed successfully` (known wording bug). |
 | `200` | `message` | `Quote moved to cart successfully.` | `POST /commerce/quotes/{id}/move-to-cart/` and the messaging equivalent |
-| `200` | `message` | `Payment already successful` | `POST /commerce/checkout/session/{id}/retry/` on a paid session |
+| `400` | `message` | `Payment already successful` | `POST /commerce/checkout/session/{id}/retry/` on a paid session |
+| `200` | `message` | `Dispute resolved. Funds released to vendor escrow.` | `POST /commerce/disputes/{id}/action/` with `action=resolve` (admin). |
+| `200` | `message` | `Refund requested. The dispute closes when the gateway confirms.` | `POST /commerce/disputes/{id}/action/` with `action=refund` (admin). |
+
+`POST /commerce/disputes/` returns the created `Dispute` object with `201`, not a `message`.
+Checkout takes no delivery address: each cart item carries its own `delivery_detail`.
 
 ### Errors
 
@@ -261,10 +266,10 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 | `400` | `validation` | `Quote does not belong to you.` |
 | `400` | `validation` | `This listing is not available.` |
 | `400` | `validation` | `duration_days is required for rent/lease.` |
+| `400` | `validation` | `Delivery address not found.` (under `delivery_detail`) | Another user's `delivery_detail` on `POST /commerce/cart/items/`. |
 | `400` | `validation` | `You must accept the terms and conditions.` |
 | `400` | `validation` | `At least one cart item is required.` |
 | `400` | `validation` | `No valid cart items found.` |
-| `400` | `validation` | `Delivery address not found.` |
 | `400` | `validation` | `Cart is empty.` |
 
 ### Webhook
@@ -274,7 +279,8 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 | `401` | `error` | `Invalid signature` | Missing/wrong `x-paystack-signature`. |
 | `400` | `error` | `Invalid JSON` | Body is not valid JSON. |
 | `500` | `error` | `handler failed` | Transient handler failure; Paystack retries. |
-| `200` | `detail` | `duplicate` | Event already processed; no side effects. |
+| `200` | `status` | `{"status": "ok"}` | Event accepted, whether it was processed or marked `ignored` (unknown event type). |
+| `200` | `status` + `detail` | `{"status": "ok", "detail": "duplicate"}` | The same `(provider, event_type, gateway_event_id)` was already recorded; no side effects. |
 
 ---
 

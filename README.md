@@ -58,21 +58,25 @@ hb/
 │   ├── admin_panel/       # Admin interface & moderation
 │   ├── analytics/         # Business analytics & metrics
 │   ├── categories/        # Hierarchical category system
-│   ├── core/             # Core utilities & global search
-│   ├── health/           # Health checks
-│   ├── inquiries/        # Buyer-seller communication
-│   ├── listings/         # Equipment & service listings
-│   ├── commerce/         # Orders, payments, and checkout
-│   ├── financials/       # Vendor wallets & earnings
-│   ├── store/            # Vendor store management
-│   ├── reviews/          # Listing and store feedback
-│   ├── notifications/    # In-app notification system
-│   └── messaging/        # Internal messaging system
-├── templates/            # Email templates
-├── media/               # User uploads
-├── static/              # Static files
-├── logs/                # Application logs
-└── hb/                  # Django project settings
+│   ├── commerce/          # Cart, checkout, orders, payments, refunds
+│   ├── compliance/        # Vendor compliance documents
+│   ├── core/              # Core utilities, currency, global search, sample data
+│   ├── financials/        # Vendor wallets, earnings, payouts
+│   ├── inquiries/         # Buyer-seller communication
+│   ├── listings/          # Equipment & service listings
+│   ├── messaging/         # Internal messaging system
+│   ├── notifications/     # In-app notifications & delivery channels
+│   ├── reviews/           # Listing and store feedback
+│   ├── store/             # Vendor store management
+│   └── support/           # Support tickets
+├── docs/                  # API reference, data model, sample data, phase plans
+├── scripts/               # Documentation generators and maintenance scripts
+├── tests/                 # pytest suite
+├── templates/             # Email templates
+├── media/                 # User uploads
+├── static/                # Static files
+├── logs/                  # Application logs
+└── hb/                    # Django project settings
 ```
 
 ## 🚀 Quick Start
@@ -156,13 +160,23 @@ hb/
 
 7. **Generate Sample Data (Optional)**
 
+   Seeding is gated. The command refuses to run unless `SEED_SAMPLE_DATA=true` is set or you
+   pass `--force`.
+
    ```bash
-   # Generates users, stores, listings, inquiries, orders, and financial records
+   # Additive run; requires SEED_SAMPLE_DATA=true in the environment
    python manage.py create_sample_data
-   
-   # Use --clean to wipe existing data first
-   python manage.py create_sample_data --clean
+
+   # One-off run without changing the environment
+   python manage.py create_sample_data --force
+
+   # Destructive reset: --clean deletes seeded business records and requires --force
+   python manage.py create_sample_data --clean --force
    ```
+
+   The dataset, its accounts, and its guarantees are documented in
+   [`docs/sample-data.md`](docs/sample-data.md). Do not run `--clean` against a database whose
+   data you need.
 
 8. **Start Development Server**
    ```bash
@@ -183,56 +197,74 @@ celery -A hb beat --loglevel=info
 
 ## 📚 API Documentation
 
-Once the server is running, access the API documentation at:
+Once the server is running, access the interactive documentation at:
 
 - **Swagger UI**: http://localhost:8000/api/docs/
 - **ReDoc**: http://localhost:8000/api/redoc/
 - **OpenAPI Schema**: http://localhost:8000/api/schema/
 
+The written reference lives in [`docs/`](docs/README.md):
+
+| Document | What it covers |
+|---|---|
+| [`docs/README.md`](docs/README.md) | Documentation index and the full verification gate. |
+| [`docs/api/README.md`](docs/api/README.md) | Auth, roles, pagination, error shapes, money rules, status enums, webhooks. |
+| [`docs/api/examples.md`](docs/api/examples.md) | Worked request/response examples for every core flow. |
+| [`docs/api/endpoints.md`](docs/api/endpoints.md) | Generated path, method, payload, and response-code reference. |
+| [`docs/api/messages.md`](docs/api/messages.md) | Exact success and error strings with status codes. |
+| [`docs/data-model.md`](docs/data-model.md) | Entities, relationships, invariants, and status machines. |
+| [`docs/sample-data.md`](docs/sample-data.md) | The seeded dataset and how to run `create_sample_data` safely. |
+
+The application mounts the API at the site root. A deployment gateway may add an `/api/v1`
+prefix; the paths below are the ones Django serves.
+
 ### Key API Endpoints
 
 #### Authentication
 
-- `POST /api/v1/auth/login/` - User login
-- `POST /api/v1/auth/refresh/` - Refresh JWT token
-- `POST /api/v1/auth/register/` - User registration
-- `GET /api/v1/auth/profile/` - User profile
+- `POST /auth/register/` — User registration (always creates a buyer)
+- `POST /auth/login/` — User login (email + password)
+- `POST /auth/refresh/` — Refresh JWT token
+- `GET /auth/profile/` — User profile
+- `DELETE /auth/sessions/{id}/` — Remove one session (there is no `/auth/logout/` route)
 
 #### Listings
 
-- `GET /api/v1/listings/` - List all listings
-- `POST /api/v1/listings/` - Create listing (authenticated)
-- `GET /api/v1/listings/{id}/` - Get listing details
-- `PUT /api/v1/listings/{id}/` - Update listing (owner only)
+- `GET /listings/` — List all listings
+- `POST /listings/` — Create listing (seller; the store is resolved from the account)
+- `GET /listings/{id}/` — Get listing details
+- `PUT /listings/{id}/` — Update listing (owner only)
+- `POST /listings/{id}/publish/` — Publish a draft listing
 
 #### Categories
 
-- `GET /api/v1/categories/` - List categories
-- `GET /api/v1/categories/tree/` - Get category tree
+- `GET /categories/` — List categories
+- `GET /categories/tree/` — Get category tree
 
 #### Inquiries
 
-- `GET /api/v1/inquiries/` - List user inquiries
-- `POST /api/v1/inquiries/` - Send inquiry
+- `GET /inquiries/` — List user inquiries
+- `POST /inquiries/` — Send inquiry
 
 #### Search
 
-- `GET /api/v1/search/` - Global search
+- `GET /search/` — Global search
 
 #### Commerce & Orders
 
-- `POST /api/v1/checkout/` - Multi-vendor cart checkout (initiates Paystack transaction)
-- `GET /api/v1/orders/my-orders/` - List orders placed by the authenticated buyer
-- `GET /api/v1/orders/store-orders/` - List incoming orders for the seller's store
-- `GET /api/v1/orders/{id}/tracking/` - Retrieve real-time status and activity timeline for an order
-- `PATCH /api/v1/orders/{id}/tracking/` - Seller updates order tracking ID and carrier info
-- `POST /api/v1/orders/{id}/tracking/update/` - Seller updates status and appends custom timeline events
-- `GET /api/v1/quotes/sent/` - List quote requests sent by the buyer
-- `GET /api/v1/quotes/received/` - List quote requests received by the seller's store
+- `POST /commerce/cart/items/` — Add a cart item, with its own delivery address
+- `POST /commerce/checkout/` — Multi-vendor checkout (initiates a Paystack transaction)
+- `GET /commerce/orders/my-orders/` — Orders placed by the authenticated buyer
+- `GET /commerce/orders/store-orders/` — Incoming orders for the seller's store
+- `GET /commerce/orders/{id}/tracking/` — Order status and activity timeline
+- `PATCH /commerce/orders/{id}/tracking/` — Seller updates tracking ID and carrier
+- `POST /commerce/orders/{id}/tracking/update/` — Seller advances the order status
+- `GET /commerce/quotes/sent/` — Quote requests sent by the buyer
+- `GET /commerce/quotes/received/` — Quote requests received by the seller
 
 #### Page Feedback
 
-- `POST /api/v1/feedback/` - Capture Helpful/Not Helpful feedback from static pages (Legal, FAQ)
+- `POST /search/feedback/` — Capture Helpful/Not Helpful feedback from static pages (Legal, FAQ)
 
 ## 🎯 User Roles & Permissions
 
@@ -289,6 +321,10 @@ celery -A hb beat --loglevel=info
 ```
 
 ## 🗄️ Database Schema
+
+The complete entity map, relationships, invariants, and status machines are in
+[`docs/data-model.md`](docs/data-model.md). The generated contract is
+[`schema.yml`](schema.yml).
 
 ### Key Models
 
@@ -355,15 +391,29 @@ Email templates are located in `templates/emails/` and use a responsive design.
 
 ## 🧪 Testing
 
-Run the test suite:
+The suite runs on `pytest` (configured in `pytest.ini`, with `testpaths = tests`). Tests use the
+`test_harbour_hub` database and an autouse fixture that pins exchange rates, so they run offline.
 
 ```bash
 # Run all tests
-python manage.py test
+python -m pytest -q
+
+# Run one module
+python -m pytest tests/test_checkout.py -q
 
 # Run with coverage
-coverage run --source='.' manage.py test
+coverage run -m pytest
 coverage report
+```
+
+Before committing, run the full gate:
+
+```bash
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python -m pytest -q
+python -m flake8 apps hb tests --select=F401,F821,F841 --exclude=migrations
+python manage.py spectacular --file schema.yml --validate
 ```
 
 ## 📝 Management Commands
@@ -371,12 +421,21 @@ coverage report
 ### Sample Data Generation
 
 ```bash
-# Recommended for fresh dev environments
-python manage.py create_sample_data --clean
+# Additive run; requires SEED_SAMPLE_DATA=true in the environment
+python manage.py create_sample_data
+
+# One-off run without changing the environment
+python manage.py create_sample_data --force
 
 # Custom counts
 python manage.py create_sample_data --users 50 --listings 150 --orders 30
+
+# Destructive reset; --clean requires --force
+python manage.py create_sample_data --clean --force
 ```
+
+See [`docs/sample-data.md`](docs/sample-data.md) for the accounts, record counts, and
+determinism guarantees.
 
 ### Database Maintenance
 
