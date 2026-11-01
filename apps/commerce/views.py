@@ -996,16 +996,17 @@ class CartItemDetailView(APIView):
 
 @extend_schema(
     summary="Checkout and create order(s)",
-    description="Convert cart items into order(s) and initialize Paystack payment.",
+    description=(
+        "Convert cart items into order(s) and initialize Paystack payment. "
+        "Each cart item carries its own delivery_detail; there is no "
+        "checkout-level delivery address."
+    ),
     request=inline_serializer(
         name="CheckoutRequest",
         fields={
             "cart_item_ids": serializers.ListField(
                 child=serializers.IntegerField(),
                 help_text="IDs of cart items to checkout",
-            ),
-            "delivery_detail_id": serializers.IntegerField(
-                help_text="ID of saved delivery address",
             ),
             "payment_method": serializers.ChoiceField(
                 choices=[("paystack", "Paystack")],

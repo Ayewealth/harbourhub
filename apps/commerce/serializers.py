@@ -343,6 +343,15 @@ class CartItemCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "duration_days is required for rent/lease.")
 
+        delivery_detail = attrs.get('delivery_detail')
+        if (
+            delivery_detail is not None
+            and delivery_detail.user_id != self.context['request'].user.id
+        ):
+            raise serializers.ValidationError(
+                {'delivery_detail': 'Delivery address not found.'}
+            )
+
         # Set unit price from listing
         attrs['unit_price'] = listing.price or 0
         attrs['store'] = listing.store
@@ -364,6 +373,7 @@ class CartItemCreateSerializer(serializers.ModelSerializer):
                 'duration_days': validated_data.get('duration_days'),
                 'unit_price': validated_data['unit_price'],
                 'store': validated_data.get('store'),
+                'delivery_detail': validated_data.get('delivery_detail'),
             }
         )
         return item
@@ -398,17 +408,6 @@ class CheckoutSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError(
                 "You must accept the terms and conditions.")
-        return value
-
-    def validate_delivery_detail_id(self, value):
-        from apps.accounts.models import DeliveryDetail
-        user = self.context['request'].user
-        try:
-            self.delivery_detail = DeliveryDetail.objects.get(
-                pk=value, user=user)
-        except DeliveryDetail.DoesNotExist:
-            raise serializers.ValidationError(
-                "Delivery address not found.")
         return value
 
     def validate_cart_item_ids(self, value):

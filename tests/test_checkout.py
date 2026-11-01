@@ -3,7 +3,8 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.commerce.models import Order
+from apps.accounts.models import DeliveryDetail
+from apps.commerce.models import CartItem, Order
 
 from .factories import (
     CartFactory,
@@ -168,3 +169,85 @@ def test_paystack_failure_keeps_the_cart(auth_client):
     order = Order.objects.get(buyer=buyer)
     assert order.status == Order.Status.PENDING_PAYMENT
     assert order.checkout_session.payment.status == "failed"
+
+
+@pytest.mark.django_db
+def test_cart_item_delivery_address_is_persisted_and_copied_to_the_order(
+    auth_client,
+):
+    """Each cart item carries its own address; checkout copies it to the line."""
+    buyer = UserFactory()
+    listing = ListingFactory(price=Decimal("2500.00"))
+    address = DeliveryDetail.objects.create(
+        user=buyer,
+        contact_person="Ada Obi",
+        country="Nigeria",
+        address="12 Marina Road",
+        state="Lagos",
+        city="Lagos",
+        phone="08030000000",
+        is_default=True,
+    )
+    client = auth_client(buyer)
+
+    added = client.post(
+        "/commerce/cart/items/",
+        {
+            "listing": listing.id,
+            "purchase_type": "buy",
+            "quantity": 1,
+            "delivery_detail": address.id,
+        },
+        format="json",
+    )
+
+    assert added.status_code == 201
+    item = CartItem.objects.get(cart__buyer=buyer)
+    assert item.delivery_detail_id == address.id
+
+    with patch("apps.commerce.views.initialize_transaction") as gateway:
+        gateway.return_value = {
+            "authorization_url": "https://pay.test/checkout",
+            "access_code": "ac_test",
+        }
+        response = client.post(
+            "/commerce/checkout/",
+            {"cart_item_ids": [item.id], "terms_accepted": True},
+            format="json",
+        )
+
+    assert response.status_code == 201
+    order = Order.objects.get(buyer=buyer)
+    assert order.item.delivery_detail_id == address.id
+
+
+@pytest.mark.django_db
+def test_cart_item_rejects_another_users_delivery_address(auth_client):
+    buyer = UserFactory()
+    other = UserFactory()
+    listing = ListingFactory(price=Decimal("2500.00"))
+    foreign_address = DeliveryDetail.objects.create(
+        user=other,
+        contact_person="Not Yours",
+        country="Nigeria",
+        address="1 Elsewhere Street",
+        state="Lagos",
+        city="Lagos",
+        phone="08030000001",
+    )
+    client = auth_client(buyer)
+
+    response = client.post(
+        "/commerce/cart/items/",
+        {
+            "listing": listing.id,
+            "purchase_type": "buy",
+            "quantity": 1,
+            "delivery_detail": foreign_address.id,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.data["delivery_detail"] == ["Delivery address not found."]
+    assert CartItem.objects.filter(cart__buyer=buyer).count() == 0

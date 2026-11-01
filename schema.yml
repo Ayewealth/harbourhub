@@ -3113,6 +3113,8 @@ paths:
     post:
       operationId: commerce_checkout_create
       description: Convert cart items into order(s) and initialize Paystack payment.
+        Each cart item carries its own delivery_detail; there is no checkout-level
+        delivery address.
       summary: Checkout and create order(s)
       tags:
       - commerce
@@ -8791,9 +8793,6 @@ components:
           items:
             type: integer
           description: IDs of cart items to checkout
-        delivery_detail_id:
-          type: integer
-          description: ID of saved delivery address
         payment_method:
           allOf:
           - $ref: '#/components/schemas/PaymentMethodEnum'
@@ -8802,7 +8801,6 @@ components:
           type: boolean
       required:
       - cart_item_ids
-      - delivery_detail_id
       - terms_accepted
     CheckoutResponse:
       type: object
