@@ -59,6 +59,7 @@ from .serializers import (
     OrderListTrackingSummarySerializer,
 )
 from .services.orders import InvalidTransition, transition
+from .services.delivery import calculate_delivery_fee
 
 
 # Cart purchase types use ``rent``; orders expose ``hire`` for the same thing.
@@ -1095,7 +1096,7 @@ class CheckoutView(APIView):
             else:
                 exchange_rate = Decimal("1.00000000")
 
-            delivery_fee = Decimal("0.00")
+            delivery_fee = calculate_delivery_fee(item, subtotal)
             total = subtotal + delivery_fee
             grand_total += total
             priced.append(
@@ -1120,6 +1121,25 @@ class CheckoutView(APIView):
                 original_unit, currency, exchange_rate,
             ) in priced:
                 store = item.listing.store
+
+                delivery_detail = item.delivery_detail
+                delivery_address = ""
+                delivery_contact_name = ""
+                delivery_contact_phone = ""
+                if delivery_detail is not None:
+                    delivery_address = ", ".join(
+                        part
+                        for part in (
+                            delivery_detail.address,
+                            delivery_detail.city,
+                            delivery_detail.state,
+                            delivery_detail.country,
+                        )
+                        if part
+                    )
+                    delivery_contact_name = delivery_detail.contact_person
+                    delivery_contact_phone = delivery_detail.phone
+
                 order = Order.objects.create(
                     order_number=f"ORD-{uuid.uuid4().hex[:12].upper()}",
                     buyer=request.user,
@@ -1133,6 +1153,9 @@ class CheckoutView(APIView):
                     total_amount=total,
                     commission_rate=store.commission_rate,
                     commission_amount=Decimal("0.00"),
+                    delivery_address=delivery_address,
+                    delivery_contact_name=delivery_contact_name,
+                    delivery_contact_phone=delivery_contact_phone,
                     status=Order.Status.PENDING_PAYMENT,
                     placed_at=timezone.now(),
                 )
@@ -1882,15 +1905,27 @@ class OrderInvoicePDFView(APIView):
         story.append(Spacer(1, 15))
 
         # 7. Financial Breakdown Table
-        summary_data = [
-            [Paragraph("Subtotal:", header_style), Paragraph(f"{order.currency} {order.subtotal or 0.00:,.2f}", body_style)],
-            [Paragraph("Escrow Fee:", header_style), Paragraph(f"{order.currency} {order.escrow_fee or 0.00:,.2f}", body_style)],
-            [Paragraph("Delivery Fee:", header_style), Paragraph(f"{order.currency} {order.delivery_fee or 0.00:,.2f}", body_style)],
-            [
-                Paragraph("<b>Total Amount:</b>", ParagraphStyle('TotalLabel', parent=header_style, fontSize=10)),
-                Paragraph(f"<b>{order.currency} {order.total_amount:,.2f}</b>", ParagraphStyle('TotalVal', parent=body_style, fontSize=10))
-            ]
-        ]
+        from .services.invoice import invoice_summary_rows
+
+        rows = invoice_summary_rows(order)
+        summary_data = []
+        for label, value in rows[:3]:
+            if label == "Total Amount":
+                summary_data.append([
+                    Paragraph(
+                        "<b>Total Amount:</b>",
+                        ParagraphStyle("TotalLabel", parent=header_style, fontSize=10),
+                    ),
+                    Paragraph(
+                        f"<b>{value}</b>",
+                        ParagraphStyle("TotalVal", parent=body_style, fontSize=10),
+                    ),
+                ])
+            else:
+                summary_data.append([
+                    Paragraph(f"{label}:", header_style),
+                    Paragraph(value, body_style),
+                ])
         summary_table = Table(summary_data, colWidths=[1.5*inch, 2.0*inch], hAlign='RIGHT')
         summary_table.setStyle(TableStyle([
             ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
@@ -1900,6 +1935,8 @@ class OrderInvoicePDFView(APIView):
             ('LINEABOVE', (0,-1), (-1,-1), 1, colors.HexColor('#002B49')),
         ]))
         story.append(summary_table)
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(rows[3][0], body_style))
         story.append(Spacer(1, 30))
 
         # 8. Footer Notes
