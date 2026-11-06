@@ -2658,13 +2658,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/VerificationRequestRequest'
+              $ref: '#/components/schemas/VerificationRequestCreateRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/VerificationRequestRequest'
+              $ref: '#/components/schemas/VerificationRequestCreateRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/VerificationRequestRequest'
+              $ref: '#/components/schemas/VerificationRequestCreateRequest'
         required: true
       security:
       - jwtAuth: []
@@ -2673,7 +2673,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VerificationRequest'
+                $ref: '#/components/schemas/VerificationRequestResponse'
           description: ''
   /auth/verification/status/:
     get:
@@ -16925,6 +16925,43 @@ components:
       - status
       - user
       - user_email
+    VerificationRequestCreateRequest:
+      type: object
+      description: Write serializer for the legacy ``/auth/verification/request/``
+        endpoint.
+      properties:
+        company_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        business_type:
+          $ref: '#/components/schemas/BusinessTypeEnum'
+        business_license:
+          type: string
+          format: binary
+          description: Business license document
+        government_id:
+          type: string
+          format: binary
+          nullable: true
+          description: Government-issued ID document
+        insurance_certificate:
+          type: string
+          format: binary
+          nullable: true
+          description: Insurance certificate
+        certifications:
+          type: string
+          description: Industry certifications and qualifications
+        references:
+          type: string
+          description: Business references
+        additional_info:
+          type: string
+          description: Additional information
+      required:
+      - business_license
+      - company_name
     VerificationRequestRequest:
       type: object
       properties:
@@ -16951,6 +16988,89 @@ components:
           nullable: true
       required:
       - company_name
+    VerificationRequestResponse:
+      type: object
+      description: '201 body: the request fields plus the submission envelope.'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_email:
+          type: string
+          format: email
+          readOnly: true
+        reviewed_by_email:
+          type: string
+          format: email
+          readOnly: true
+        business_license:
+          type: string
+          nullable: true
+          readOnly: true
+        government_id:
+          type: string
+          nullable: true
+          readOnly: true
+        insurance_certificate:
+          type: string
+          nullable: true
+          readOnly: true
+        message:
+          type: string
+          readOnly: true
+        request_id:
+          type: integer
+          readOnly: true
+        company_name:
+          type: string
+          maxLength: 200
+        business_type:
+          $ref: '#/components/schemas/BusinessTypeEnum'
+        certifications:
+          type: string
+          description: Industry certifications and qualifications
+        references:
+          type: string
+          description: Business references
+        additional_info:
+          type: string
+          description: Additional information
+        status:
+          allOf:
+          - $ref: '#/components/schemas/VerificationRequestStatusEnum'
+          readOnly: true
+        admin_notes:
+          type: string
+          description: Admin review notes
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        reviewed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        user:
+          type: integer
+          readOnly: true
+        reviewed_by:
+          type: integer
+          nullable: true
+      required:
+      - business_license
+      - company_name
+      - created_at
+      - government_id
+      - id
+      - insurance_certificate
+      - message
+      - request_id
+      - reviewed_at
+      - reviewed_by_email
+      - status
+      - user
+      - user_email
     VerificationRequestStatusEnum:
       enum:
       - pending

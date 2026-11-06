@@ -501,6 +501,13 @@ class VerificationRequestSerializer(serializers.ModelSerializer):
         return self._get_absolute_url(obj, 'insurance_certificate')
 
 
+class VerificationRequestResponseSerializer(VerificationRequestSerializer):
+    """201 body: the request fields plus the submission envelope."""
+
+    message = serializers.CharField(read_only=True)
+    request_id = serializers.IntegerField(read_only=True)
+
+
 class VerificationRequestCreateSerializer(serializers.ModelSerializer):
     """Write serializer for the legacy ``/auth/verification/request/`` endpoint."""
 
@@ -754,7 +761,7 @@ class SellerOnboardingStep1Serializer(serializers.Serializer):
             slug = f"{base_slug}-{counter}"
             counter += 1
 
-        store, _ = Store.objects.update_or_create(
+        store, created = Store.objects.update_or_create(
             user=user,
             defaults={
                 'name': self.validated_data['business_name'],
@@ -764,6 +771,13 @@ class SellerOnboardingStep1Serializer(serializers.Serializer):
                 'policy': '',
             }
         )
+
+        from apps.admin_panel.models import PlatformConfig
+
+        if created and not PlatformConfig.get().vendor_approval_required:
+            store.is_verified = True
+            store.save(update_fields=['is_verified'])
+
         return store
 
 

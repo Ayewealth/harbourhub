@@ -18,12 +18,14 @@ from drf_spectacular.utils import extend_schema, extend_schema_view, inline_seri
 from drf_spectacular.types import OpenApiTypes
 from rest_framework.views import APIView
 from django.core.signing import TimestampSigner
+from django.utils import timezone
 
 from .serializers import (
     UserRegistrationSerializer, CustomTokenObtainPairSerializer,
     UserProfileSerializer, UserProfileUpdateSerializer,
     PasswordChangeSerializer, PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer, VerificationRequestSerializer,
+    VerificationRequestResponseSerializer,
     VerificationRequestCreateSerializer,
     OTPRequestSerializer, OTPVerifySerializer,
     SetPasswordSerializer, DeliveryDetailSerializer,
@@ -40,6 +42,7 @@ from .serializers import (
 from .permissions import IsOwnerOrAdmin
 from .models import DeliveryDetail, UserPreference, VerificationRequest, OneTimePassword, UserTwoFactor, UserSession
 from apps.accounts.tasks import send_welcome_email_task, send_password_reset_email_task, send_password_reset_confirmation_email_task, notify_admins_verification_request
+from apps.notifications.utils import notify_verification_approved
 from apps.analytics.posthog_utils import (
     track_user_registered, track_user_login, 
     track_verification_submitted, track_password_reset_requested,
@@ -316,8 +319,8 @@ class VerificationViewSet(viewsets.ViewSet):
     @extend_schema(
         summary="Request verification",
         description="Submit verification request for service providers",
-        request=VerificationRequestSerializer,
-        responses={201: VerificationRequestSerializer}
+        request=VerificationRequestCreateSerializer,
+        responses={201: VerificationRequestResponseSerializer}
     )
     @action(detail=False, methods=['post'], url_path='request')
     def request_verification(self, request):
@@ -338,18 +341,44 @@ class VerificationViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
         verification_request = serializer.save(user=request.user)
 
-        # Notify admins asynchronously
-        notify_admins_verification_request.delay(
-            verification_request.id,
-            request.user.email
-        )
-        
+        from apps.admin_panel.models import PlatformConfig
+
+        config = PlatformConfig.get()
+
+        if config.vendor_approval_required:
+            # Notify admins asynchronously
+            notify_admins_verification_request.delay(
+                verification_request.id,
+                request.user.email
+            )
+        else:
+            verification_request.status = VerificationRequest.Status.APPROVED
+            verification_request.reviewed_at = timezone.now()
+            verification_request.admin_notes = (
+                "Auto-approved because vendor approval is disabled."
+            )
+            verification_request.save(
+                update_fields=["status", "reviewed_at", "admin_notes"]
+            )
+
+            request.user.is_verified = True
+            request.user.save(update_fields=["is_verified"])
+
+            store = getattr(request.user, "store", None)
+            if store is not None:
+                store.is_verified = True
+                store.save(update_fields=["is_verified"])
+
+            notify_verification_approved(request.user)
+
         track_verification_submitted(request.user, verification_request.company_name)
 
-        return Response({
-            'message': 'Verification request submitted successfully',
-            'request_id': verification_request.id
-        }, status=status.HTTP_201_CREATED)
+        payload = VerificationRequestSerializer(
+            verification_request, context={"request": request}
+        ).data
+        payload["message"] = "Verification request submitted successfully"
+        payload["request_id"] = verification_request.id
+        return Response(payload, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         summary="Get verification status",

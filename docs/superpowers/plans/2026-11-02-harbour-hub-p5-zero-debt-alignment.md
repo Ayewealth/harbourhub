@@ -928,7 +928,8 @@ In `apps/accounts/views.py`:
 
 - Import `timezone` and `notify_verification_approved`.
 - Replace the `@extend_schema(responses={201: VerificationRequestSerializer})` with
-  `VerificationRequestResponseSerializer`.
+  `VerificationRequestResponseSerializer`, and declare the actual write serializer as the request
+  body (`request=VerificationRequestCreateSerializer`).
 - Replace the body after `serializer.save(...)`:
 
 ```python
