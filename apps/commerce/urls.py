@@ -18,6 +18,7 @@ from .views import (
     DisputeListCreateView,
     DisputeDetailView,
     DisputeActionView,
+    DisputeCancelView,
     RecentSalesView,
     OrderTrackingDetailView,
     BuyerMyOrdersListView,
@@ -88,4 +89,9 @@ urlpatterns = [
     path("disputes/", DisputeListCreateView.as_view(), name="dispute-list-create"),
     path("disputes/<int:pk>/", DisputeDetailView.as_view(), name="dispute-detail"),
     path("disputes/<int:pk>/action/", DisputeActionView.as_view(), name="dispute-action"),
+    path(
+        "disputes/<int:pk>/cancel/",
+        DisputeCancelView.as_view(),
+        name="dispute-cancel",
+    ),
 ]

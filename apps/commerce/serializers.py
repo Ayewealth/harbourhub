@@ -468,9 +468,25 @@ class DisputeSerializer(serializers.ModelSerializer):
 
 
 class DisputeResolutionSerializer(serializers.Serializer):
-    """Admin-only: resolve or refund a dispute."""
-    action = serializers.ChoiceField(choices=['resolve', 'refund'])
-    resolution_notes = serializers.CharField(required=True)
+    """Admin-only: resolve, refund or cancel a dispute."""
+
+    action = serializers.ChoiceField(choices=["resolve", "refund", "cancel"])
+    resolution_notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if attrs["action"] in ("resolve", "refund") and not attrs.get(
+            "resolution_notes"
+        ):
+            raise serializers.ValidationError(
+                {"resolution_notes": ["This field is required."]}
+            )
+        return attrs
+
+
+class DisputeCancelSerializer(serializers.Serializer):
+    """Buyer-only: cancel an open dispute."""
+
+    resolution_notes = serializers.CharField(required=False, allow_blank=True)
 
 
 # ─── Order Tracking & Timelines Serializers ──────────────────────────────────

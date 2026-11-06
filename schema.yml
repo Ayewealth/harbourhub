@@ -3243,7 +3243,7 @@ paths:
   /commerce/disputes/{id}/action/:
     post:
       operationId: commerce_disputes_action_create
-      description: 'Admin-only: resolve or refund a dispute.'
+      description: 'Admin-only: resolve, refund or cancel a dispute.'
       parameters:
       - in: path
         name: id
@@ -3272,6 +3272,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DisputeActionResponse'
+          description: ''
+  /commerce/disputes/{id}/cancel/:
+    post:
+      operationId: commerce_disputes_cancel_create
+      description: Buyer cancels their own open or under-review dispute.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - commerce
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisputeCancelRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DisputeCancelRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DisputeCancelRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputeCancelResponse'
           description: ''
   /commerce/orders/:
     get:
@@ -7715,10 +7747,12 @@ components:
       enum:
       - resolve
       - refund
+      - cancel
       type: string
       description: |-
         * `resolve` - resolve
         * `refund` - refund
+        * `cancel` - cancel
     ActionTypeEnum:
       enum:
       - content_reviewed
@@ -9454,6 +9488,19 @@ components:
           type: string
       required:
       - message
+    DisputeCancelRequest:
+      type: object
+      description: 'Buyer-only: cancel an open dispute.'
+      properties:
+        resolution_notes:
+          type: string
+    DisputeCancelResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+      - message
     DisputeRequest:
       type: object
       properties:
@@ -9472,16 +9519,14 @@ components:
       - reason
     DisputeResolutionRequest:
       type: object
-      description: 'Admin-only: resolve or refund a dispute.'
+      description: 'Admin-only: resolve, refund or cancel a dispute.'
       properties:
         action:
           $ref: '#/components/schemas/ActionEnum'
         resolution_notes:
           type: string
-          minLength: 1
       required:
       - action
-      - resolution_notes
     DisputeStatusEnum:
       enum:
       - open

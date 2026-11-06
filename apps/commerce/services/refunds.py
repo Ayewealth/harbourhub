@@ -8,7 +8,7 @@ from django.utils import timezone
 from apps.financials.services import money, reverse_earning_amount
 from apps.notifications.utils import notify_order_refunded
 
-from ..models import Order, OrderActivity, Payment, Refund
+from ..models import Dispute, Order, OrderActivity, Payment, Refund
 from ..paystack import initiate_refund
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,28 @@ def finalize_refund(refund: Refund, payload: dict | None = None):
                     "status", "cancelled_at", "cancellation_reason"
                 ]
             )
+
+            dispute = (
+                Dispute.objects.select_for_update()
+                .filter(order=order)
+                .first()
+            )
+            if dispute is not None and dispute.status in (
+                Dispute.Status.OPEN,
+                Dispute.Status.UNDER_REVIEW,
+            ):
+                dispute.status = Dispute.Status.REFUNDED
+                dispute.resolved_at = timezone.now()
+                dispute.resolution_notes = (
+                    f"Refund {refund.reference} completed for "
+                    f"{order.order_number}."
+                )
+                dispute.save(
+                    update_fields=[
+                        "status", "resolved_at", "resolution_notes"
+                    ]
+                )
+
             OrderActivity.objects.create(
                 order=order,
                 event_type=OrderActivity.EventType.ORDER_REFUNDED,

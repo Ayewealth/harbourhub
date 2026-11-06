@@ -55,6 +55,7 @@ from .serializers import (
     QuoteRequestVendorUpdateSerializer,
     DisputeSerializer,
     DisputeResolutionSerializer,
+    DisputeCancelSerializer,
     OrderTrackingDetailSerializer,
     OrderListTrackingSummarySerializer,
 )
@@ -1410,7 +1411,7 @@ class DisputeDetailView(generics.RetrieveAPIView):
 
 
 class DisputeActionView(APIView):
-    """Admin-only: resolve or refund a dispute."""
+    """Admin-only: resolve, refund or cancel a dispute."""
 
     permission_classes = [permissions.IsAuthenticated, HasAdminModulePermission]
     admin_module = AdminModule.SUPPORTS
@@ -1430,7 +1431,7 @@ class DisputeActionView(APIView):
         serializer = DisputeResolutionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         action = serializer.validated_data['action']
-        notes = serializer.validated_data['resolution_notes']
+        notes = serializer.validated_data.get('resolution_notes', '')
 
         earning = VendorEarning.objects.filter(order=dispute.order).first()
 
@@ -1470,6 +1471,13 @@ class DisputeActionView(APIView):
                 "Refund requested. The dispute closes when the gateway confirms."
             )
 
+        elif action == 'cancel':
+            if earning:
+                earning.is_disputed = False
+                earning.save(update_fields=['is_disputed'])
+            dispute.status = Dispute.Status.CANCELLED
+            message = "Dispute cancelled successfully."
+
         else:
             return Response(
                 {'error': 'Invalid action.'},
@@ -1477,7 +1485,9 @@ class DisputeActionView(APIView):
             )
 
         dispute.resolution_notes = notes
-        dispute.resolved_at = timezone.now() if action == 'resolve' else None
+        dispute.resolved_at = (
+            timezone.now() if action in ('resolve', 'cancel') else None
+        )
         dispute.save(
             update_fields=['status', 'resolution_notes', 'resolved_at'])
 
@@ -1487,6 +1497,59 @@ class DisputeActionView(APIView):
             message=message,
         )
         return Response({'message': message})
+
+
+class DisputeCancelView(APIView):
+    """Buyer cancels their own open or under-review dispute."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        request=DisputeCancelSerializer,
+        responses={200: inline_serializer(
+            name="DisputeCancelResponse",
+            fields={"message": serializers.CharField()},
+        )},
+    )
+    def post(self, request, pk):
+        from apps.financials.models import VendorEarning
+
+        dispute = get_object_or_404(Dispute, pk=pk)
+        if dispute.buyer_id != request.user.id:
+            return Response(
+                {"error": "Only the buyer can cancel this dispute."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if dispute.status not in (
+            Dispute.Status.OPEN,
+            Dispute.Status.UNDER_REVIEW,
+        ):
+            return Response(
+                {"error": "Only open or under-review disputes can be cancelled."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = DisputeCancelSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        notes = payload.validated_data.get("resolution_notes", "")
+
+        dispute.status = Dispute.Status.CANCELLED
+        dispute.resolved_at = timezone.now()
+        if notes:
+            dispute.resolution_notes = notes
+        dispute.save(
+            update_fields=["status", "resolved_at", "resolution_notes"]
+        )
+
+        VendorEarning.objects.filter(order=dispute.order).update(
+            is_disputed=False
+        )
+        OrderActivity.objects.create(
+            order=dispute.order,
+            event_type=OrderActivity.EventType.OTHER,
+            message="Dispute cancelled by the buyer.",
+        )
+        return Response({"message": "Dispute cancelled successfully."})
 
 
 class RecentSalesView(generics.ListAPIView):

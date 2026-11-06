@@ -300,6 +300,12 @@ def allocate_payout(payout):
         take = min(available, remaining)
         PayoutAllocation.objects.create(
             payout=payout, earning=earning, amount=take)
+        if earning.status in (
+            VendorEarning.Status.AVAILABLE,
+            VendorEarning.Status.PARTIALLY_RELEASED,
+        ):
+            earning.status = VendorEarning.Status.PROCESSING
+            earning.save(update_fields=["status"])
         remaining -= take
         allocated += take
 
@@ -328,7 +334,11 @@ def settle_payout(payout):
             earning.paid_out_amount + allocation.amount)
         if earning.paid_out_amount >= earning.net_amount:
             earning.status = VendorEarning.Status.PAID_OUT
-        elif earning.status == VendorEarning.Status.AVAILABLE:
+        elif earning.status in (
+            VendorEarning.Status.AVAILABLE,
+            VendorEarning.Status.PARTIALLY_RELEASED,
+            VendorEarning.Status.PROCESSING,
+        ):
             earning.status = VendorEarning.Status.PARTIALLY_RELEASED
         earning.save(update_fields=['paid_out_amount', 'status'])
 
