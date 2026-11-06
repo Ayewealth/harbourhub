@@ -2,6 +2,7 @@ import pytest
 from rest_framework import status
 
 from apps.accounts.models import User
+from apps.admin_panel.models import PlatformConfig
 from apps.listings.models import Listing, ListingStoreRequired
 from tests.factories import CategoryFactory, ListingFactory, StoreFactory, UserFactory
 
@@ -122,6 +123,10 @@ def test_publish_requires_ownership(auth_client):
 
 @pytest.mark.django_db
 def test_owner_can_publish_a_draft(auth_client):
+    config = PlatformConfig.objects.get_or_create(pk=1)[0]
+    config.listing_approval_required = False
+    config.save(update_fields=["listing_approval_required"])
+
     listing = ListingFactory(status=Listing.Status.DRAFT)
     client = auth_client(listing.user)
 

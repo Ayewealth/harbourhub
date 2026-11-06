@@ -6,6 +6,7 @@ from django.db.models import Q
 from drf_spectacular.utils import extend_schema, OpenApiParameter, inline_serializer
 
 from apps.listings.models import Listing
+from apps.listings.public import public_listings
 from apps.categories.models import Category
 from django.contrib.auth import get_user_model
 
@@ -60,14 +61,12 @@ class GlobalSearchView(APIView):
             except Exception:
                 pass  # don't break search if save fails
 
-        listings_qs = Listing.objects.filter(
-            Q(title__icontains=query) | Q(description__icontains=query)
-            | Q(manufacturer__icontains=query) | Q(model__icontains=query)
-            | Q(location__icontains=query)
-        ).filter(
-            status=Listing.Status.PUBLISHED,
-            store__is_published=True,
-            store__is_active=True,
+        listings_qs = public_listings(
+            Listing.objects.filter(
+                Q(title__icontains=query) | Q(description__icontains=query)
+                | Q(manufacturer__icontains=query) | Q(model__icontains=query)
+                | Q(location__icontains=query)
+            )
         ).select_related('category', 'user', 'store').prefetch_related('images')[:10]
 
         categories_qs = Category.objects.filter(

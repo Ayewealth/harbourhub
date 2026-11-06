@@ -2,6 +2,7 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
 from .models import Store, StoreActivity
+from apps.listings.public import enabled_listing_types
 from apps.core.currency import CurrencyConverterMixin
 from apps.accounts.serializers import UserProfileSerializer
 from apps.listings.models import Listing, ListingImage
@@ -58,19 +59,23 @@ class StoreDirectoryListingPreviewMixin(serializers.Serializer):
     listing_count = serializers.SerializerMethodField()
     listings = serializers.SerializerMethodField()
 
+    def _public_store_listings(self, obj):
+        return obj.listings.filter(
+            status=Listing.Status.PUBLISHED,
+            listing_type__in=enabled_listing_types(),
+        )
+
     @extend_schema_field(serializers.IntegerField())
     def get_listing_count(self, obj):
-        return obj.listings.filter(status=Listing.Status.PUBLISHED).count()
+        return self._public_store_listings(obj).count()
 
     @extend_schema_field(StoreListingMiniSerializer(many=True))
     def get_listings(self, obj):
         limit = self.context.get("listing_limit", 6)
+        base = self._public_store_listings(obj)
 
         featured_list = list(
-            obj.listings.filter(
-                status=Listing.Status.PUBLISHED,
-                featured=True
-            ).order_by("-created_at")[:limit]
+            base.filter(featured=True).order_by("-created_at")[:limit]
         )
 
         remaining = limit - len(featured_list)
@@ -79,9 +84,7 @@ class StoreDirectoryListingPreviewMixin(serializers.Serializer):
             featured_ids = [item.id for item in featured_list]
 
             recent_list = list(
-                obj.listings.filter(
-                    status=Listing.Status.PUBLISHED
-                ).exclude(
+                base.exclude(
                     id__in=featured_ids
                 ).order_by("-created_at")[:remaining]
             )

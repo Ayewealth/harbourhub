@@ -6436,6 +6436,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/NotificationMarkAllReadResponse'
           description: ''
+  /platform-config/:
+    get:
+      operationId: platform_config_retrieve
+      description: Unauthenticated marketplace switches for the web and mobile clients.
+      summary: Public platform configuration
+      tags:
+      - platform-config
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicPlatformConfig'
+          description: ''
   /quotes/received/:
     get:
       operationId: quotes_received_list
@@ -14069,6 +14085,42 @@ components:
         * `low` - Low
         * `medium` - Medium
         * `high` - High
+    PublicPlatformConfig:
+      type: object
+      properties:
+        enable_buy:
+          type: boolean
+          readOnly: true
+        enable_rent:
+          type: boolean
+          readOnly: true
+        enable_services:
+          type: boolean
+          readOnly: true
+        vendor_approval_required:
+          type: boolean
+          readOnly: true
+        listing_approval_required:
+          type: boolean
+          readOnly: true
+        default_currency:
+          type: string
+          readOnly: true
+        timezone:
+          type: string
+          readOnly: true
+        date_format:
+          type: string
+          readOnly: true
+      required:
+      - date_format
+      - default_currency
+      - enable_buy
+      - enable_rent
+      - enable_services
+      - listing_approval_required
+      - timezone
+      - vendor_approval_required
     PublicRecentSale:
       type: object
       description: Minimal order info for public hero page.

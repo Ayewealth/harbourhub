@@ -74,11 +74,14 @@ class Category(MPTTModel):
     def get_listing_count(self):
         """Get count of active listings in this category and its descendants"""
         from apps.listings.models import Listing
+        from apps.listings.public import enabled_listing_types
+
         category_ids = [self.pk] + \
             list(self.get_descendants().values_list('pk', flat=True))
         return Listing.objects.filter(
             category_id__in=category_ids,
-            status=Listing.Status.PUBLISHED
+            status=Listing.Status.PUBLISHED,
+            listing_type__in=enabled_listing_types(),
         ).count()
 
     @property

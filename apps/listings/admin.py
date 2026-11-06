@@ -1,5 +1,7 @@
 # apps/listings/admin.py
 from django.contrib import admin
+from django.utils import timezone
+
 from .models import Listing, ListingImage, ListingDocument, ListingView
 
 
@@ -30,8 +32,13 @@ class ListingAdmin(admin.ModelAdmin):
     actions = ("mark_published", "mark_archived", "toggle_featured")
 
     def mark_published(self, request, queryset):
-        updated = queryset.update(status=Listing.Status.PUBLISHED)
-        self.message_user(request, f"{updated} listing(s) marked published.")
+        now = timezone.now()
+        for listing in queryset:
+            listing.status = Listing.Status.PUBLISHED
+            if listing.published_at is None:
+                listing.published_at = now
+            listing.save(update_fields=["status", "published_at", "updated_at"])
+        self.message_user(request, f"{queryset.count()} listing(s) published.")
     mark_published.short_description = "Mark selected as published"
 
     def mark_archived(self, request, queryset):

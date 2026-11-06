@@ -19,6 +19,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Listing, SavedItem
+from .public import (
+    APPROVAL_REQUIRED_ERROR, can_publish, get_platform_config,
+    is_admin, public_listing_q, public_listings,
+)
 from .serializers import (
     ListingListSerializer, ListingDetailSerializer,
     ListingCreateUpdateSerializer, MyListingSerializer,
@@ -73,18 +77,14 @@ class ListingViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter queryset based on action and user"""
         queryset = super().get_queryset()
-
-        public_filter = (
-            Q(status=Listing.Status.PUBLISHED)
-            & (Q(store__is_active=True) | Q(store__isnull=True))
-        )
+        public_filter = public_listing_q()
 
         if self.action == 'list':
             return queryset.filter(public_filter)
         elif self.action in ['retrieve']:
             user = self.request.user
             if user and user.is_authenticated:
-                if getattr(user, "is_admin_user", False):
+                if is_admin(user):
                     return queryset
                 return queryset.filter(public_filter | Q(user=user))
             return queryset.filter(public_filter)
@@ -253,6 +253,13 @@ class ListingViewSet(viewsets.ModelViewSet):
 
         if listing.status != Listing.Status.DRAFT:
             return Response({'error': 'Only draft listings can be published'}, status=status.HTTP_400_BAD_REQUEST)
+
+        config = get_platform_config()
+        if not can_publish(listing, request.user, config):
+            return Response(
+                {"error": APPROVAL_REQUIRED_ERROR},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if not listing.store_id or not listing.store.is_active:
             return Response(
@@ -523,10 +530,7 @@ class TopDealsListView(generics.ListAPIView):
         limit = min(max(limit, 1), 50)
 
         return (
-            Listing.objects.filter(
-                Q(status=Listing.Status.PUBLISHED)
-                & (Q(store__is_active=True) | Q(store__isnull=True))
-            )
+            public_listings(Listing.objects.all())
             .select_related("category", "user", "store")
             .prefetch_related("images")
             .annotate(
@@ -564,10 +568,7 @@ class BestReviewedListView(generics.ListAPIView):
         limit = min(max(limit, 1), 50)
 
         return (
-            Listing.objects.filter(
-                Q(status=Listing.Status.PUBLISHED)
-                & (Q(store__is_active=True) | Q(store__isnull=True))
-            )
+            public_listings(Listing.objects.all())
             .select_related("category", "user", "store")
             .prefetch_related("images")
             .annotate(

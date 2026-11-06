@@ -12,12 +12,13 @@ from rest_framework import serializers
 
 from apps.notifications.utils import notify_verification_approved, notify_verification_rejected
 
-from .models import ReportedContent, AdminActionLog
+from .models import ReportedContent, AdminActionLog, PlatformConfig
 from .serializers import (
     ReportedContentSerializer,
     ReportedContentCreateSerializer,
     AdminActionLogSerializer,
-    AdminOrderListSerializer
+    AdminOrderListSerializer,
+    PublicPlatformConfigSerializer,
 )
 from .permissions import IsDashboardStaff
 from .auth import has_admin_module_permission, HasAdminModulePermission
@@ -1201,3 +1202,17 @@ class AdminUserActionView(APIView):
             {'error': 'Invalid action.'},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+class PublicPlatformConfigView(APIView):
+    """Unauthenticated marketplace switches for the web and mobile clients."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    @extend_schema(
+        summary="Public platform configuration",
+        responses={200: PublicPlatformConfigSerializer},
+    )
+    def get(self, request):
+        return Response(PublicPlatformConfigSerializer(PlatformConfig.get()).data)

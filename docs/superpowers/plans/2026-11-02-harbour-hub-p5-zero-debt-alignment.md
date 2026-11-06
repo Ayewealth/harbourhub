@@ -107,6 +107,7 @@ Django admin bulk action must stop producing published rows with a null `publish
 | Edit | `hb/api_urls_v1.py` |
 | Create | `tests/test_platform_config.py` |
 | Create | `tests/test_listing_policies.py` |
+| Edit | `tests/test_listings.py` (owner publish test disables approval) |
 
 ### Step 1.1 — Write the failing tests
 
@@ -186,7 +187,7 @@ def _seller_with_store():
     return store.user, store
 
 
-def _payload(store, **overrides):
+def _payload(_store, **overrides):
     payload = {
         "title": "Hydraulic winch",
         "description": "Heavy duty winch in good condition.",
@@ -194,6 +195,8 @@ def _payload(store, **overrides):
         "listing_type": Listing.Type.SELL,
         "price": "1500000.00",
         "location": "Lagos",
+        "contact_name": "Test Seller",
+        "contact_email": "seller@example.com",
     }
     payload.update(overrides)
     return payload
@@ -353,6 +356,10 @@ def test_admin_bulk_publish_sets_published_at(monkeypatch):
 
 Public-endpoint tests use `APIClient()` with no credentials so the request is genuinely
 anonymous; authenticated tests use the `auth_client` fixture.
+
+`tests/test_listings.py::test_owner_can_publish_a_draft` must disable
+`listing_approval_required` first. It tests the owner publish path, not the approval gate; the
+approval gate is covered by `test_publish_action_enforces_approval` above.
 
 Run the tests. They must fail for the right reasons (404 on `/platform-config/`, 201 where 400 is
 expected, disabled types still visible).

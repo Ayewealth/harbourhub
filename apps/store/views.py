@@ -40,10 +40,15 @@ def annotate_store_review_stats(queryset):
 
 def annotate_store_for_top_vendors(queryset):
     """Adds published listing count for ranking top vendors."""
+    from apps.listings.public import enabled_listing_types
+
     return annotate_store_review_stats(queryset).annotate(
         published_listing_count=Count(
             "listings",
-            filter=Q(listings__status=Listing.Status.PUBLISHED),
+            filter=Q(
+                listings__status=Listing.Status.PUBLISHED,
+                listings__listing_type__in=enabled_listing_types(),
+            ),
             distinct=True,
         ),
     )

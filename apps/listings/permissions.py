@@ -35,6 +35,8 @@ class CanCreateListing(permissions.BasePermission):
         if request.method == "POST":
             if not (request.user and request.user.is_authenticated):
                 return False
+            if getattr(request.user, "is_admin_user", False) or request.user.is_staff:
+                return True
             can_create = getattr(request.user, "can_create_listings", False)
             if callable(can_create):
                 return can_create()

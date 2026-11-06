@@ -100,6 +100,17 @@ class PlatformConfigSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'updated_at')
 
 
+class PublicPlatformConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlatformConfig
+        fields = (
+            "enable_buy", "enable_rent", "enable_services",
+            "vendor_approval_required", "listing_approval_required",
+            "default_currency", "timezone", "date_format",
+        )
+        read_only_fields = fields
+
+
 class AdminOrderListSerializer(serializers.ModelSerializer):
     buyer_name = serializers.CharField(source='buyer.full_name', read_only=True)
     buyer_email = serializers.EmailField(source='buyer.email', read_only=True)

@@ -4,6 +4,13 @@ from django.db import transaction
 from drf_spectacular.utils import extend_schema_field
 
 from .models import Listing, ListingImage, ListingDocument
+from .public import (
+    APPROVAL_REQUIRED_ERROR,
+    can_publish,
+    get_platform_config,
+    is_admin,
+    validate_listing_type_enabled,
+)
 from apps.core.currency import CurrencyConverterMixin
 
 
@@ -269,6 +276,8 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
+        user = getattr(request, "user", None)
+        config = get_platform_config()
 
         # Pull repeated file fields from request.FILES manually
         if request and hasattr(request, 'FILES'):
@@ -289,11 +298,48 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
                 f'You currently have {existing_count}, trying to add {len(images_data)}.'
             )
 
-        if self.instance:
-            if "featured" in attrs and request.user != self.instance.user:
-                raise serializers.ValidationError(
-                    "You can only change featured flag for your own listings.")
-        if attrs.get("listing_type") == Listing.Type.SERVICE and not attrs.get("service_area"):
+        if self.instance and "featured" in attrs and user != self.instance.user:
+            raise serializers.ValidationError(
+                "You can only change featured flag for your own listings.")
+
+        incoming_type = attrs.get("listing_type")
+        current_type = getattr(self.instance, "listing_type", None)
+        type_changed = self.instance is None or (
+            incoming_type is not None and incoming_type != current_type
+        )
+        if type_changed and incoming_type:
+            error = validate_listing_type_enabled(incoming_type, config)
+            if error:
+                raise serializers.ValidationError({"listing_type": [error]})
+
+        incoming_status = attrs.get("status")
+        if (
+            incoming_status in (Listing.Status.FLAGGED, Listing.Status.SUSPENDED)
+            and not is_admin(user)
+        ):
+            raise serializers.ValidationError(
+                {"status": ["This status can only be set by an administrator."]}
+            )
+
+        if self.instance is None:
+            if is_admin(user):
+                attrs["status"] = incoming_status or Listing.Status.DRAFT
+            elif config.listing_approval_required:
+                # Every seller-created listing waits for approval.
+                attrs["status"] = Listing.Status.DRAFT
+            else:
+                attrs["status"] = incoming_status or Listing.Status.PUBLISHED
+        elif (
+            incoming_status == Listing.Status.PUBLISHED
+            and not can_publish(self.instance, user, config)
+        ):
+            raise serializers.ValidationError(
+                {"status": [APPROVAL_REQUIRED_ERROR]}
+            )
+
+        if attrs.get("listing_type") == Listing.Type.SERVICE and not attrs.get(
+            "service_area"
+        ):
             attrs["service_area"] = attrs.get("location", "")
         return attrs
 
@@ -386,41 +432,6 @@ class ListingCreateUpdateSerializer(serializers.ModelSerializer):
                 document=doc_data,
                 name=getattr(doc_data, "name", "")
             )
-
-
-class ListingStatusUpdateSerializer(serializers.ModelSerializer):
-    """
-    Admin/status serializer. If 'featured' is toggled here, we also unset other featured
-    listings for that owner to keep consistent behavior.
-    """
-    admin_notes = serializers.CharField(write_only=True, required=False)
-
-    class Meta:
-        model = Listing
-        fields = ("status", "featured", "admin_notes")
-
-    def update(self, instance, validated_data):
-        admin_notes = validated_data.pop("admin_notes", "")
-        featured_flag = validated_data.get("featured", None)
-
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-
-        if featured_flag:
-            _unset_other_featured_for_user(
-                instance.user, exclude_pk=instance.pk)
-
-        if "status" in validated_data:
-            from admin_panel.models import AdminActionLog
-            AdminActionLog.log_action(
-                admin_user=self.context["request"].user,
-                action_type=f"listing_{validated_data['status']}",
-                description=f"Changed listing status for {instance.id} to {validated_data['status']}",
-                content_object=instance,
-                extra_data={"admin_notes": admin_notes},
-            )
-        return instance
 
 
 class MyListingSerializer(CurrencyConverterMixin, serializers.ModelSerializer):

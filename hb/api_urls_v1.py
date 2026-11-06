@@ -1,10 +1,14 @@
 # harbour_hub/urls.py
 from django.urls import path, include
 from apps.commerce.views import BuyerSentQuotesView, SellerReceivedQuotesView
+from apps.admin_panel.views import PublicPlatformConfigView
 
 urlpatterns = [
     # Authentication
     path('auth/', include('apps.accounts.urls')),
+
+    # Public platform switches
+    path('platform-config/', PublicPlatformConfigView.as_view(), name='platform-config'),
 
     # Core functionality
     path('categories/', include('apps.categories.urls')),
