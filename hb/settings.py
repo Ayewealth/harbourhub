@@ -654,6 +654,12 @@ PAYSTACK_CALLBACK_URL = config(
 )
 
 # =============================================================================
+# SOCIAL LOGIN
+# =============================================================================
+GOOGLE_CLIENT_ID = config("GOOGLE_CLIENT_ID", default="")
+APPLE_CLIENT_ID = config("APPLE_CLIENT_ID", default="")
+
+# =============================================================================
 # POSTHOG
 # =============================================================================
 POSTHOG_PROJECT_API_KEY = config("POSTHOG_PROJECT_API_KEY", default="")

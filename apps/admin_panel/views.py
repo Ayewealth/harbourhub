@@ -892,20 +892,79 @@ class AdminAnalyticsExportView(APIView):
     )
     def get(self, request):
         import csv
+        from datetime import date
+        from decimal import Decimal
+
+        from django.db.models import Sum
         from django.http import HttpResponse
+
+        from apps.accounts.models import User
+        from apps.commerce.constants import SALES_STATUSES
+        from apps.commerce.models import Dispute, Order
+        from apps.inquiries.models import Inquiry
+        from apps.listings.models import Listing
+
+        def parse(value):
+            if not value:
+                return None
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return None
 
         raw_from = request.query_params.get("date_from")
         raw_to = request.query_params.get("date_to")
-        
-        # Simple CSV export placeholder
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="analytics_export_{raw_from or "all"}_to_{raw_to or "now"}.csv"'
-        
+        date_from = parse(raw_from)
+        date_to = parse(raw_to)
+        if (raw_from and date_from is None) or (raw_to and date_to is None):
+            return Response(
+                {"error": "Invalid date format. Use YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        orders = Order.objects.filter(status__in=SALES_STATUSES)
+        disputes = Dispute.objects.filter(
+            status__in=(Dispute.Status.OPEN, Dispute.Status.UNDER_REVIEW)
+        )
+        inquiries = Inquiry.objects.all()
+        users = User.objects.all()
+        listings = Listing.objects.filter(status=Listing.Status.PUBLISHED)
+
+        if date_from:
+            orders = orders.filter(placed_at__date__gte=date_from)
+            disputes = disputes.filter(created_at__date__gte=date_from)
+            inquiries = inquiries.filter(created_at__date__gte=date_from)
+            users = users.filter(date_joined__date__gte=date_from)
+            listings = listings.filter(created_at__date__gte=date_from)
+        if date_to:
+            orders = orders.filter(placed_at__date__lte=date_to)
+            disputes = disputes.filter(created_at__date__lte=date_to)
+            inquiries = inquiries.filter(created_at__date__lte=date_to)
+            users = users.filter(date_joined__date__lte=date_to)
+            listings = listings.filter(created_at__date__lte=date_to)
+
+        period = f"{raw_from or 'beginning'} to {raw_to or 'now'}"
+        rows = [
+            (
+                "Total Revenue",
+                f"{orders.aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00'):.2f}",
+            ),
+            ("Paid Orders", orders.count()),
+            ("Active Disputes", disputes.count()),
+            ("New Inquiries", inquiries.count()),
+            ("New Users", users.count()),
+            ("Active Listings", listings.count()),
+        ]
+
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = (
+            f'attachment; filename="analytics_export_{raw_from or "all"}_'
+            f'to_{raw_to or "now"}.csv"'
+        )
         writer = csv.writer(response)
-        writer.writerow(['Metric', 'Value', 'Period'])
-        writer.writerow(['Total Revenue', '241000.00', f'{raw_from} to {raw_to}' if raw_from else 'Current Month'])
-        writer.writerow(['Active Disputes', '14', 'N/A'])
-        
+        writer.writerow(["Metric", "Value", "Period"])
+        for label, value in rows:
+            writer.writerow([label, value, period])
         return response
 
 

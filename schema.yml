@@ -2615,6 +2615,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/AppleLoginError'
           description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppleLoginUnavailable'
+          description: ''
   /auth/social/google/:
     post:
       operationId: auth_social_google_create
@@ -2646,6 +2652,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GoogleLoginError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleLoginUnavailable'
           description: ''
   /auth/verification/request/:
     post:
@@ -8426,9 +8438,33 @@ components:
           type: string
         access:
           type: string
+        user:
+          $ref: '#/components/schemas/AppleSocialLoginUser'
       required:
       - access
       - refresh
+      - user
+    AppleLoginUnavailable:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
+    AppleSocialLoginUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+      required:
+      - email
+      - id
+      - role
     BankAccount:
       type: object
       properties:
@@ -9879,9 +9915,19 @@ components:
           type: string
         access:
           type: string
+        user:
+          $ref: '#/components/schemas/SocialLoginUser'
       required:
       - access
       - refresh
+      - user
+    GoogleLoginUnavailable:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
     Inquiry:
       type: object
       description: Detailed serializer for retrieve view
@@ -15331,6 +15377,20 @@ components:
       - delivery_time_min
       - flat_rate_cost
       - zone_name
+    SocialLoginUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+      required:
+      - email
+      - id
+      - role
     StaffRoleEnum:
       enum:
       - super_admin

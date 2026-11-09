@@ -27,58 +27,95 @@ def get_tokens_for_user(user):
     }
 
 def verify_google_token(id_token=None, access_token=None):
+    """Return ``{"payload": dict|None, "error": str|None}``."""
+    client_id = getattr(settings, "GOOGLE_CLIENT_ID", "")
+    if not client_id:
+        return {"payload": None, "error": "Google login is not configured."}
+
     if id_token:
         url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
     elif access_token:
-        url = f"https://oauth2.googleapis.com/tokeninfo?access_token={access_token}"
+        url = (
+            "https://oauth2.googleapis.com/tokeninfo?access_token="
+            f"{access_token}"
+        )
     else:
-        return None
+        return {
+            "payload": None,
+            "error": "Either id_token or access_token is required.",
+        }
 
     try:
         response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            return response.json()
     except Exception as exc:
         logger.warning("Google token verification failed: %s", exc)
-    return None
+        return {"payload": None, "error": "Could not verify the Google token."}
+
+    if response.status_code != 200:
+        return {"payload": None, "error": "Invalid Google token."}
+
+    payload = response.json()
+    if payload.get("aud") != client_id:
+        return {"payload": None, "error": "Invalid Google token."}
+    if payload.get("iss") not in (
+        "accounts.google.com", "https://accounts.google.com"
+    ):
+        return {"payload": None, "error": "Invalid Google token."}
+    if payload.get("email_verified") not in (True, "true"):
+        return {
+            "payload": None,
+            "error": "Google email address is not verified.",
+        }
+    if not payload.get("email"):
+        return {
+            "payload": None,
+            "error": "Google token does not contain an email address.",
+        }
+    return {"payload": payload, "error": None}
+
 
 def verify_apple_token(id_token):
-    # In DEBUG mode, skip signature verification
-    if getattr(settings, "DEBUG", True):
-        try:
-            return jwt.decode(id_token, options={"verify_signature": False})
-        except Exception as exc:
-            logger.warning("Unverified Apple token decode failed: %s", exc)
-            return None
-
-    # In production, verify against Apple's JWKs
+    client_id = getattr(settings, "APPLE_CLIENT_ID", "")
+    if not client_id:
+        return {"payload": None, "error": "Apple login is not configured."}
     try:
-        jwks_url = "https://appleid.apple.com/auth/keys"
-        jwks_data = requests.get(jwks_url, timeout=5).json()
-        unverified_header = jwt.get_unverified_header(id_token)
-        kid = unverified_header.get("kid")
-
+        jwks_data = requests.get(
+            "https://appleid.apple.com/auth/keys", timeout=5
+        ).json()
+        header = jwt.get_unverified_header(id_token)
+        kid = header.get("kid")
         public_key = None
         for key in jwks_data.get("keys", []):
             if key.get("kid") == kid:
                 from jwt.algorithms import RSAAlgorithm
                 public_key = RSAAlgorithm.from_jwk(key)
                 break
-
-        if not public_key:
-            return None
-
-        return jwt.decode(
+        if public_key is None:
+            return {"payload": None, "error": "Invalid Apple token."}
+        payload = jwt.decode(
             id_token,
             public_key,
             algorithms=["RS256"],
-            options={"verify_aud": False}
+            audience=client_id,
+            issuer="https://appleid.apple.com",
         )
+        if payload.get("email_verified") not in (True, "true"):
+            return {
+                "payload": None,
+                "error": "Apple email address is not verified.",
+            }
+        if not payload.get("email"):
+            return {
+                "payload": None,
+                "error": "Apple token does not contain an email address.",
+            }
+        return {"payload": payload, "error": None}
     except Exception as exc:
         logger.warning("Verified Apple token decode failed: %s", exc)
-    return None
+        return {"payload": None, "error": "Invalid Apple token."}
 
-def create_or_login_social_user(email):
+
+def create_or_login_social_user(email, email_verified=False):
     with transaction.atomic():
         try:
             user = User.objects.get(email=email)
@@ -97,7 +134,7 @@ def create_or_login_social_user(email):
                 email=email,
                 username=username,
                 role=User.Role.BUYER,
-                is_verified=True,
+                is_verified=bool(email_verified),
             )
             user.set_unusable_password()
             user.save()
@@ -115,8 +152,23 @@ class GoogleSocialLoginView(APIView):
     @extend_schema(
         request=inline_serializer(name='GoogleLoginRequest', fields={'id_token': serializers.CharField(required=False), 'access_token': serializers.CharField(required=False)}),
         responses={
-            200: inline_serializer(name='GoogleLoginResponse', fields={'refresh': serializers.CharField(), 'access': serializers.CharField()}),
-            400: inline_serializer(name='GoogleLoginError', fields={'error': serializers.CharField()})
+            200: inline_serializer(
+                name='GoogleLoginResponse',
+                fields={
+                    'refresh': serializers.CharField(),
+                    'access': serializers.CharField(),
+                    'user': inline_serializer(
+                        name='SocialLoginUser',
+                        fields={
+                            'id': serializers.IntegerField(),
+                            'email': serializers.EmailField(),
+                            'role': serializers.CharField(),
+                        },
+                    ),
+                },
+            ),
+            400: inline_serializer(name='GoogleLoginError', fields={'error': serializers.CharField()}),
+            503: inline_serializer(name='GoogleLoginUnavailable', fields={'error': serializers.CharField()}),
         }
     )
     def post(self, request):
@@ -129,21 +181,25 @@ class GoogleSocialLoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        payload = verify_google_token(id_token=id_token, access_token=access_token)
-        if not payload:
+        result = verify_google_token(
+            id_token=id_token, access_token=access_token
+        )
+        if result["error"] == "Google login is not configured.":
             return Response(
-                {"error": "Invalid Google token."},
+                {"error": result["error"]},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if result["payload"] is None:
+            return Response(
+                {"error": result["error"]},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        email = payload.get("email")
-        if not email:
-            return Response(
-                {"error": "Google token does not contain an email address."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        user = create_or_login_social_user(email)
+        payload = result["payload"]
+        email = payload["email"]
+        user = create_or_login_social_user(
+            email, email_verified=payload.get("email_verified") in (True, "true")
+        )
         tokens = get_tokens_for_user(user)
         return Response(tokens, status=status.HTTP_200_OK)
 
@@ -154,8 +210,23 @@ class AppleSocialLoginView(APIView):
     @extend_schema(
         request=inline_serializer(name='AppleLoginRequest', fields={'id_token': serializers.CharField()}),
         responses={
-            200: inline_serializer(name='AppleLoginResponse', fields={'refresh': serializers.CharField(), 'access': serializers.CharField()}),
-            400: inline_serializer(name='AppleLoginError', fields={'error': serializers.CharField()})
+            200: inline_serializer(
+                name='AppleLoginResponse',
+                fields={
+                    'refresh': serializers.CharField(),
+                    'access': serializers.CharField(),
+                    'user': inline_serializer(
+                        name='AppleSocialLoginUser',
+                        fields={
+                            'id': serializers.IntegerField(),
+                            'email': serializers.EmailField(),
+                            'role': serializers.CharField(),
+                        },
+                    ),
+                },
+            ),
+            400: inline_serializer(name='AppleLoginError', fields={'error': serializers.CharField()}),
+            503: inline_serializer(name='AppleLoginUnavailable', fields={'error': serializers.CharField()}),
         }
     )
     def post(self, request):
@@ -166,22 +237,22 @@ class AppleSocialLoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        payload = verify_apple_token(id_token)
-        if not payload:
+        result = verify_apple_token(id_token)
+        if result["error"] == "Apple login is not configured.":
             return Response(
-                {"error": "Invalid Apple token."},
+                {"error": result["error"]},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if result["payload"] is None:
+            return Response(
+                {"error": result["error"]},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        email = payload.get("email")
-        if not email:
-            # Fallback if Apple email is not in payload, check subject or format a dummy/placeholder if needed
-            # but let's raise error since email is required by User model
-            return Response(
-                {"error": "Apple token does not contain an email address."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        user = create_or_login_social_user(email)
+        payload = result["payload"]
+        email = payload["email"]
+        user = create_or_login_social_user(
+            email, email_verified=payload.get("email_verified") in (True, "true")
+        )
         tokens = get_tokens_for_user(user)
         return Response(tokens, status=status.HTTP_200_OK)

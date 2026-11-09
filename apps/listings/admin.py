@@ -2,7 +2,9 @@
 from django.contrib import admin
 from django.utils import timezone
 
-from .models import Listing, ListingImage, ListingDocument, ListingView
+from .models import (
+    Listing, ListingDocument, ListingImage, ListingView, SavedItem,
+)
 
 
 class ListingImageInline(admin.TabularInline):
@@ -80,3 +82,10 @@ class ListingViewAdmin(admin.ModelAdmin):
     search_fields = ("listing__title", "user__email")
     readonly_fields = ("listing", "user", "ip_address",
                        "user_agent", "viewed_at")
+
+
+@admin.register(SavedItem)
+class SavedItemAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "listing", "created_at")
+    search_fields = ("user__email", "listing__title")
+    ordering = ("-created_at",)

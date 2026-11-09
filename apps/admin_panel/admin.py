@@ -3,7 +3,10 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from django.contrib import messages
 
-from .models import ReportedContent, AdminActionLog
+from .models import (
+    AdminActionLog, AdminProfile, JobListing, PlatformConfig, ReportedContent,
+    RolePermission,
+)
 
 
 @admin.register(ReportedContent)
@@ -158,3 +161,36 @@ class AdminActionLogAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         """Prevent deletion of logs"""
         return False
+
+
+@admin.register(RolePermission)
+class RolePermissionAdmin(admin.ModelAdmin):
+    list_display = ("id", "role", "module", "can_view", "can_manage")
+    list_filter = ("role", "module", "can_view", "can_manage")
+    search_fields = ("role", "module")
+
+
+@admin.register(AdminProfile)
+class AdminProfileAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "staff_role", "invite_status", "created_at")
+    list_filter = ("staff_role", "invite_status")
+    search_fields = ("user__email",)
+    exclude = ("invite_token",)
+    ordering = ("-created_at",)
+
+
+@admin.register(PlatformConfig)
+class PlatformConfigAdmin(admin.ModelAdmin):
+    list_display = ("id", "enable_buy", "enable_rent", "enable_services",
+                    "vendor_approval_required", "listing_approval_required",
+                    "default_currency", "updated_at")
+    readonly_fields = ("updated_at",)
+
+
+@admin.register(JobListing)
+class JobListingAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "department", "location",
+                    "employment_type", "is_active", "created_at")
+    list_filter = ("is_active", "department", "employment_type")
+    search_fields = ("title", "department", "location")
+    ordering = ("-created_at",)
