@@ -73,7 +73,8 @@ def notify_order_paid(order):
         title='Payment Confirmed',
         message=(
             f"Your payment for order #{order.order_number} "
-            f"was successful. Funds are held in escrow."
+            f"was successful. Payment received. Funds are held by Harbour "
+            f"Hub until the order is completed."
         ),
         priority='high',
         action_url=f"/orders/{order.id}",

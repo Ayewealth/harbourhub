@@ -324,11 +324,11 @@ SEED_SAMPLE_DATA = config("SEED_SAMPLE_DATA", default=False, cast=bool)
 SMS_PROVIDER = config("SMS_PROVIDER", default="")
 TERMII_API_KEY = config("TERMII_API_KEY", default="")
 TERMII_SENDER_ID = config("TERMII_SENDER_ID", default="HarbourHub")
-TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default="")
-TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default="")
-TWILIO_FROM_NUMBER = config("TWILIO_FROM_NUMBER", default="")
 VAPID_PUBLIC_KEY = config("VAPID_PUBLIC_KEY", default="")
 VAPID_PRIVATE_KEY = config("VAPID_PRIVATE_KEY", default="")
+VAPID_SUBJECT = config(
+    "VAPID_SUBJECT", default="mailto:support@harbourhubglobal.com"
+)
 OPS_WEBHOOK_URL = config("OPS_WEBHOOK_URL", default="")
 # DRF
 # =============================================================================

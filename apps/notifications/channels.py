@@ -63,28 +63,74 @@ def send_sms(delivery):
         response.raise_for_status()
         return "sent", str(response.json().get("message_id", "")), ""
 
-    if provider == "twilio" and getattr(
-        settings, "TWILIO_ACCOUNT_SID", ""
-    ):
-        from twilio.rest import Client
-
-        client = Client(
-            settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN
-        )
-        message = client.messages.create(
-            to=phone,
-            from_=settings.TWILIO_FROM_NUMBER,
-            body=_message(delivery),
-        )
-        return "sent", message.sid, ""
-
     return "skipped", "", "SMS provider is not configured."
 
 
 def send_push(delivery):
     if not getattr(settings, "VAPID_PRIVATE_KEY", ""):
         return "skipped", "", "Push is not configured."
-    return "skipped", "", "No push subscription registered for this user."
+
+    from .models import PushSubscription
+
+    subscriptions = list(
+        PushSubscription.objects.filter(
+            user=delivery.recipient, is_active=True
+        )
+    )
+    if not subscriptions:
+        return "skipped", "", (
+            "No push subscription registered for this user."
+        )
+
+    try:
+        from pywebpush import WebPushException, webpush
+    except ImportError:
+        return "skipped", "", "Push is not configured."
+
+    import json
+
+    notification = delivery.notification
+    payload = json.dumps({
+        "title": notification.title if notification else "",
+        "body": notification.message if notification else "",
+        "url": notification.action_url if notification else "",
+        "type": delivery.event_key,
+    })
+
+    sent = 0
+    last_error = ""
+    for subscription in subscriptions:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": subscription.endpoint,
+                    "keys": {
+                        "p256dh": subscription.p256dh,
+                        "auth": subscription.auth,
+                    },
+                },
+                data=payload,
+                vapid_private_key=settings.VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": settings.VAPID_SUBJECT},
+                timeout=10,
+            )
+            sent += 1
+        except WebPushException as exc:
+            last_error = str(exc)
+            status_code = getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            if status_code in (404, 410):
+                subscription.is_active = False
+                subscription.save(
+                    update_fields=["is_active", "updated_at"]
+                )
+        except Exception as exc:
+            last_error = str(exc)
+
+    if sent:
+        return "sent", f"{sent} subscription(s)", ""
+    return "failed", "", last_error or "All push subscriptions failed."
 
 
 def send_staff_webhook(delivery):

@@ -191,3 +191,28 @@ class NotificationDelivery(models.Model):
 
     def __str__(self):
         return f"{self.channel} {self.status} -> {self.recipient_id}"
+
+
+class PushSubscription(models.Model):
+    """A browser push endpoint owned by one user."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="push_subscriptions",
+    )
+    endpoint = models.URLField(max_length=500, unique=True)
+    p256dh = models.CharField(max_length=200)
+    auth = models.CharField(max_length=100)
+    user_agent = models.CharField(max_length=300, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "push_subscriptions"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "is_active"])]
+
+    def __str__(self):
+        return f"{self.user_id} @ {self.endpoint[:40]}"

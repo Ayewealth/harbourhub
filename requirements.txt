@@ -19,6 +19,7 @@ psycopg2-binary==2.9.10
 
 redis==6.4.0
 django-redis==6.0.0
+pywebpush==2.0.3
 
 celery==5.5.3
 gunicorn==23.0.0

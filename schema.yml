@@ -6453,6 +6453,125 @@ paths:
               schema:
                 $ref: '#/components/schemas/NotificationCountResponse'
           description: ''
+  /notifications/preferences/:
+    get:
+      operationId: notifications_preferences_list
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationPreference'
+          description: ''
+  /notifications/preferences/{category}/:
+    patch:
+      operationId: notifications_preferences_partial_update
+      parameters:
+      - in: path
+        name: category
+        schema:
+          type: string
+        required: true
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedNotificationPreferenceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedNotificationPreferenceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedNotificationPreferenceRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreference'
+          description: ''
+  /notifications/push/public-key/:
+    get:
+      operationId: notifications_push_public_key_retrieve
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushPublicKeyResponse'
+          description: ''
+  /notifications/push/subscriptions/:
+    get:
+      operationId: notifications_push_subscriptions_list
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PushSubscription'
+          description: ''
+    post:
+      operationId: notifications_push_subscriptions_create
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushSubscriptionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PushSubscriptionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PushSubscriptionCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushSubscription'
+          description: ''
+  /notifications/push/subscriptions/{id}/:
+    delete:
+      operationId: notifications_push_subscriptions_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /notifications/read-all/:
     post:
       operationId: notifications_read_all_create
@@ -8740,6 +8859,16 @@ components:
           description: Sort order for display
       required:
       - name
+    CategoryEnum:
+      enum:
+      - transactional
+      - messages
+      - marketing
+      type: string
+      description: |-
+        * `transactional` - Transactional
+        * `messages` - Messages
+        * `marketing` - Marketing
     CategoryList:
       type: object
       description: Simplified category serializer for lists
@@ -11579,6 +11708,23 @@ components:
           type: string
       required:
       - message
+    NotificationPreference:
+      type: object
+      properties:
+        category:
+          allOf:
+          - $ref: '#/components/schemas/CategoryEnum'
+          readOnly: true
+        in_app:
+          type: boolean
+        email:
+          type: boolean
+        sms:
+          type: boolean
+        push:
+          type: boolean
+      required:
+      - category
     NotificationTypeEnum:
       enum:
       - order_placed
@@ -13520,6 +13666,17 @@ components:
           description: 1–5 stars
         comment:
           type: string
+    PatchedNotificationPreferenceRequest:
+      type: object
+      properties:
+        in_app:
+          type: boolean
+        email:
+          type: boolean
+        sms:
+          type: boolean
+        push:
+          type: boolean
     PatchedOrderTrackingDetailRequest:
       type: object
       description: |-
@@ -14223,6 +14380,63 @@ components:
       description: |-
         * `registration` - Registration
         * `login` - Login
+    PushPublicKeyResponse:
+      type: object
+      properties:
+        public_key:
+          type: string
+        configured:
+          type: boolean
+      required:
+      - configured
+      - public_key
+    PushSubscription:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        endpoint:
+          type: string
+          format: uri
+          readOnly: true
+        user_agent:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - endpoint
+      - id
+      - is_active
+      - updated_at
+      - user_agent
+    PushSubscriptionCreateRequest:
+      type: object
+      properties:
+        endpoint:
+          type: string
+          format: uri
+          minLength: 1
+        keys:
+          type: object
+          additionalProperties: {}
+        user_agent:
+          type: string
+          minLength: 1
+      required:
+      - endpoint
+      - keys
     QuoteActionError:
       type: object
       properties:
