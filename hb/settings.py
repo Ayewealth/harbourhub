@@ -652,6 +652,10 @@ PAYSTACK_CALLBACK_URL = config(
     "PAYSTACK_CALLBACK_URL",
     default="http://localhost:3000/payment/callback"
 )
+PAYSTACK_WEBHOOK_URL = config(
+    "PAYSTACK_WEBHOOK_URL",
+    default="https://api.harbourhubglobal.com/commerce/webhooks/paystack/",
+)
 
 # =============================================================================
 # SOCIAL LOGIN

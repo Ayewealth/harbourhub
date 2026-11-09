@@ -206,6 +206,7 @@ class SupportTicketSummaryView(APIView):
 
 
 class ContactView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(

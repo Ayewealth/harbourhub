@@ -223,6 +223,7 @@ class DashboardAdminDetailView(APIView):
 
 
 class AcceptAdminInviteView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(

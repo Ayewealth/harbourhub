@@ -269,6 +269,7 @@ class PushSubscriptionDeleteView(APIView):
 
 
 class PushPublicKeyView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(

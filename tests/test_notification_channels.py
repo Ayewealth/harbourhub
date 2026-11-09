@@ -1,7 +1,6 @@
 import json
 import sys
 import types
-from decimal import Decimal
 
 import pytest
 

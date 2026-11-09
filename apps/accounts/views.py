@@ -78,6 +78,7 @@ class UserRegistrationViewSet(CreateModelMixin, GenericViewSet):
 
 class OTPRequestView(APIView):
     """Request OTP for registration or login"""
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     serializer_class = OTPRequestSerializer()
 
@@ -90,6 +91,7 @@ class OTPRequestView(APIView):
 
 class OTPVerifyView(APIView):
     """Verify OTP for registration or login, auto-login if purpose=login"""
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     serializer_class = OTPVerifySerializer()
 
@@ -287,6 +289,7 @@ class PasswordChangeView(APIView):
 
 class PasswordResetRequestView(APIView):
     """Start password reset by email."""
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     @method_decorator(ratelimit(key="ip", rate="3/h", method="POST"))
@@ -311,6 +314,7 @@ class PasswordResetRequestView(APIView):
 
 class PasswordResetConfirmView(APIView):
     """Confirm password reset using token."""
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(request=PasswordResetConfirmSerializer, responses={200: dict})
@@ -575,6 +579,7 @@ class TwoFactorVerifyLoginView(APIView):
     Called after normal login when user has 2FA enabled.
     Returns JWT tokens if code is valid.
     """
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(

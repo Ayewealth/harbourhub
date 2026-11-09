@@ -49,6 +49,17 @@ The API uses JWT bearer tokens from `djangorestframework-simplejwt`.
 Authorization: Bearer <access_token>
 ```
 
+Operations marked **Public** in the [endpoint reference](endpoints.md) need no header. These are
+registration and login (including OTP, password reset, social login, and the 2FA login step-up), the
+public platform-config, listing, store, category, review, career, search, and shipping-option reads,
+page feedback, support contact, the admin-invite acceptance, the push public key, and both Paystack
+webhook paths. Every other operation requires a bearer token, and webhooks additionally require a
+valid signature.
+
+A token supplied to a public read is still honoured where it can change the result: listing detail
+includes the caller's own non-public listings and global search records the caller's search
+history. All other public operations ignore it.
+
 | Step | Endpoint | Notes |
 |---|---|---|
 | Register | `POST /auth/register/` | Always creates a **buyer**. Sending `role` other than `buyer` returns `400`. |
@@ -58,6 +69,33 @@ Authorization: Bearer <access_token>
 | OTP request | `POST /auth/otp/request/` | Body: `{"email": "...", "purpose": "registration"}`. |
 | OTP verify | `POST /auth/otp/verify/` | Body: `{"email": "...", "code": "123456", "purpose": "registration"}`. |
 | Set password | `POST /auth/set-password/` | Completes an OTP-first registration. |
+| Social login (Google) | `POST /auth/social/google/` | Body: `{"id_token": "..."}` or `{"access_token": "..."}`. Returns the same tokens as login. |
+| Social login (Apple) | `POST /auth/social/apple/` | Body: `{"id_token": "..."}`. Returns the same tokens as login. |
+
+Social login is disabled with `503` until `GOOGLE_CLIENT_ID` / `APPLE_CLIENT_ID` is configured.
+Both providers require a verified email address owned by this application's client id.
+
+### Public platform configuration
+
+`GET /platform-config/` is unauthenticated and returns the switches that shape the public
+marketplace:
+
+```json
+{
+  "enable_buy": true,
+  "enable_rent": true,
+  "enable_services": true,
+  "vendor_approval_required": false,
+  "listing_approval_required": false,
+  "default_currency": "NGN",
+  "timezone": "Africa/Lagos",
+  "date_format": "DD/MM/YYYY"
+}
+```
+
+The flags are enforced server-side: disabled listing types cannot be created or read publicly,
+`listing_approval_required` makes seller listings wait in `draft`, and
+`vendor_approval_required` controls whether a verification request is reviewed or auto-approved.
 
 A successful login returns:
 
@@ -114,8 +152,10 @@ Registration cannot set a privileged role. Seller promotion happens through
 - **JSON only.** Send `Content-Type: application/json` except for image uploads, which use
   `multipart/form-data`.
 - **Snake case.** Field names are `snake_case` in both directions.
-- **Ids.** Integer `id` values are the API keys. `order_number`, `reference`, and slugs are
-  display-only unless an endpoint explicitly accepts them.
+- **Ids.** Integer `id` values are the API keys. Order responses also expose `order_id`, an alias
+  of `id` used by the orders page for detail fetches. `order_number` is display-only and appears
+  only in list responses. `reference` and slugs are display-only unless an endpoint explicitly
+  accepts them.
 - **Dates.** ISO 8601. Date-only fields use `YYYY-MM-DD`; timestamps are UTC.
 - **Money.** Decimal strings with two places, for example `"205000.00"`. See [Money](#money).
 
@@ -251,8 +291,10 @@ Earnings release in two tranches: 50% at day 7, the remainder when the order is 
 
 ## Payments and webhooks
 
-- Payment success is confirmed by the Paystack webhook (`POST /commerce/payment/webhook/`), not by
-  the client. `GET /commerce/payment/verify/{reference}/` is a **read-only** status poller.
+- Payment success is confirmed by the Paystack webhook
+  (`POST /commerce/webhooks/paystack/`), not by the client.
+  `POST /commerce/payment/webhook/` remains as a deprecated alias for existing dashboard
+  configurations. `GET /commerce/payment/verify/{reference}/` is a **read-only** status poller.
 - The webhook verifies `x-paystack-signature`, writes a `WebhookEvent` row keyed by
   `(provider, event_type, gateway_event_id)`, and returns `200` for a duplicate without
   reprocessing.
@@ -262,6 +304,40 @@ Earnings release in two tranches: 50% at day 7, the remainder when the order is 
   `ignored`, and returns `200`.
 - `finalize_payment` is idempotent; a second webhook or a reconciliation run cannot double-credit.
 - `reconcile_pending_payments_task` is the safety net for a lost webhook.
+
+---
+
+## Notification channels
+
+Every notification is written in-app and then fanned out to the recipient's preferences:
+
+| Channel | Adapter | Configured by | When unconfigured |
+|---|---|---|---|
+| In-app | `Notification` row | Always on | — |
+| Email | Django email backend / Celery task | `EMAIL_*` | Delivery is `skipped` |
+| SMS | Termii | `SMS_PROVIDER=termii` + `TERMII_API_KEY` | Delivery is `skipped` |
+| Web push | VAPID + `pywebpush` | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Delivery is `skipped` |
+| Staff webhook | JSON POST to operations | `OPS_WEBHOOK_URL` | Delivery is `skipped` |
+
+`GET /notifications/preferences/` returns `transactional`, `messages`, and `marketing` in that
+order. `PATCH /notifications/preferences/{category}/` updates one category; transactional
+in-app and email cannot be disabled. `GET /notifications/push/public-key/` returns the VAPID
+public key and whether push is configured. Registered browser endpoints are managed through
+`/notifications/push/subscriptions/`.
+
+## Route aliases
+
+The canonical routes come first; aliases remain so no client breaks:
+
+| Canonical | Deprecated alias |
+|---|---|
+| `POST /commerce/webhooks/paystack/` | `POST /commerce/payment/webhook/` |
+| `GET /analytics/` | `GET /analytics/analytics/` |
+| `GET /quotes/sent/`, `GET /quotes/received/` | `GET /commerce/quotes/sent/`, `GET /commerce/quotes/received/` |
+
+The generated [endpoint reference](endpoints.md) lists the canonical path first. The webhook alias is
+also marked deprecated in the OpenAPI schema; the analytics and quote aliases remain documented here
+because they reuse the canonical view.
 
 ---
 

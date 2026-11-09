@@ -36,8 +36,6 @@ def test_earnings_summary_declares_only_returned_fields(auth_client):
 
 @pytest.mark.django_db
 def test_quote_action_messages_are_grammatical(auth_client):
-    from apps.commerce.models import QuoteRequest
-
     from .factories import QuoteRequestFactory
 
     quote = QuoteRequestFactory()

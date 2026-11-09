@@ -43,6 +43,7 @@ class GlobalSearchView(APIView):
                              description="Search query (min 2 characters)", required=True),
         ],
         responses={200: GlobalSearchResponseSerializer},
+        auth=[],
     )
     def get(self, request, *args, **kwargs):
         query = request.GET.get("q", "").strip()
@@ -166,7 +167,8 @@ class FeedbackView(APIView):
                 name='FeedbackErrorResponse',
                 fields={'error': serializers.CharField()}
             )
-        }
+        },
+        auth=[],
     )
     def post(self, request):
         topic = request.data.get("topic")

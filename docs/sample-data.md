@@ -133,9 +133,12 @@ If a super admin already exists, the command reuses it and does not reset its pa
 
 The command does not create `Cart` / `CartItem` rows, `Payout` rows, `Conversation` / `Message`
 rows, `SupportTicket`, `ComplianceDocument`, `AdminProfile`, `ShippingProfile`, `JobListing`,
-`PlatformConfig`, `ListingView`, `ListingDocument`, OTPs, password-reset tokens, 2FA records, or
-`UserSession` rows. A payout must be requested through the API, and a conversation is opened by
-messaging or by an inquiry flow that uses the service layer.
+`ListingView`, `ListingDocument`, OTPs, password-reset tokens, 2FA records, or `UserSession` rows.
+It also does not create `PlatformConfig`: the singleton is created lazily by
+`PlatformConfig.get()` the first time any endpoint or admin page reads it, with the model defaults
+(`enable_buy=True`, `enable_rent=True`, `enable_services=False`, both approval flags `True`). A
+payout must be requested through the API, and a conversation is opened by messaging or by an
+inquiry flow that uses the service layer.
 
 ---
 
@@ -145,7 +148,7 @@ Every seeded order is NGN and internally consistent:
 
 ```text
 Order.subtotal            = unit_price × quantity × (duration_days or 1)
-Order.delivery_fee        = random 0–5,000 for buy orders, 0 for rentals
+Order.delivery_fee        = a seeded illustrative value: random 0–5,000 for buy orders, 0 for rentals
 Order.total_amount        = subtotal + delivery_fee
 Order.escrow_fee          = 0.00
 Order.commission_rate     = store rate for paid/fulfilled orders, 0 for pending
@@ -165,6 +168,12 @@ VendorWallet.pending_balance + VendorWallet.available_balance
 The buyer pays no platform fee. Delivery passes to the vendor in full, and commission is charged on
 goods only. Fulfilled orders have `released_amount == net_amount`; paid orders start in
 `pending_balance` with `first_release_at = now + 7 days`.
+
+The seeded `delivery_fee` is illustrative only. It is written directly on the order and is not
+produced by checkout, and no `ShippingProfile` is seeded. A fresh checkout against these stores
+therefore computes `delivery_fee = 0.00` until a seller creates an active shipping profile whose
+`zone_name` matches the buyer's delivery city, state, or country. See
+[`api/examples.md`](api/examples.md#33-checkout) for the real calculation.
 
 These are exactly the assertions in `tests/test_sample_data.py::test_seeded_orders_and_earnings_carry_consistent_money`.
 

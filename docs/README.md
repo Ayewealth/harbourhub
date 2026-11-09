@@ -46,9 +46,18 @@ The four API documents are ordered deliberately. `api/README.md` explains the sh
 
 | Document | Contents |
 |---|---|
-| [`superpowers/plans/`](superpowers/plans/) | The phase plans and their completion records: `P0-COMPLETE.md` through `P4-COMPLETE.md`, plus the P1–P4 plans. |
+| [`superpowers/plans/`](superpowers/plans/) | The phase plans and their completion records: `P0-COMPLETE.md` through `P5-COMPLETE.md`, plus the P1–P5 plans. |
 | [`superpowers/specs/2026-10-26-harbour-hub-connectivity-design.md`](superpowers/specs/2026-10-26-harbour-hub-connectivity-design.md) | The connectivity design spec. |
-| [`figma-backend-gap-checklist.md`](figma-backend-gap-checklist.md) | Gap checklist between the Figma designs and the backend. |
+| [`superpowers/specs/2026-11-02-harbour-hub-zero-debt-alignment-design.md`](superpowers/specs/2026-11-02-harbour-hub-zero-debt-alignment-design.md) | The P5 zero-debt alignment design. |
+| [`superpowers/plans/2026-11-02-harbour-hub-p5-zero-debt-alignment.md`](superpowers/plans/2026-11-02-harbour-hub-p5-zero-debt-alignment.md) | The P5 implementation plan. |
+| [`superpowers/plans/P5-COMPLETE.md`](superpowers/plans/P5-COMPLETE.md) | P5 task table, gate results, and remaining staging-only checks. |
+| [`figma-backend-gap-checklist.md`](figma-backend-gap-checklist.md) | Figma frame → endpoint/model coverage map, with genuine gaps under a remaining-backlog heading. |
+
+### Product backlog
+
+| Document | Contents |
+|---|---|
+| [`product/future-backlog.md`](product/future-backlog.md) | Advertisements, premium users, social login, and real-time chat: what was asked for, current state, and why anything deferred is deferred. |
 
 ---
 
@@ -108,4 +117,4 @@ python manage.py spectacular --file schema.yml --validate
 - Identifiers in the examples come from the sample dataset or are illustrative; a real run
   generates different values.
 - Known limitations are labelled as debt, not omitted. The current list is in
-  [`superpowers/plans/P4-COMPLETE.md`](superpowers/plans/P4-COMPLETE.md).
+  [`superpowers/plans/P5-COMPLETE.md`](superpowers/plans/P5-COMPLETE.md).

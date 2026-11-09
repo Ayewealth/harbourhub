@@ -27,6 +27,7 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
         "children"
     ).order_by("sort_order", "name")
     serializer_class = CategorySerializer
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def get_serializer_class(self):

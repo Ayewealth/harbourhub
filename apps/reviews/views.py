@@ -18,6 +18,7 @@ from .serializers import (
     get=extend_schema(
         summary="List listing reviews",
         description="Filter with query param `listing` (listing id).",
+        auth=[],
     ),
     post=extend_schema(summary="Create listing review"),
 )
@@ -52,6 +53,7 @@ class ListingReviewListCreateView(generics.ListCreateAPIView):
     get=extend_schema(
         summary="List store reviews",
         description="Filter with query param `store` (store id).",
+        auth=[],
     ),
     post=extend_schema(summary="Create store review"),
 )
@@ -83,7 +85,7 @@ class StoreReviewListCreateView(generics.ListCreateAPIView):
 
 
 @extend_schema_view(
-    get=extend_schema(summary="Retrieve listing review"),
+    get=extend_schema(summary="Retrieve listing review", auth=[]),
     patch=extend_schema(summary="Edit your listing review"),
     delete=extend_schema(summary="Delete your listing review"),
 )
@@ -98,7 +100,7 @@ class ListingReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 @extend_schema_view(
-    get=extend_schema(summary="Retrieve store review"),
+    get=extend_schema(summary="Retrieve store review", auth=[]),
     patch=extend_schema(summary="Edit your store review"),
     delete=extend_schema(summary="Delete your store review"),
 )

@@ -4,7 +4,9 @@
 >
 > Regenerate with `python manage.py spectacular --file schema.yml` then `python scripts/generate_api_reference.py`.
 
-**192 paths · 259 operations.**
+**204 paths · 272 operations.**
+
+`Auth` is `Public` when the operation needs no token; otherwise it names the required scheme (`Bearer JWT`). A token sent to a public read is only used where it changes the result (for example, a listing detail or search history).
 
 ## Contents
 
@@ -12,19 +14,20 @@
 - [Listings and saved items](#listings) (20 operations)
 - [Stores](#stores) (20 operations)
 - [Categories](#categories) (9 operations)
-- [Cart, checkout, payments, orders, rentals, and disputes](#commerce) (43 operations)
+- [Cart, checkout, payments, orders, rentals, and disputes](#commerce) (45 operations)
 - [Quote requests](#quotes) (2 operations)
 - [Wallets, earnings, bank accounts, and payouts](#financials) (17 operations)
-- [Notifications and channel preferences](#notifications) (6 operations)
+- [Notifications and channel preferences](#notifications) (12 operations)
 - [Conversations and messages](#messages) (8 operations)
 - [Listing inquiries](#inquiries) (10 operations)
 - [Listing and store reviews](#reviews) (12 operations)
 - [Staff dashboard](#admin-panel) (50 operations)
-- [Analytics and exports](#analytics) (4 operations)
+- [Analytics and exports](#analytics) (8 operations)
 - [Compliance documents](#compliance) (7 operations)
 - [Support tickets](#support) (6 operations)
 - [Global search](#search) (4 operations)
 - [Public careers](#careers) (2 operations)
+- [Other endpoints](#other) (1 operations)
 
 ## auth
 
@@ -37,7 +40,7 @@
 | GET | `/auth/2fa/qr/` | `auth_2fa_qr_retrieve` | Returns QR code as SVG image. Frontend renders this as <img src="/api/v1/auth/2fa/qr/"> | Bearer JWT | — | 200 | — |
 | GET | `/auth/2fa/setup/` | `auth_2fa_setup_retrieve` | Step 1: Get secret + QR URI to show in authenticator app. Does NOT enable 2FA yet — user must verify code first. | Bearer JWT | — | 200 | — |
 | GET | `/auth/2fa/status/` | `auth_2fa_status_retrieve` | Check if 2FA is enabled for the user. | Bearer JWT | — | 200 | — |
-| POST | `/auth/2fa/verify/` | `auth_2fa_verify_create` | Called after normal login when user has 2FA enabled. Returns JWT tokens if code is valid. | Bearer JWT | `TwoFactorVerifyLoginRequest` | 200 | — |
+| POST | `/auth/2fa/verify/` | `auth_2fa_verify_create` | Called after normal login when user has 2FA enabled. Returns JWT tokens if code is valid. | Public | `TwoFactorVerifyLoginRequest` | 200 | — |
 | POST | `/auth/become-seller/` | `auth_become_seller_create` | Quick promote: buyer clicks 'Become a seller' button. Upgrades their role and redirects to onboarding flow. | Bearer JWT | `BecomeSellerRequest` | 200 | 400 |
 | GET | `/auth/delivery-details/` | `auth_delivery_details_list` | — | Bearer JWT | — | 200 | — |
 | POST | `/auth/delivery-details/` | `auth_delivery_details_create` | — | Bearer JWT | `DeliveryDetailRequest` | 201 | — |
@@ -51,11 +54,11 @@
 | POST | `/auth/onboarding/step-1/` | `auth_onboarding_step_1_create` | Step 1 — Business details + create store. | Bearer JWT | `SellerOnboardingStep1Request` | 200 | — |
 | POST | `/auth/onboarding/step-2/` | `auth_onboarding_step_2_create` | Step 2 — Select selling categories. | Bearer JWT | `SellerOnboardingStep2Request` | 200 | 400 |
 | POST | `/auth/onboarding/step-3/` | `auth_onboarding_step_3_create` | Step 3 — Verification docs + submit. | Bearer JWT | `SellerOnboardingStep3Request` | 200 | 400 |
-| POST | `/auth/otp/request/` | `auth_otp_request_create` | Request OTP for registration or login | Bearer JWT | `OTPRequestRequest` | 200 | — |
-| POST | `/auth/otp/verify/` | `auth_otp_verify_create` | Verify OTP for registration or login, auto-login if purpose=login | Bearer JWT | `OTPVerifyRequest` | 200 | — |
+| POST | `/auth/otp/request/` | `auth_otp_request_create` | Request OTP for registration or login | Public | `OTPRequestRequest` | 200 | — |
+| POST | `/auth/otp/verify/` | `auth_otp_verify_create` | Verify OTP for registration or login, auto-login if purpose=login | Public | `OTPVerifyRequest` | 200 | — |
 | POST | `/auth/password/change/` | `auth_password_change_create` | Endpoint for changing password when logged in. | Bearer JWT | `PasswordChangeRequest` | 200 | — |
-| POST | `/auth/password/reset/confirm/` | `auth_password_reset_confirm_create` | Confirm password reset using token. | Bearer JWT | `PasswordResetConfirmRequest` | 200 | — |
-| POST | `/auth/password/reset/request/` | `auth_password_reset_request_create` | Start password reset by email. | Bearer JWT | `PasswordResetRequestRequest` | 202 | — |
+| POST | `/auth/password/reset/confirm/` | `auth_password_reset_confirm_create` | Confirm password reset using token. | Public | `PasswordResetConfirmRequest` | 200 | — |
+| POST | `/auth/password/reset/request/` | `auth_password_reset_request_create` | Start password reset by email. | Public | `PasswordResetRequestRequest` | 202 | — |
 | GET | `/auth/preferences/` | `auth_preferences_retrieve` | — | Bearer JWT | — | 200 | — |
 | PATCH | `/auth/preferences/` | `auth_preferences_partial_update` | — | Bearer JWT | `PatchedUserPreferenceRequest` | 200 | — |
 | GET | `/auth/profile/{id}/` | `auth_profile_retrieve` | Get user profile | Bearer JWT | — | 200 | — |
@@ -67,9 +70,9 @@
 | DELETE | `/auth/sessions/remove-all/` | `auth_sessions_remove_all_destroy` | Remove all sessions except current. | Bearer JWT | — | 200 | — |
 | DELETE | `/auth/sessions/{id}/` | `auth_sessions_destroy` | Remove/revoke a specific session. | Bearer JWT | — | 200 | 404 |
 | POST | `/auth/set-password/` | `auth_set_password_create` | Allow OTP-only users to set a password after account creation | Bearer JWT | `SetPasswordRequest` | 200 | — |
-| POST | `/auth/social/apple/` | `auth_social_apple_create` | — | Bearer JWT | `AppleLoginRequestRequest` | 200 | 400 |
-| POST | `/auth/social/google/` | `auth_social_google_create` | — | Bearer JWT | `GoogleLoginRequestRequest` | 200 | 400 |
-| POST | `/auth/verification/request/` | `auth_verification_request_create` | Request verification | Bearer JWT | `VerificationRequestRequest` | 201 | — |
+| POST | `/auth/social/apple/` | `auth_social_apple_create` | — | Public | `AppleLoginRequestRequest` | 200 | 400, 503 |
+| POST | `/auth/social/google/` | `auth_social_google_create` | — | Public | `GoogleLoginRequestRequest` | 200 | 400, 503 |
+| POST | `/auth/verification/request/` | `auth_verification_request_create` | Request verification | Bearer JWT | `VerificationRequestCreateRequest` | 201 | — |
 | GET | `/auth/verification/status/` | `auth_verification_status_retrieve` | Get verification status | Bearer JWT | — | 200 | — |
 
 ## listings
@@ -78,14 +81,14 @@
 
 | Method | Path | Operation ID | Summary | Auth | Request | Success | Errors |
 |---|---|---|---|---|---|---|---|
-| GET | `/listings/` | `listings_list` | List listings | Bearer JWT | — | 200 | — |
+| GET | `/listings/` | `listings_list` | List listings | Public | — | 200 | — |
 | POST | `/listings/` | `listings_create` | Create listing | Bearer JWT | `ListingCreateUpdateRequest` | 201 | — |
-| GET | `/listings/best-reviewed/` | `listings_best_reviewed_list` | Best reviewed listings | Bearer JWT | — | 200 | — |
+| GET | `/listings/best-reviewed/` | `listings_best_reviewed_list` | Best reviewed listings | Public | — | 200 | — |
 | GET | `/listings/my_listings/` | `listings_my_listings_retrieve` | Get my listings | Bearer JWT | — | 200 | — |
-| GET | `/listings/recent-sales/` | `listings_recent_sales_list` | Recent global sales | Bearer JWT | — | 200 | — |
+| GET | `/listings/recent-sales/` | `listings_recent_sales_list` | Recent global sales | Public | — | 200 | — |
 | GET | `/listings/saved/` | `listings_saved_list` | — | Bearer JWT | — | 200 | — |
-| GET | `/listings/top-deals/` | `listings_top_deals_list` | Top deals | Bearer JWT | — | 200 | — |
-| GET | `/listings/{id}/` | `listings_retrieve` | Get listing details | Bearer JWT | — | 200 | — |
+| GET | `/listings/top-deals/` | `listings_top_deals_list` | Top deals | Public | — | 200 | — |
+| GET | `/listings/{id}/` | `listings_retrieve` | Get listing details | Public | — | 200 | — |
 | PUT | `/listings/{id}/` | `listings_update` | Update listing | Bearer JWT | `ListingCreateUpdateRequest` | 200 | — |
 | PATCH | `/listings/{id}/` | `listings_partial_update` | CRUD operations for listings | Bearer JWT | `PatchedListingCreateUpdateRequest` | 200 | — |
 | DELETE | `/listings/{id}/` | `listings_destroy` | Delete listing | Bearer JWT | — | 204 | — |
@@ -105,7 +108,7 @@
 
 | Method | Path | Operation ID | Summary | Auth | Request | Success | Errors |
 |---|---|---|---|---|---|---|---|
-| GET | `/stores/` | `stores_list` | List published stores (vendor directory) | Bearer JWT | — | 200 | — |
+| GET | `/stores/` | `stores_list` | List published stores (vendor directory) | Public | — | 200 | — |
 | POST | `/stores/` | `stores_create` | Create a store | Bearer JWT | `StoreCreateRequest` | 201 | — |
 | GET | `/stores/dashboard/activity/` | `stores_dashboard_activity_list` | — | Bearer JWT | — | 200 | — |
 | GET | `/stores/dashboard/checklist/` | `stores_dashboard_checklist_retrieve` | — | Bearer JWT | — | 200 | — |
@@ -117,13 +120,13 @@
 | POST | `/stores/me/shipping/` | `stores_me_shipping_create` | CRUD viewset for sellers to manage shipping profiles of their own store. | Bearer JWT | `ShippingProfileRequest` | 201 | — |
 | PATCH | `/stores/me/shipping/{id}/` | `stores_me_shipping_partial_update` | CRUD viewset for sellers to manage shipping profiles of their own store. | Bearer JWT | `PatchedShippingProfileRequest` | 200 | — |
 | DELETE | `/stores/me/shipping/{id}/` | `stores_me_shipping_destroy` | CRUD viewset for sellers to manage shipping profiles of their own store. | Bearer JWT | — | 204 | — |
-| GET | `/stores/top/` | `stores_top_list` | Top vendors | Bearer JWT | — | 200 | — |
-| GET | `/stores/{slug}/` | `stores_retrieve` | Retrieve store (vendor storefront) | Bearer JWT | — | 200 | — |
+| GET | `/stores/top/` | `stores_top_list` | Top vendors | Public | — | 200 | — |
+| GET | `/stores/{slug}/` | `stores_retrieve` | Retrieve store (vendor storefront) | Public | — | 200 | — |
 | PUT | `/stores/{slug}/` | `stores_update` | Replace store | Bearer JWT | `StoreUpdateRequest` | 200 | — |
 | PATCH | `/stores/{slug}/` | `stores_partial_update` | Update store | Bearer JWT | `PatchedStoreUpdateRequest` | 200 | — |
 | DELETE | `/stores/{slug}/` | `stores_destroy` | Delete store | Bearer JWT | — | 204 | — |
 | PATCH | `/stores/{slug}/publish/` | `stores_publish_partial_update` | — | Bearer JWT | — | 200 | 400 |
-| GET | `/stores/{slug}/shipping-options/` | `stores_shipping_options_list` | Returns all active shipping profiles for a given store slug. | Bearer JWT | — | 200 | — |
+| GET | `/stores/{slug}/shipping-options/` | `stores_shipping_options_list` | Returns all active shipping profiles for a given store slug. | Public | — | 200 | — |
 | PATCH | `/stores/{slug}/unpublish/` | `stores_unpublish_partial_update` | — | Bearer JWT | — | 200 | 400 |
 
 ## categories
@@ -132,15 +135,15 @@
 
 | Method | Path | Operation ID | Summary | Auth | Request | Success | Errors |
 |---|---|---|---|---|---|---|---|
-| GET | `/categories/` | `categories_list` | List categories | Bearer JWT | — | 200 | — |
+| GET | `/categories/` | `categories_list` | List categories | Public | — | 200 | — |
 | GET | `/categories/admin/` | `categories_admin_list` | Admin CRUD operations for categories | Bearer JWT | — | 200 | — |
 | POST | `/categories/admin/` | `categories_admin_create` | Admin CRUD operations for categories | Bearer JWT | `CategoryCreateUpdateRequest` | 201 | — |
 | GET | `/categories/admin/{id}/` | `categories_admin_retrieve` | Admin CRUD operations for categories | Bearer JWT | — | 200 | — |
 | PUT | `/categories/admin/{id}/` | `categories_admin_update` | Admin CRUD operations for categories | Bearer JWT | `CategoryCreateUpdateRequest` | 200 | — |
 | PATCH | `/categories/admin/{id}/` | `categories_admin_partial_update` | Admin CRUD operations for categories | Bearer JWT | `PatchedCategoryCreateUpdateRequest` | 200 | — |
 | DELETE | `/categories/admin/{id}/` | `categories_admin_destroy` | Admin CRUD operations for categories | Bearer JWT | — | 204 | — |
-| GET | `/categories/tree/` | `categories_tree_retrieve` | Get category tree | Bearer JWT | — | 200 | — |
-| GET | `/categories/{id}/` | `categories_retrieve` | Get category details | Bearer JWT | — | 200 | — |
+| GET | `/categories/tree/` | `categories_tree_retrieve` | Get category tree | Public | — | 200 | — |
+| GET | `/categories/{id}/` | `categories_retrieve` | Get category details | Public | — | 200 | — |
 
 ## commerce
 
@@ -159,7 +162,8 @@
 | GET | `/commerce/disputes/` | `commerce_disputes_list` | Buyers can open a dispute. All users can list their related disputes. | Bearer JWT | — | 200 | — |
 | POST | `/commerce/disputes/` | `commerce_disputes_create` | Buyers can open a dispute. All users can list their related disputes. | Bearer JWT | `DisputeRequest` | 201 | — |
 | GET | `/commerce/disputes/{id}/` | `commerce_disputes_retrieve` | — | Bearer JWT | — | 200 | — |
-| POST | `/commerce/disputes/{id}/action/` | `commerce_disputes_action_create` | Admin-only: resolve or refund a dispute. | Bearer JWT | `DisputeResolutionRequest` | 200 | — |
+| POST | `/commerce/disputes/{id}/action/` | `commerce_disputes_action_create` | Admin-only: resolve, refund or cancel a dispute. | Bearer JWT | `DisputeResolutionRequest` | 200 | — |
+| POST | `/commerce/disputes/{id}/cancel/` | `commerce_disputes_cancel_create` | Buyer cancels their own open or under-review dispute. | Bearer JWT | `DisputeCancelRequest` | 200 | — |
 | GET | `/commerce/orders/` | `commerce_orders_list` | List orders | Bearer JWT | — | 200 | — |
 | POST | `/commerce/orders/` | `commerce_orders_create_new` | Create order | Bearer JWT | `OrderCreateRequest` | 201 | — |
 | GET | `/commerce/orders/my-orders/` | `commerce_orders_my_orders_list` | Returns all orders placed by the authenticated buyer, with a lightweight tracking summary per order. | Bearer JWT | — | 200 | — |
@@ -180,7 +184,7 @@
 | PATCH | `/commerce/orders/{pk_or_num}/tracking/` | `commerce_orders_tracking_partial_update` | Returns the current status of the order plus the full chronological activity timeline. Accessible only to the buyer o... | Bearer JWT | `PatchedOrderTrackingDetailRequest` | 200 | — |
 | POST | `/commerce/orders/{pk_or_num}/tracking/update/` | `commerce_orders_tracking_update_create` | Allows the seller to advance the order status and append an OrderActivity event. | Bearer JWT | `OrderTrackingDetailRequest` | 201 | — |
 | GET | `/commerce/payment/verify/{reference}/` | `commerce_payment_verify_retrieve` | — | Bearer JWT | — | 200 | 503 |
-| POST | `/commerce/payment/webhook/` | `commerce_payment_webhook_create` | Handle Paystack webhook events. Docs: https://paystack.com/docs/payments/webhooks | Public | — | 200 | 400 |
+| POST | `/commerce/payment/webhook/` | `commerce_payment_webhook_create` | Deprecated alias kept for existing Paystack dashboard configurations. | Public | — | 200 | 400, 401, 500 |
 | GET | `/commerce/quotes/` | `commerce_quotes_list` | List quote requests | Bearer JWT | — | 200 | — |
 | POST | `/commerce/quotes/` | `commerce_quotes_create` | Create quote request | Bearer JWT | `QuoteRequestCreateRequest` | 201 | — |
 | GET | `/commerce/quotes/received/` | `commerce_quotes_received_list` | Returns all QuoteRequest objects where the associated listing belongs to request.user's store, paginated, ordered by... | Bearer JWT | — | 200 | — |
@@ -191,6 +195,7 @@
 | POST | `/commerce/quotes/{id}/move-to-cart/` | `commerce_quotes_move_to_cart_create` | — | Bearer JWT | `MoveQuoteToCartRequestRequest` | 200 | — |
 | PATCH | `/commerce/quotes/{id}/vendor-update/` | `commerce_quotes_vendor_update_partial_update` | — | Bearer JWT | `PatchedQuoteRequestVendorUpdateRequest` | 200 | — |
 | POST | `/commerce/quotes/{id}/{action}/` | `commerce_quote_action_post` | Quote action | Bearer JWT | — | 200 | 400, 403 |
+| POST | `/commerce/webhooks/paystack/` | `commerce_webhooks_paystack_create` | Handle Paystack webhook events. Docs: https://paystack.com/docs/payments/webhooks | Public | — | 200 | 400, 401, 500 |
 
 ## quotes
 
@@ -234,6 +239,12 @@
 | GET | `/notifications/` | `notifications_list` | List notifications for the authenticated user. | Bearer JWT | — | 200 | — |
 | DELETE | `/notifications/clear/` | `notifications_clear_destroy` | Delete all notifications for the user. | Bearer JWT | — | 204 | — |
 | GET | `/notifications/count/` | `notifications_count_retrieve` | Get total and unread notification counts. | Bearer JWT | — | 200 | — |
+| GET | `/notifications/preferences/` | `notifications_preferences_list` | — | Bearer JWT | — | 200 | — |
+| PATCH | `/notifications/preferences/{category}/` | `notifications_preferences_partial_update` | — | Bearer JWT | `PatchedNotificationPreferenceRequest` | 200 | — |
+| GET | `/notifications/push/public-key/` | `notifications_push_public_key_retrieve` | — | Public | — | 200 | — |
+| GET | `/notifications/push/subscriptions/` | `notifications_push_subscriptions_list` | — | Bearer JWT | — | 200 | — |
+| POST | `/notifications/push/subscriptions/` | `notifications_push_subscriptions_create` | — | Bearer JWT | `PushSubscriptionCreateRequest` | 201 | — |
+| DELETE | `/notifications/push/subscriptions/{id}/` | `notifications_push_subscriptions_destroy` | — | Bearer JWT | — | 204 | — |
 | POST | `/notifications/read-all/` | `notifications_read_all_create` | Mark all notifications as read. | Bearer JWT | — | 200 | — |
 | DELETE | `/notifications/{id}/` | `notifications_destroy` | Delete a single notification. | Bearer JWT | — | 204 | 404 |
 | POST | `/notifications/{id}/read/` | `notifications_read_create` | Mark a single notification as read. | Bearer JWT | — | 200 | 404 |
@@ -276,15 +287,15 @@
 
 | Method | Path | Operation ID | Summary | Auth | Request | Success | Errors |
 |---|---|---|---|---|---|---|---|
-| GET | `/reviews/listings/` | `reviews_listings_list` | List listing reviews | Bearer JWT | — | 200 | — |
+| GET | `/reviews/listings/` | `reviews_listings_list` | List listing reviews | Public | — | 200 | — |
 | POST | `/reviews/listings/` | `reviews_listings_create` | Create listing review | Bearer JWT | `ListingReviewCreateRequest` | 201 | — |
-| GET | `/reviews/listings/{id}/` | `reviews_listings_retrieve` | Retrieve listing review | Bearer JWT | — | 200 | — |
+| GET | `/reviews/listings/{id}/` | `reviews_listings_retrieve` | Retrieve listing review | Public | — | 200 | — |
 | PUT | `/reviews/listings/{id}/` | `reviews_listings_update` | — | Bearer JWT | `ListingReviewUpdateRequest` | 200 | — |
 | PATCH | `/reviews/listings/{id}/` | `reviews_listings_partial_update` | Edit your listing review | Bearer JWT | `PatchedListingReviewUpdateRequest` | 200 | — |
 | DELETE | `/reviews/listings/{id}/` | `reviews_listings_destroy` | Delete your listing review | Bearer JWT | — | 204 | — |
-| GET | `/reviews/stores/` | `reviews_stores_list` | List store reviews | Bearer JWT | — | 200 | — |
+| GET | `/reviews/stores/` | `reviews_stores_list` | List store reviews | Public | — | 200 | — |
 | POST | `/reviews/stores/` | `reviews_stores_create` | Create store review | Bearer JWT | `StoreReviewCreateRequest` | 201 | — |
-| GET | `/reviews/stores/{id}/` | `reviews_stores_retrieve` | Retrieve store review | Bearer JWT | — | 200 | — |
+| GET | `/reviews/stores/{id}/` | `reviews_stores_retrieve` | Retrieve store review | Public | — | 200 | — |
 | PUT | `/reviews/stores/{id}/` | `reviews_stores_update` | — | Bearer JWT | `StoreReviewUpdateRequest` | 200 | — |
 | PATCH | `/reviews/stores/{id}/` | `reviews_stores_partial_update` | Edit your store review | Bearer JWT | `PatchedStoreReviewUpdateRequest` | 200 | — |
 | DELETE | `/reviews/stores/{id}/` | `reviews_stores_destroy` | Delete your store review | Bearer JWT | — | 204 | — |
@@ -306,7 +317,7 @@
 | DELETE | `/admin-panel/careers/{id}/` | `admin_panel_careers_destroy` | Admin management viewset for Job Listings. | Bearer JWT | — | 204 | — |
 | GET | `/admin-panel/conversations/` | `admin_panel_conversations_list` | Returns a paginated list of all active buyer-seller chat threads across the platform. | Bearer JWT | — | 200 | — |
 | GET | `/admin-panel/conversations/{id}/messages/` | `admin_panel_conversations_messages_list` | Returns the full paginated, chronologically ordered message history for a specific conversation. | Bearer JWT | — | 200 | — |
-| POST | `/admin-panel/dashboard/accept-invite/` | `admin_panel_dashboard_accept_invite_create` | Accept admin invite | Bearer JWT | `AcceptAdminInviteRequest` | 200 | — |
+| POST | `/admin-panel/dashboard/accept-invite/` | `admin_panel_dashboard_accept_invite_create` | Accept admin invite | Public | `AcceptAdminInviteRequest` | 200 | — |
 | GET | `/admin-panel/dashboard/admins/` | `admin_panel_dashboard_admins_list` | Staff users with an AdminProfile (invited admins). | Bearer JWT | — | 200 | — |
 | PATCH | `/admin-panel/dashboard/admins/{id}/edit/` | `admin_panel_dashboard_admins_edit_partial_update` | Edit admin role or disable/enable an admin. | Bearer JWT | `PatchedAdminUserEditRequestRequest` | 200 | 400, 404 |
 | DELETE | `/admin-panel/dashboard/admins/{id}/edit/` | `admin_panel_dashboard_admins_edit_destroy` | Permanently remove an admin. | Bearer JWT | — | 200 | 404 |
@@ -352,10 +363,14 @@
 
 | Method | Path | Operation ID | Summary | Auth | Request | Success | Errors |
 |---|---|---|---|---|---|---|---|
+| GET | `/analytics/` | `analytics_list` | Get platform statistics | Bearer JWT | — | 200 | — |
 | GET | `/analytics/analytics/` | `analytics_analytics_list` | Get platform statistics | Bearer JWT | — | 200 | — |
 | GET | `/analytics/analytics/conversion_analytics/` | `analytics_analytics_conversion_analytics_retrieve` | Get conversion analytics | Bearer JWT | — | 200 | — |
 | GET | `/analytics/analytics/listing_analytics/` | `analytics_analytics_listing_analytics_retrieve` | Get listing analytics | Bearer JWT | — | 200 | — |
 | GET | `/analytics/analytics/user_analytics/` | `analytics_analytics_user_analytics_retrieve` | Get user analytics | Bearer JWT | — | 200 | — |
+| GET | `/analytics/conversion_analytics/` | `analytics_conversion_analytics_retrieve` | Get conversion analytics | Bearer JWT | — | 200 | — |
+| GET | `/analytics/listing_analytics/` | `analytics_listing_analytics_retrieve` | Get listing analytics | Bearer JWT | — | 200 | — |
+| GET | `/analytics/user_analytics/` | `analytics_user_analytics_retrieve` | Get user analytics | Bearer JWT | — | 200 | — |
 
 ## compliance
 
@@ -379,7 +394,7 @@
 |---|---|---|---|---|---|---|---|
 | GET | `/support/` | `support_list` | — | Bearer JWT | — | 200 | — |
 | POST | `/support/` | `support_create` | — | Bearer JWT | `SupportTicketCreateRequest` | 201 | — |
-| POST | `/support/contact/` | `support_contact_create` | — | Bearer JWT | `ContactRequest` | 200 | — |
+| POST | `/support/contact/` | `support_contact_create` | — | Public | `ContactRequest` | 200 | — |
 | GET | `/support/summary/` | `support_summary_retrieve` | — | Bearer JWT | — | 200 | — |
 | GET | `/support/{id}/` | `support_retrieve` | — | Bearer JWT | — | 200 | — |
 | POST | `/support/{id}/resolve/` | `support_resolve_create` | — | Bearer JWT | `MarkResolvedRequest` | 200 | 400 |
@@ -390,8 +405,8 @@
 
 | Method | Path | Operation ID | Summary | Auth | Request | Success | Errors |
 |---|---|---|---|---|---|---|---|
-| GET | `/search/` | `search_retrieve` | 🔍 Global search across listings, categories, and users. Example: /api/search/?q=excavator | Bearer JWT | — | 200 | — |
-| POST | `/search/feedback/` | `search_feedback_create` | POST /api/feedback/ Submit page feedback (Helpful / Not Helpful) from static pages. | Bearer JWT | `FeedbackRequestRequest` | 201 | 400 |
+| GET | `/search/` | `search_retrieve` | 🔍 Global search across listings, categories, and users. Example: /api/search/?q=excavator | Public | — | 200 | — |
+| POST | `/search/feedback/` | `search_feedback_create` | POST /api/feedback/ Submit page feedback (Helpful / Not Helpful) from static pages. | Public | `FeedbackRequestRequest` | 201 | 400 |
 | GET | `/search/history/` | `search_history_list` | Get current user's search history | Bearer JWT | — | 200 | — |
 | DELETE | `/search/history/` | `search_history_destroy` | Clear current user's search history | Bearer JWT | — | 200 | — |
 
@@ -403,3 +418,11 @@
 |---|---|---|---|---|---|---|---|
 | GET | `/careers/` | `careers_list` | Public viewset to list active job openings and retrieve a single job opening. | Public | — | 200 | — |
 | GET | `/careers/{id}/` | `careers_retrieve` | Public viewset to list active job openings and retrieve a single job opening. | Public | — | 200 | — |
+
+## other
+
+*Other endpoints.*
+
+| Method | Path | Operation ID | Summary | Auth | Request | Success | Errors |
+|---|---|---|---|---|---|---|---|
+| GET | `/platform-config/` | `platform_config_retrieve` | Public platform configuration | Public | — | 200 | — |

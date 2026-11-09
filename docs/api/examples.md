@@ -253,6 +253,34 @@ active sessions are returned):
 Removing a session sets `is_active` to `false` and blacklists its token when a
 matching `OutstandingToken` exists.
 
+Sessions also report a derived `device_type` (`mobile`, `desktop`, `tablet`). Older rows written
+before the field existed derive it from the stored user agent instead of returning a blank string.
+
+### 1.5 Public platform configuration
+
+`GET /platform-config/` — no token required. Clients should read this before rendering marketplace
+navigation so disabled listing types never appear.
+
+```json
+{
+  "enable_buy": true,
+  "enable_rent": true,
+  "enable_services": true,
+  "vendor_approval_required": false,
+  "listing_approval_required": true,
+  "default_currency": "NGN",
+  "timezone": "Africa/Lagos",
+  "date_format": "DD/MM/YYYY"
+}
+```
+
+When a type is disabled, `POST /listings/` rejects it and public list/detail/recommendation/store
+surfaces omit it. Example error:
+
+```json
+{ "error": "Buy listings are currently disabled." }
+```
+
 ---
 
 ## 2. Seller onboarding, store, and listing
@@ -460,7 +488,45 @@ Errors:
 |---|---|
 | `400` | `{"error": "Only draft listings can be published"}` |
 | `400` | `{"error": "Listing cannot be published until its store is active."}` |
+| `400` | `{"error": "Listings require admin approval before publishing."}` |
 | `403` | `{"error": "Permission denied"}` |
+
+Approval example. With `listing_approval_required = true`, a seller's create request is stored as
+`draft` even when it asks for `published`, and publish is rejected until an admin approves it:
+
+```http
+POST /listings/
+Content-Type: application/json
+
+{
+  "title": "Commercial Diving Helmet",
+  "listing_type": "sell",
+  "price": "250000.00",
+  "status": "published"
+}
+```
+
+```json
+HTTP/1.1 201 Created
+
+{
+  "id": 42,
+  "status": "draft",
+  "published_at": null
+}
+```
+
+```http
+POST /listings/42/publish/
+```
+
+```json
+HTTP/1.1 400 Bad Request
+
+{ "error": "Listings require admin approval before publishing." }
+```
+
+When `listing_approval_required` is false, the same create request is published immediately.
 
 ### 2.7 Upload more images
 
@@ -621,13 +687,47 @@ cart item is deleted only after the gateway initialises successfully.
 
 Notes:
 
-- **No delivery fee is added by checkout.** `Order.delivery_fee` is written as
-  `"0.00"`. The field and the seeded dataset support a delivery fee, and
-  commission is never charged on it.
+- **Delivery fee comes from the seller's active shipping profile.** Checkout matches the
+  cart item's delivery address city, then state, then country (case-insensitive) against the
+  seller's active `ShippingProfile.zone_name`. A match adds that profile's `flat_rate_cost`
+  once per cart line; no match adds `"0.00"`. A service listing or a line without an address is
+  always free, and reaching `free_shipping_threshold` (in NGN) also makes the line free.
+  Delivery is never commissionable.
 - The price is converted to NGN once, and the order item snapshots
   `original_currency`, `original_unit_price`, and `exchange_rate`.
 - The checkout request has no `delivery_detail_id`. The address comes from each
   cart item.
+
+Delivery-fee worked example. The seller has an active profile with
+`zone_name = "Lagos"`, `flat_rate_cost = "5000.00"`, and no free-shipping threshold. The
+buyer's delivery address has `city = "Lagos"`:
+
+```http
+HTTP/1.1 201 Created
+
+{
+  "message": "1 order(s) created.",
+  "orders": [
+    {
+      "order_id": 101,
+      "order_number": "ORD-4C1A9E7B2D3F",
+      "total_amount": "255000.00"
+    }
+  ],
+  "payments": [
+    {
+      "payment_id": 55,
+      "reference": "PAY-9F3C2A7B1D4E5F60",
+      "authorization_url": "https://checkout.paystack.com/abc123",
+      "amount": "255000.00"
+    }
+  ]
+}
+```
+
+The resulting order stores `subtotal = "250000.00"`, `delivery_fee = "5000.00"`, and
+`total_amount = "255000.00"`. A profile with `free_shipping_threshold = "300000.00"` would
+instead produce `delivery_fee = "0.00"` for this line.
 
 Failure modes:
 
@@ -672,12 +772,13 @@ HTTP/1.1 400 Bad Request
 
 ### 3.4 Paystack webhook
 
-`POST /commerce/payment/webhook/` — public, no auth header. Paystack signs the
+`POST /commerce/webhooks/paystack/` — public, no auth header. Paystack signs the
 raw body with HMAC-SHA512 using `PAYSTACK_SECRET_KEY`; the hex digest must match
-`x-paystack-signature`.
+`x-paystack-signature`. `POST /commerce/payment/webhook/` is a deprecated alias that runs the
+same view.
 
 ```http
-POST /commerce/payment/webhook/
+POST /commerce/webhooks/paystack/
 x-paystack-signature: 5d41402abc4b2a76b9719d911017c592...
 Content-Type: application/json
 
@@ -1697,25 +1798,102 @@ HTTP/1.1 404 Not Found
 { "error": "Notification not found." }
 ```
 
-### 9.3 Delivery channels (internal)
+### 9.3 Delivery channels
 
-Creating a notification also queues out-of-band deliveries. Every channel is
-supported:
+Creating a notification also queues out-of-band deliveries. Every channel is supported and
+returns `sent` or `skipped` with a truthful reason; none raises into the request:
 
 | Channel | Adapter | Notes |
 |---|---|---|
 | `in_app` | the `Notification` row itself | always on for transactional events |
 | `email` | `channels.send_email` | Django email backend |
-| `sms` | `channels.send_sms` | Termii/Twilio depending on configuration |
-| `push` | `channels.send_push` | web push subscription |
-| `staff_webhook` | `channels.send_staff_webhook` | staff-only events |
+| `sms` | `channels.send_sms` | Termii only; `SMS_PROVIDER=termii` and `TERMII_API_KEY` |
+| `push` | `channels.send_push` | VAPID web push; gone endpoints are deactivated |
+| `staff_webhook` | `channels.send_staff_webhook` | posts JSON to `OPS_WEBHOOK_URL` |
 
-`NotificationPreference` decides which channels are allowed per category, but
-transactional in-app and email are always on. `NotificationDelivery` records
-each attempt with `queued`, `sent`, `failed`, or `skipped`.
+`NotificationPreference` decides which channels are allowed per category, but transactional
+in-app and email are always on. `NotificationDelivery` records each attempt with `queued`,
+`sent`, `failed`, or `skipped`. Preferences and deliveries are inspectable in the Django admin.
 
-There is no HTTP endpoint to read or change `NotificationPreference` or
-`NotificationDelivery`. Use the Django admin or the service layer.
+### 9.4 Notification preferences
+
+`GET /notifications/preferences/` returns the three categories in declared order:
+
+```json
+[
+  {
+    "id": 1,
+    "category": "transactional",
+    "in_app": true,
+    "email": true,
+    "sms": false,
+    "push": true
+  },
+  {
+    "id": 2,
+    "category": "messages",
+    "in_app": true,
+    "email": true,
+    "sms": false,
+    "push": true
+  },
+  {
+    "id": 3,
+    "category": "marketing",
+    "in_app": true,
+    "email": false,
+    "sms": false,
+    "push": false
+  }
+]
+```
+
+`PATCH /notifications/preferences/marketing/` with `{"email": true}` updates one category.
+Turning off transactional in-app or email is rejected:
+
+```json
+{ "error": "Transactional in-app and email notifications cannot be disabled." }
+```
+
+### 9.5 Browser push subscription
+
+1. Read the application server key:
+
+   `GET /notifications/push/public-key/`
+
+   ```json
+   { "public_key": "BEl...", "configured": true }
+   ```
+
+2. After the browser's `pushManager.subscribe(...)` resolves, register the endpoint:
+
+   ```json
+   POST /notifications/push/subscriptions/
+   Authorization: Bearer <access>
+
+   {
+     "endpoint": "https://fcm.googleapis.com/fcm/send/abc",
+     "keys": { "p256dh": "BN...", "auth": "k..." },
+     "user_agent": "Mozilla/5.0 ..."
+   }
+   ```
+
+   ```json
+   HTTP/1.1 201 Created
+
+   {
+     "id": 9,
+     "endpoint": "https://fcm.googleapis.com/fcm/send/abc",
+     "is_active": true,
+     "created_at": "2026-11-02T10:00:00Z"
+   }
+   ```
+
+   Registering the same endpoint again updates its keys and reactivates it. An endpoint owned
+   by another account returns `400`.
+
+3. Remove it with `DELETE /notifications/push/subscriptions/9/` (`204`), or list your
+   subscriptions with `GET /notifications/push/subscriptions/`.
 
 ---
 

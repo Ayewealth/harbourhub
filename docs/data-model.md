@@ -107,7 +107,7 @@ listings. New stores default to `is_active=True`, `is_published=False`, `is_veri
 |---|---|---|
 | `QuoteRequest` | `listing`, `buyer`, `store`, `purchase_type`, `quantity`, `duration_days`, `adjustments`, `status` | Buyer asks for a price; vendor counters; buyer moves it to the cart. |
 | `CheckoutSession` | `buyer`, `total_amount`, `currency` | Groups every order created by one checkout and owns one payment. |
-| `Order` | `order_number` unique, `buyer`, `seller`, `store`, `checkout_session`, money, `status` | One vendor's order. One cart item produces one order. |
+| `Order` | `order_number` unique, `buyer`, `seller`, `store`, `checkout_session`, `subtotal`, `delivery_fee`, `commission_rate`, `commission_amount`, `total_amount`, `escrow_fee` (legacy), `status` | One vendor's order. One cart item produces one order. |
 | `OrderItem` | `order`, `listing`, `quote_request`, `purchase_type`, `unit_price`, `original_*`, `exchange_rate`, rental dates, `delivery_detail` | The priced line. |
 | `OrderActivity` | `order`, `event_type`, `message` | Append-only timeline shown to buyer, seller, and staff. |
 | `Cart` | `buyer` (1:1) | One active cart per buyer. |
@@ -136,6 +136,7 @@ listings. New stores default to `is_active=True`, `is_published=False`, `is_veri
 | `Notification` | `recipient`, `notification_type`, `title`, `message`, `priority`, `is_read` | The in-app notification itself. |
 | `NotificationPreference` | `user`, `category`, `in_app`, `email`, `sms`, `push` | Per-category channel opt-in. Unique on `(user, category)`. |
 | `NotificationDelivery` | `notification`, `recipient`, `event_key`, `channel`, `status`, `provider_id`, `error`, `attempts` | One ledger row per external channel attempt. |
+| `PushSubscription` | `user`, `endpoint` unique, `p256dh`, `auth`, `user_agent`, `is_active` | A browser Web Push endpoint. A `410 Gone` response deactivates it. |
 
 ### messaging, inquiries, reviews
 
@@ -159,7 +160,7 @@ listings. New stores default to `is_active=True`, `is_published=False`, `is_veri
 | `RolePermission` | `role`, `module`, `can_view`, `can_manage` | Module matrix. Unique on `(role, module)`. |
 | `AdminActionLog` | `admin_user`, `action_type`, `description`, `extra_data` | Staff audit trail. |
 | `ReportedContent` | `content_type`, `object_id`, `reason`, `status` | Moderation queue. |
-| `PlatformConfig` | singleton settings, notification switches | Platform configuration. |
+| `PlatformConfig` | singleton: `enable_buy`, `enable_rent`, `enable_services`, `vendor_approval_required`, `listing_approval_required`, `default_currency`, `timezone`, `date_format`, plus fee/notification switches | Platform configuration. `GET /platform-config/` exposes the public subset. |
 | `JobListing` | title, department, application URL, `is_active` | Public careers page. |
 | `UserSearch`, `Feedback` | search query / feedback vote | Search history and help-centre feedback. |
 
@@ -185,8 +186,10 @@ These are the rules a migration, serializer, view, or task must not break.
    that may set `Payment.status=success`. It is idempotent, checks the gateway amount against the
    stored amount in kobo, and returns `False` for an already-successful payment.
 7. **Commission is on goods only.** `commission = round(subtotal × commission_rate / 100)`.
-   `delivery_fee` passes to the vendor in full. `Order.escrow_fee` exists for legacy compatibility
-   and is always `0.00`; it is not a buyer fee.
+   `delivery_fee` passes to the vendor in full. `Order.escrow_fee` exists only for legacy
+   compatibility and is always `0.00`; it is not a buyer fee. Serializers expose
+   `commission_rate` and `commission_amount`, and keep `escrow_fee` (deprecated) so old clients
+   do not break.
 8. **Rates are snapshotted at payment.** `finalize_payment` copies `Store.commission_rate` onto
    `Order.commission_rate` and computes `Order.commission_amount`. A later rate change never rewrites
    a completed sale.
@@ -298,13 +301,14 @@ responded ──decline──► cancelled
 
 ```
 open ──admin resolve──► resolved
-open ──admin refund──► under_review ──gateway confirms──► (order cancelled; dispute remains under_review)
+open / under_review ──admin refund──► under_review ──gateway confirms──► refunded
+open / under_review ──buyer or admin cancel──► cancelled
 ```
 
-`refunded` and `cancelled` are defined on `Dispute.Status` but **no code path sets them today**. The
-refund action leaves the dispute in `under_review`; the gateway confirmation cancels the order and
-updates the payment/earning, not the dispute status. This is recorded as residual debt, not promised
-behaviour.
+`refunded` is set by `finalize_refund` when a full refund closes the order. `cancelled` is set by
+`POST /commerce/disputes/{id}/cancel/` and by the admin `cancel` action, and by the refund path when
+an order is cancelled without a dispute refund. Both terminal statuses release the order's
+earning hold. `resolution_notes` and `resolved_at` record the outcome.
 
 ### RentalExtension
 
@@ -320,12 +324,15 @@ pending_payment ──gateway init failure──► cancelled
 
 ```
 pending ──first tranche released──► partially_released ──remainder released──► available
-available ──payout settled in full──► paid_out
+available / partially_released ──allocated to a payout──► processing
+processing ──payout settled in full──► paid_out
+processing ──partial payout settlement──► partially_released
 any state ──refund reverses all net──► reversed
 ```
 
-`processing` is defined but not currently entered by any code path. `partially_released` is also used
-after a partial payout of an `available` earning.
+`processing` is entered when an earning is FIFO-allocated to a requested payout. Settlement marks it
+`paid_out` once `paid_out_amount >= net_amount`, otherwise it returns to `partially_released`.
+`partially_released` is also used after a partial payout of an `available` earning.
 
 ### Payout
 

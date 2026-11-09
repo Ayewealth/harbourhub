@@ -147,6 +147,7 @@ def create_or_login_social_user(email, email_verified=False):
 
 
 class GoogleSocialLoginView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(
@@ -205,6 +206,7 @@ class GoogleSocialLoginView(APIView):
 
 
 class AppleSocialLoginView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(

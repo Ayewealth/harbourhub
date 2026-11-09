@@ -390,7 +390,6 @@ paths:
               $ref: '#/components/schemas/AcceptAdminInviteRequest'
         required: true
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -1900,7 +1899,6 @@ paths:
               $ref: '#/components/schemas/TwoFactorVerifyLoginRequest'
         required: true
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -2261,7 +2259,6 @@ paths:
               $ref: '#/components/schemas/OTPRequestRequest'
         required: true
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -2289,7 +2286,6 @@ paths:
               $ref: '#/components/schemas/OTPVerifyRequest'
         required: true
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -2345,7 +2341,6 @@ paths:
               $ref: '#/components/schemas/PasswordResetConfirmRequest'
         required: true
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -2374,7 +2369,6 @@ paths:
               $ref: '#/components/schemas/PasswordResetRequestRequest'
         required: true
       security:
-      - jwtAuth: []
       - {}
       responses:
         '202':
@@ -2666,7 +2660,6 @@ paths:
               $ref: '#/components/schemas/AppleLoginRequestRequest'
         required: true
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -2704,7 +2697,6 @@ paths:
             schema:
               $ref: '#/components/schemas/GoogleLoginRequestRequest'
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -2849,7 +2841,6 @@ paths:
       tags:
       - categories
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -2873,7 +2864,6 @@ paths:
       tags:
       - categories
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -3054,7 +3044,6 @@ paths:
       tags:
       - categories
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -5586,8 +5575,6 @@ paths:
           nullable: true
       tags:
       - listings
-      security:
-      - jwtAuth: []
       responses:
         '200':
           content:
@@ -5636,8 +5623,6 @@ paths:
         required: true
       tags:
       - listings
-      security:
-      - jwtAuth: []
       responses:
         '200':
           content:
@@ -6051,7 +6036,6 @@ paths:
       tags:
       - listings
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -6087,7 +6071,6 @@ paths:
       tags:
       - listings
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -6140,7 +6123,6 @@ paths:
       tags:
       - listings
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -6628,7 +6610,6 @@ paths:
       tags:
       - notifications
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -6821,9 +6802,6 @@ paths:
           type: string
       tags:
       - reviews
-      security:
-      - jwtAuth: []
-      - {}
       responses:
         '200':
           content:
@@ -6869,9 +6847,6 @@ paths:
         required: true
       tags:
       - reviews
-      security:
-      - jwtAuth: []
-      - {}
       responses:
         '200':
           content:
@@ -6983,9 +6958,6 @@ paths:
           type: string
       tags:
       - reviews
-      security:
-      - jwtAuth: []
-      - {}
       responses:
         '200':
           content:
@@ -7031,9 +7003,6 @@ paths:
         required: true
       tags:
       - reviews
-      security:
-      - jwtAuth: []
-      - {}
       responses:
         '200':
           content:
@@ -7134,9 +7103,6 @@ paths:
         required: true
       tags:
       - search
-      security:
-      - jwtAuth: []
-      - {}
       responses:
         '200':
           content:
@@ -7164,9 +7130,6 @@ paths:
             schema:
               $ref: '#/components/schemas/FeedbackRequestRequest'
         required: true
-      security:
-      - jwtAuth: []
-      - {}
       responses:
         '201':
           content:
@@ -7280,9 +7243,6 @@ paths:
           type: boolean
       tags:
       - stores
-      security:
-      - jwtAuth: []
-      - {}
       responses:
         '200':
           content:
@@ -7331,9 +7291,6 @@ paths:
         required: true
       tags:
       - stores
-      security:
-      - jwtAuth: []
-      - {}
       responses:
         '200':
           content:
@@ -7480,7 +7437,6 @@ paths:
       tags:
       - stores
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -7752,7 +7708,6 @@ paths:
       tags:
       - stores
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':
@@ -7939,7 +7894,6 @@ paths:
               $ref: '#/components/schemas/ContactRequest'
         required: true
       security:
-      - jwtAuth: []
       - {}
       responses:
         '200':

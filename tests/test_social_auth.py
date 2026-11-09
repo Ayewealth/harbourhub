@@ -1,10 +1,6 @@
-from unittest.mock import patch
-
 import pytest
 
 from apps.accounts import social_auth
-
-from .factories import UserFactory
 
 
 class _Response:

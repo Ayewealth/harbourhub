@@ -26,9 +26,10 @@ Harbour Hub is a comprehensive B2B marketplace platform specifically designed fo
 
 ### Advanced Features
 
-- **Email Notifications**: Automated email system for inquiries and updates
+- **Multi-Channel Notifications**: In-app, email, SMS via Termii, browser web push, and a staff operations webhook
 - **File Management**: Support for images and documents with AWS S3 integration
 - **Verification System**: Service provider verification with document upload
+- **Social Login**: Google and Apple token login with verified-email checks
 - **Admin Panel**: Comprehensive admin interface for platform management
 - **API Documentation**: Auto-generated OpenAPI/Swagger documentation
 - **Background Tasks**: Celery-powered async task processing
@@ -214,6 +215,11 @@ The written reference lives in [`docs/`](docs/README.md):
 | [`docs/api/messages.md`](docs/api/messages.md) | Exact success and error strings with status codes. |
 | [`docs/data-model.md`](docs/data-model.md) | Entities, relationships, invariants, and status machines. |
 | [`docs/sample-data.md`](docs/sample-data.md) | The seeded dataset and how to run `create_sample_data` safely. |
+| [`docs/figma-backend-gap-checklist.md`](docs/figma-backend-gap-checklist.md) | Figma frame → endpoint/model coverage map. |
+| [`docs/product/future-backlog.md`](docs/product/future-backlog.md) | Advertisements, premium users, and real-time chat, with reasons for deferral. |
+| [`docs/superpowers/specs/2026-11-02-harbour-hub-zero-debt-alignment-design.md`](docs/superpowers/specs/2026-11-02-harbour-hub-zero-debt-alignment-design.md) | The P5 zero-debt alignment design. |
+| [`docs/superpowers/plans/2026-11-02-harbour-hub-p5-zero-debt-alignment.md`](docs/superpowers/plans/2026-11-02-harbour-hub-p5-zero-debt-alignment.md) | The P5 implementation plan. |
+| [`docs/superpowers/plans/P5-COMPLETE.md`](docs/superpowers/plans/P5-COMPLETE.md) | P5 task table, gate results, and remaining staging-only checks. |
 
 The application mounts the API at the site root. A deployment gateway may add an `/api/v1`
 prefix; the paths below are the ones Django serves.
@@ -225,7 +231,7 @@ prefix; the paths below are the ones Django serves.
 - `POST /auth/register/` — User registration (always creates a buyer)
 - `POST /auth/login/` — User login (email + password)
 - `POST /auth/refresh/` — Refresh JWT token
-- `GET /auth/profile/` — User profile
+- `GET /auth/profile/{id}/` — User profile
 - `DELETE /auth/sessions/{id}/` — Remove one session (there is no `/auth/logout/` route)
 
 #### Listings
@@ -259,8 +265,8 @@ prefix; the paths below are the ones Django serves.
 - `GET /commerce/orders/{id}/tracking/` — Order status and activity timeline
 - `PATCH /commerce/orders/{id}/tracking/` — Seller updates tracking ID and carrier
 - `POST /commerce/orders/{id}/tracking/update/` — Seller advances the order status
-- `GET /commerce/quotes/sent/` — Quote requests sent by the buyer
-- `GET /commerce/quotes/received/` — Quote requests received by the seller
+- `GET /quotes/sent/` — Quote requests sent by the buyer (alias: `/commerce/quotes/sent/`)
+- `GET /quotes/received/` — Quote requests received by the seller (alias: `/commerce/quotes/received/`)
 
 #### Page Feedback
 
@@ -299,10 +305,26 @@ prefix; the paths below are the ones Django serves.
 | `USE_S3`        | Enable AWS S3 storage      | `False`          |
 | `EMAIL_BACKEND` | Email backend              | SMTP             |
 | `SENTRY_DSN`    | Sentry error tracking      | Optional         |
+| `PAYSTACK_SECRET_KEY` | Paystack secret key (`sk_live_` in production) | Required for payments |
+| `PAYSTACK_PUBLIC_KEY` | Paystack public key (`pk_live_` in production) | Required for payments |
+| `PAYSTACK_WEBHOOK_URL` | Deployed webhook endpoint | `https://api.harbourhubglobal.com/commerce/webhooks/paystack/` |
+| `SMS_PROVIDER` | SMS adapter; only `termii` is implemented | Empty (disabled) |
+| `TERMII_API_KEY` | Termii API key | Empty (disabled) |
+| `TERMII_SENDER_ID` | Termii sender name | `HarbourHub` |
+| `VAPID_PUBLIC_KEY` | Web Push application server key | Empty (disabled) |
+| `VAPID_PRIVATE_KEY` | Web Push signing key | Empty (disabled) |
+| `VAPID_SUBJECT` | Web Push contact URI | `mailto:support@harbourhubglobal.com` |
+| `GOOGLE_CLIENT_ID` | Google OAuth client id | Empty (disabled) |
+| `APPLE_CLIENT_ID` | Apple OAuth client id | Empty (disabled) |
+| `OPS_WEBHOOK_URL` | Staff operations webhook | Empty (disabled) |
+| `SEED_SAMPLE_DATA` | Permit `create_sample_data` | `False` |
+
+The complete list, with comments, lives in [`.env.example`](.env.example) and
+[`.env.prod.example`](.env.prod.example). Every documented variable is read by `hb/settings.py`.
 
 ### Production Deployment
 
-The project includes Heroku-ready configuration:
+The repository ships an EC2 deployment workflow and a build script:
 
 ```bash
 # Install dependencies
@@ -314,11 +336,14 @@ python manage.py migrate
 # Collect static files
 python manage.py collectstatic
 
-# Start services (using Procfile)
+# Start services
 gunicorn hb.wsgi:application
 celery -A hb worker --loglevel=info
 celery -A hb beat --loglevel=info
 ```
+
+The GitHub workflows are in [`.github/workflows/`](.github/workflows/); the deploy workflow reads
+`EC2_HOST`, `EC2_USER`, `EC2_PATH`, and `EC2_SSH_KEY` from repository secrets.
 
 ## 🗄️ Database Schema
 
@@ -481,8 +506,9 @@ For support and questions:
 - [x] Payment integration (Paystack checkout verified and fully operational)
 - [ ] Multi-language support
 - [x] Advanced search filters (Listings price, condition, type, verification, and vendor rating/location filters fully operational)
-- [x] Real-time notifications (Email triggers and hourly Celery beat background services operational)
+- [x] Multi-channel notifications (in-app, email, Termii SMS, browser web push, staff webhook)
 - [ ] API rate limiting dashboard
+- [ ] Advertisements, premium users, and real-time chat (see [`docs/product/future-backlog.md`](docs/product/future-backlog.md))
 
 ---
 

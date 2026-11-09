@@ -39,11 +39,13 @@ MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 @extend_schema_view(
     list=extend_schema(
         summary="List listings",
-        description="Get paginated list of published listings with filtering and search"
+        description="Get paginated list of published listings with filtering and search",
+        auth=[],
     ),
     retrieve=extend_schema(
         summary="Get listing details",
-        description="Get detailed information about a specific listing"
+        description="Get detailed information about a specific listing",
+        auth=[],
     ),
     create=extend_schema(
         summary="Create listing",
@@ -518,6 +520,7 @@ class ListingViewSet(viewsets.ModelViewSet):
 )
 class TopDealsListView(generics.ListAPIView):
     serializer_class = ListingListSerializer
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     pagination_class = None
     filter_backends = []
@@ -556,6 +559,7 @@ class TopDealsListView(generics.ListAPIView):
 )
 class BestReviewedListView(generics.ListAPIView):
     serializer_class = ListingListSerializer
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     pagination_class = None
     filter_backends = []
@@ -688,6 +692,7 @@ class SavedItemToggleView(APIView):
 )
 class PublicRecentSalesView(generics.ListAPIView):
     serializer_class = PublicRecentSaleSerializer
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     pagination_class = None
     filter_backends = []

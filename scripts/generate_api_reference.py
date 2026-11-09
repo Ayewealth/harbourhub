@@ -154,6 +154,12 @@ def main() -> int:
     lines.append("")
     lines.append(f"**{len(paths)} paths · {operation_count} operations.**")
     lines.append("")
+    lines.append(
+        "`Auth` is `Public` when the operation needs no token; otherwise it names the "
+        "required scheme (`Bearer JWT`). A token sent to a public read is only used where "
+        "it changes the result (for example, a listing detail or search history)."
+    )
+    lines.append("")
     lines.append("## Contents")
     lines.append("")
     for tag in ordered_tags:

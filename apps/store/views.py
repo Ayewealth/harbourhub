@@ -84,6 +84,7 @@ def log_store_activity(store, action, message):
     get=extend_schema(
         summary="List published stores (vendor directory)",
         description="Public catalog of active, published stores. Filter by category id, country, state, city.",
+        auth=[],
     ),
     post=extend_schema(
         summary="Create a store",
@@ -140,6 +141,7 @@ class TopVendorsListView(generics.ListAPIView):
     """GET /stores/top/ — homepage merchandising."""
 
     serializer_class = StoreListSerializer
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     pagination_class = None
     filter_backends = []
@@ -173,6 +175,7 @@ class TopVendorsListView(generics.ListAPIView):
     get=extend_schema(
         summary="Retrieve store (vendor storefront)",
         description="Public read for published stores. Owners and admins may view unpublished or inactive stores.",
+        auth=[],
     ),
     put=extend_schema(summary="Replace store"),
     patch=extend_schema(summary="Update store"),
@@ -444,6 +447,7 @@ class BuyerShippingOptionsView(generics.ListAPIView):
     """
     Returns all active shipping profiles for a given store slug.
     """
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
     serializer_class = ShippingProfileSerializer
 

@@ -57,7 +57,7 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 | `200` | `message` | `Password changed successfully` | `POST /auth/password/change/` |
 | `200` | `message` | `Password reset successfully` | `POST /auth/password/reset/confirm/` |
 | `200` | `message` | `If an account with this email exists, a password reset email has been sent.` | `POST /auth/password/reset/request/` (does not reveal whether the email exists) |
-| `201` | `message` | `Verification request submitted successfully` | `POST /auth/verification/` |
+| `201` | `message` | `Verification request submitted successfully` | `POST /auth/verification/request/`; status is `approved` automatically when `vendor_approval_required` is off |
 | `200` | `message` | `Default delivery address updated.` | `POST /auth/delivery-details/{id}/set-default/` |
 | `200` | `message` | `2FA enabled successfully.` | `POST /auth/2fa/enable/` |
 | `200` | `message` | `2FA disabled successfully.` | `POST /auth/2fa/disable/` |
@@ -114,10 +114,15 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 |---|---|---|
 | `400` | `error` | `Either id_token or access_token is required.` |
 | `400` | `error` | `Invalid Google token.` |
+| `400` | `error` | `Google email address is not verified.` |
 | `400` | `error` | `Google token does not contain an email address.` |
+| `400` | `error` | `Could not verify the Google token.` |
 | `400` | `error` | `id_token is required.` |
 | `400` | `error` | `Invalid Apple token.` |
+| `400` | `error` | `Apple email address is not verified.` |
 | `400` | `error` | `Apple token does not contain an email address.` |
+| `503` | `error` | `Google login is not configured.` |
+| `503` | `error` | `Apple login is not configured.` |
 
 ---
 
@@ -144,6 +149,10 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 |---|---|---|---|
 | `400` | `error` | `Cannot delete listing. There are active orders associated with it.` | Delete with a paid/active order item. |
 | `400` | `error` | `Cannot delete listing. There are pending quote requests.` | Delete with pending quotes. |
+| `400` | `error` | `Buy listings are currently disabled.` | Create/publish a `sell` listing while `enable_buy` is off; also returned by the public list. |
+| `400` | `error` | `Rent and lease listings are currently disabled.` | Create/publish a `rent`/`lease` listing while `enable_rent` is off. |
+| `400` | `error` | `Service listings are currently disabled.` | Create/publish a `service` listing while `enable_services` is off. |
+| `400` | `error` | `Listings require admin approval before publishing.` | Publish/set `published` while `listing_approval_required` is on and the listing has not been approved. |
 | `400` | `error` | `Only draft listings can be published` | Publish from a non-draft status. |
 | `400` | `error` | `Listing cannot be published until its store is active.` | Publish with an inactive store. |
 | `400` | `error` | `Only published listings can be paused` | Pause from a non-published status. |
@@ -210,11 +219,15 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 | `200` | `message` | `Order cancelled successfully` | Cancel an unpaid order |
 | `202` | `message` | `Refund requested. The order will be cancelled once the gateway confirms.` | Cancel a paid order; response also contains `refund_id` and `refund_status` |
 | `201` | `message` | `Complete payment to extend the rental.` | `POST /commerce/orders/{id}/items/{item_id}/extend-rental/`; response contains the payment/authorization URL |
-| `200` | `message` | `Quote {action}ed successfully` | `POST /commerce/quotes/{id}/{action}/`; `action` is `respond`, `cancel`, `decline`, or `convert`. `decline` produces `Quote declineed successfully` (known wording bug). |
+| `200` | `message` | `Quote cancelled successfully` | `POST /commerce/quotes/{id}/cancel/` |
+| `200` | `message` | `Quote declined successfully` | `POST /commerce/quotes/{id}/decline/` |
+| `200` | `message` | `Quote responded successfully` | `POST /commerce/quotes/{id}/respond/` |
+| `200` | `message` | `Quote converted successfully` | `POST /commerce/quotes/{id}/convert/` |
 | `200` | `message` | `Quote moved to cart successfully.` | `POST /commerce/quotes/{id}/move-to-cart/` and the messaging equivalent |
 | `400` | `message` | `Payment already successful` | `POST /commerce/checkout/session/{id}/retry/` on a paid session |
 | `200` | `message` | `Dispute resolved. Funds released to vendor escrow.` | `POST /commerce/disputes/{id}/action/` with `action=resolve` (admin). |
 | `200` | `message` | `Refund requested. The dispute closes when the gateway confirms.` | `POST /commerce/disputes/{id}/action/` with `action=refund` (admin). |
+| `200` | `message` | `Dispute cancelled successfully.` | `POST /commerce/disputes/{id}/cancel/` by the buyer, or an admin `cancel` action. |
 
 `POST /commerce/disputes/` returns the created `Dispute` object with `201`, not a `message`.
 Checkout takes no delivery address: each cart item carries its own `delivery_detail`.
@@ -344,6 +357,11 @@ Checkout takes no delivery address: each cart item carries its own `delivery_det
 | `200` | `message` | `{n} notification(s) marked as read.` | `POST /notifications/read-all/` |
 | `204` | `message` | `{n} notification(s) deleted.` | `DELETE /notifications/clear/` |
 | `404` | `error` | `Notification not found.` | Another user's notification, or an unknown id. |
+| `404` | `error` | `Unknown notification category.` | Preference update for a category outside `transactional`, `messages`, `marketing`. |
+| `400` | `error` | `Transactional in-app and email notifications cannot be disabled.` | Preference update turning off `in_app` or `email` for `transactional`. |
+| `400` | `error` | `endpoint, keys.p256dh and keys.auth are required.` | Push subscription without the required browser keys. |
+| `400` | `error` | `This push subscription belongs to another account.` | Registering an endpoint owned by another user. |
+| `404` | `error` | `Push subscription not found.` | Deleting a subscription that is not the caller's. |
 
 ---
 
