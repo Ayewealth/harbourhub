@@ -331,9 +331,6 @@ class PasswordResetRequestSerializer(serializers.Serializer):
             reset_token = PasswordResetToken.create_for_user(
                 user, ttl_hours=24)
 
-            # TODO: send email (use Celery task in production)
-            # send_password_reset_email(user.email, reset_token.token)
-
         return reset_token
 
 
@@ -706,6 +703,7 @@ class TwoFactorVerifyLoginSerializer(serializers.Serializer):
 
 class UserSessionSerializer(serializers.ModelSerializer):
     is_current = serializers.SerializerMethodField()
+    device_type = serializers.SerializerMethodField()
 
     class Meta:
         model = UserSession
@@ -715,6 +713,17 @@ class UserSessionSerializer(serializers.ModelSerializer):
             'last_active', 'created_at',
         )
         read_only_fields = fields
+
+    @extend_schema_field(serializers.CharField())
+    def get_device_type(self, obj):
+        if obj.device_type:
+            return obj.device_type
+        ua = (obj.user_agent or "").lower()
+        if "ipad" in ua or "tablet" in ua:
+            return "tablet"
+        if "iphone" in ua or "android" in ua or "mobile" in ua:
+            return "mobile"
+        return "desktop" if ua else ""
 
     @extend_schema_field(serializers.BooleanField())
     def get_is_current(self, obj):

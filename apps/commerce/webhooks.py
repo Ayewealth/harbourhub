@@ -16,6 +16,28 @@ from .services.payments import finalize_payment
 
 logger = logging.getLogger(__name__)
 
+PAYSTACK_WEBHOOK_RESPONSES = {
+    200: inline_serializer(
+        name="PaystackWebhookResponse",
+        fields={
+            "status": serializers.CharField(),
+            "detail": serializers.CharField(required=False),
+        },
+    ),
+    400: inline_serializer(
+        name="PaystackWebhookBadRequest",
+        fields={"error": serializers.CharField()},
+    ),
+    401: inline_serializer(
+        name="PaystackWebhookUnauthorized",
+        fields={"error": serializers.CharField()},
+    ),
+    500: inline_serializer(
+        name="PaystackWebhookServerError",
+        fields={"error": serializers.CharField()},
+    ),
+}
+
 
 def verify_paystack_signature(body: bytes, signature: str) -> bool:
     """Verify that the webhook came from Paystack."""
@@ -33,13 +55,7 @@ class PaystackWebhookView(APIView):
     permission_classes = []
     authentication_classes = []
 
-    @extend_schema(
-        request=None,
-        responses={
-            200: inline_serializer(name='PaystackWebhookResponse', fields={'status': serializers.CharField()}),
-            400: inline_serializer(name='PaystackWebhookError', fields={'error': serializers.CharField()})
-        }
-    )
+    @extend_schema(request=None, responses=PAYSTACK_WEBHOOK_RESPONSES)
     def post(self, request):
         signature = request.headers.get('x-paystack-signature', '')
         body = request.body
@@ -191,3 +207,15 @@ class PaystackWebhookView(APIView):
         refund.gateway_response = data
         refund.save(update_fields=['status', 'gateway_response'])
         return True
+
+
+class PaystackWebhookLegacyView(PaystackWebhookView):
+    """Deprecated alias kept for existing Paystack dashboard configurations."""
+
+    @extend_schema(
+        request=None,
+        responses=PAYSTACK_WEBHOOK_RESPONSES,
+        deprecated=True,
+    )
+    def post(self, request):
+        return super().post(request)

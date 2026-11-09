@@ -118,17 +118,19 @@ class PayoutCreateSerializer(serializers.ModelSerializer):
 
 
 class EarningsSummarySerializer(CurrencyConverterMixin, serializers.Serializer):
-    monetary_fields = ['total_revenue', 'pending_balance', 'available_balance', 'total_paid_out']
+    monetary_fields = [
+        'total_revenue', 'pending_balance', 'available_balance',
+        'total_withdrawn',
+    ]
 
     total_revenue = serializers.DecimalField(max_digits=14, decimal_places=2)
     pending_balance = serializers.DecimalField(
         max_digits=14, decimal_places=2)
     available_balance = serializers.DecimalField(
         max_digits=14, decimal_places=2)
-    total_paid_out = serializers.DecimalField(
+    total_withdrawn = serializers.DecimalField(
         max_digits=14, decimal_places=2)
     revenue_change_percent = serializers.FloatField()
-    pending_change_percent = serializers.FloatField()
     currency = serializers.CharField()
 
 

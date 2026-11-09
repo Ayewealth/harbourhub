@@ -190,6 +190,9 @@ class AdminActionLog(models.Model):
             extra_data=extra_data or {}
         )
 
+    class Meta:
+        ordering = ["-timestamp"]
+
 
 class PlatformConfig(models.Model):
     """

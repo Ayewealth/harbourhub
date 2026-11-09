@@ -213,6 +213,13 @@ class QuoteRequestVendorUpdateView(APIView):
 class QuoteRequestActionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    MESSAGES = {
+        'cancel': 'Quote cancelled successfully',
+        'decline': 'Quote declined successfully',
+        'respond': 'Quote responded successfully',
+        'convert': 'Quote converted successfully',
+    }
+
     @extend_schema(
         summary="Quote action",
         operation_id="commerce_quote_action_post",
@@ -265,7 +272,7 @@ class QuoteRequestActionView(APIView):
             return Response({'error': 'Invalid action'}, status=400)
 
         quote.save(update_fields=['status'])
-        return Response({'message': f'Quote {action}ed successfully'})
+        return Response({'message': self.MESSAGES[action]})
 
 
 class MoveQuoteToCartView(APIView):

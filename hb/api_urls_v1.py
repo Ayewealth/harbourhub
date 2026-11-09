@@ -25,7 +25,8 @@ urlpatterns = [
 
     # # Admin panel
     path('admin-panel/', include('apps.admin_panel.urls')),
-    path('analytics/', include('apps.analytics.urls')),
+    path('', include('apps.analytics.canonical_urls')),
+    path('analytics/', include('apps.analytics.urls')),  # legacy doubled prefix
 
     # Global Search
     path('search/', include('apps.core.urls')),

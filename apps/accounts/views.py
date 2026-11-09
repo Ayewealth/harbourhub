@@ -206,12 +206,23 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             UserSession.objects.create(
                 user_id=user_id,
                 device_name=device_name,
+                device_type=self._parse_device_type(ua_string),
                 user_agent=ua_string,
                 ip_address=self._get_ip(request),
                 token_jti=jti,
             )
         except Exception:
             pass
+
+    def _parse_device_type(self, ua_string: str) -> str:
+        ua = ua_string.lower()
+        if 'ipad' in ua or 'tablet' in ua:
+            return 'tablet'
+        if 'iphone' in ua or 'android' in ua or 'mobile' in ua:
+            return 'mobile'
+        if ua:
+            return 'desktop'
+        return ''
 
     def _parse_device_name(self, ua_string: str) -> str:
         ua = ua_string.lower()

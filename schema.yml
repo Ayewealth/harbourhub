@@ -1643,6 +1643,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/VerificationRequest'
           description: ''
+  /analytics/:
+    get:
+      operationId: analytics_list
+      description: Comprehensive platform statistics for the admin dashboard.
+      summary: Get platform statistics
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AnalyticsOverview'
+          description: ''
   /analytics/analytics/:
     get:
       operationId: analytics_analytics_list
@@ -1696,6 +1714,54 @@ paths:
   /analytics/analytics/user_analytics/:
     get:
       operationId: analytics_analytics_user_analytics_retrieve
+      description: Provides user growth, role distribution, and top users.
+      summary: Get user analytics
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAnalytics'
+          description: ''
+  /analytics/conversion_analytics/:
+    get:
+      operationId: analytics_conversion_analytics_retrieve
+      description: Computes conversion and inquiry response metrics.
+      summary: Get conversion analytics
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversionAnalytics'
+          description: ''
+  /analytics/listing_analytics/:
+    get:
+      operationId: analytics_listing_analytics_retrieve
+      description: Returns listing performance metrics, trends, and category data.
+      summary: Get listing analytics
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingAnalytics'
+          description: ''
+  /analytics/user_analytics/:
+    get:
+      operationId: analytics_user_analytics_retrieve
       description: Provides user growth, role distribution, and top users.
       summary: Get user analytics
       tags:
@@ -3970,11 +4036,10 @@ paths:
   /commerce/payment/webhook/:
     post:
       operationId: commerce_payment_webhook_create
-      description: |-
-        Handle Paystack webhook events.
-        Docs: https://paystack.com/docs/payments/webhooks
+      description: Deprecated alias kept for existing Paystack dashboard configurations.
       tags:
       - commerce
+      deprecated: true
       responses:
         '200':
           content:
@@ -3986,7 +4051,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaystackWebhookError'
+                $ref: '#/components/schemas/PaystackWebhookBadRequest'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaystackWebhookUnauthorized'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaystackWebhookServerError'
           description: ''
   /commerce/quotes/:
     get:
@@ -4333,6 +4410,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedQuoteRequestList'
+          description: ''
+  /commerce/webhooks/paystack/:
+    post:
+      operationId: commerce_webhooks_paystack_create
+      description: |-
+        Handle Paystack webhook events.
+        Docs: https://paystack.com/docs/payments/webhooks
+      tags:
+      - commerce
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaystackWebhookResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaystackWebhookBadRequest'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaystackWebhookUnauthorized'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaystackWebhookServerError'
           description: ''
   /compliance/:
     get:
@@ -9746,14 +9856,11 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        total_paid_out:
+        total_withdrawn:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         revenue_change_percent:
-          type: number
-          format: double
-        pending_change_percent:
           type: number
           format: double
         currency:
@@ -9762,10 +9869,9 @@ components:
       - available_balance
       - currency
       - pending_balance
-      - pending_change_percent
       - revenue_change_percent
-      - total_paid_out
       - total_revenue
+      - total_withdrawn
     EventTypeEnum:
       enum:
       - order_placed
@@ -11910,6 +12016,9 @@ components:
         id:
           type: integer
           readOnly: true
+        order_id:
+          type: integer
+          readOnly: true
         order_number:
           type: string
           readOnly: true
@@ -11941,6 +12050,16 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        commission_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          readOnly: true
+        commission_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
         total_amount:
           type: string
           format: decimal
@@ -11991,8 +12110,11 @@ components:
       - activities
       - buyer
       - carrier
+      - commission_amount
+      - commission_rate
       - created_at
       - id
+      - order_id
       - order_items
       - order_number
       - seller
@@ -14254,7 +14376,7 @@ components:
       required:
       - message
       - status
-    PaystackWebhookError:
+    PaystackWebhookBadRequest:
       type: object
       properties:
         error:
@@ -14266,8 +14388,24 @@ components:
       properties:
         status:
           type: string
+        detail:
+          type: string
       required:
       - status
+    PaystackWebhookServerError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
+    PaystackWebhookUnauthorized:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
     PlatformConfig:
       type: object
       properties:
@@ -16998,7 +17136,6 @@ components:
         device_type:
           type: string
           readOnly: true
-          description: mobile, desktop, tablet
         ip_address:
           type: string
           readOnly: true

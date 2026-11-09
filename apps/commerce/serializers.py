@@ -199,8 +199,12 @@ class OrderItemSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
 
 
 class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
-    monetary_fields = ["subtotal", "delivery_fee", "escrow_fee", "total_amount"]
+    monetary_fields = [
+        "subtotal", "delivery_fee", "escrow_fee", "commission_amount",
+        "total_amount",
+    ]
 
+    order_id = serializers.IntegerField(source="id", read_only=True)
     activities = OrderActivitySerializer(many=True, read_only=True)
     order_items = OrderItemSerializer(source='items', many=True, read_only=True)
     store_name = serializers.CharField(source="store.name", read_only=True)
@@ -211,6 +215,7 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
         model = Order
         fields = (
             "id",
+            "order_id",
             "order_number",
             "buyer",
             "seller",
@@ -221,6 +226,8 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             "subtotal",
             "delivery_fee",
             "escrow_fee",
+            "commission_rate",
+            "commission_amount",
             "total_amount",
             "status",
             "placed_at",
@@ -236,7 +243,10 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("order_number", "created_at", "updated_at")
+        read_only_fields = (
+            "id", "order_id", "order_number", "commission_rate",
+            "commission_amount", "created_at", "updated_at",
+        )
 
 
 class OrderCreateSerializer(CurrencyConverterMixin, serializers.ModelSerializer):

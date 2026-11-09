@@ -29,7 +29,7 @@ from .views import (
     OrderInvoicePDFView,
     OrderConfirmReceiptView,
 )
-from .webhooks import PaystackWebhookView
+from .webhooks import PaystackWebhookLegacyView, PaystackWebhookView
 
 urlpatterns = [
     path("quotes/", QuoteRequestListCreateView.as_view(), name="quote-list-create"),
@@ -75,8 +75,16 @@ urlpatterns = [
     path("checkout/session/<int:session_id>/retry/", RetryPaymentView.as_view(), name="retry-payment"),
     path("payment/verify/<str:reference>/",
          PaymentVerifyView.as_view(), name="payment-verify"),
-    path("payment/webhook/",
-         PaystackWebhookView.as_view(), name="paystack-webhook"),
+    path(
+        "webhooks/paystack/",
+        PaystackWebhookView.as_view(),
+        name="paystack-webhook",
+    ),
+    path(  # deprecated alias
+        "payment/webhook/",
+        PaystackWebhookLegacyView.as_view(),
+        name="paystack-webhook-legacy",
+    ),
 
     # Admin
     path(
