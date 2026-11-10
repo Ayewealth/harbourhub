@@ -14,11 +14,11 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          host: ${{ secrets.EC2_HOST || '16.16.214.13' }}
+          username: ${{ secrets.EC2_USER || 'ubuntu' }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd ${{ secrets.EC2_PATH }}
+            cd ${{ secrets.EC2_PATH || '/var/www/harbourhub' }}
             source venv/bin/activate
             git fetch origin main
             git reset --hard ${{ github.event.workflow_run.head_sha }}

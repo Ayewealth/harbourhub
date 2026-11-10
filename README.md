@@ -342,8 +342,9 @@ celery -A hb worker --loglevel=info
 celery -A hb beat --loglevel=info
 ```
 
-The GitHub workflows are in [`.github/workflows/`](.github/workflows/); the deploy workflow reads
-`EC2_HOST`, `EC2_USER`, `EC2_PATH`, and `EC2_SSH_KEY` from repository secrets.
+The GitHub workflows are in [`.github/workflows/`](.github/workflows/). The deploy workflow requires
+the `EC2_SSH_KEY` secret and defaults to host `16.16.214.13`, user `ubuntu`, and path
+`/var/www/harbourhub`; set `EC2_HOST`, `EC2_USER`, or `EC2_PATH` only to override those defaults.
 
 ## 🗄️ Database Schema
 
