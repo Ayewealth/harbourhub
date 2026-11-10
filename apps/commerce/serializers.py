@@ -696,6 +696,7 @@ class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
     last_event = serializers.SerializerMethodField()
     last_event_at = serializers.SerializerMethodField()
     carrier = serializers.CharField(source="delivery_carrier", read_only=True)
+    quantity = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -707,6 +708,8 @@ class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
             "buyer_name",
             "status",
             "total_amount",
+            "currency",
+            "quantity",
             "last_event",
             "last_event_at",
             "created_at",
@@ -725,6 +728,11 @@ class OrderListTrackingSummarySerializer(serializers.ModelSerializer):
     def get_last_event(self, obj):
         activities = list(obj.activities.all())
         return activities[0].message if activities else "Order Placed"
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_quantity(self, obj):
+        # P2 grain is one item per order; sum anyway so multi-item rows stay correct.
+        return sum(item.quantity for item in obj.items.all())
 
     @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_last_event_at(self, obj):

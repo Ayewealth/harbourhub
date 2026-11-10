@@ -175,6 +175,19 @@ verification, and ledger write are proven by the signed self-test.
 
 ---
 
+## Post-completion follow-ups
+
+- **Checkout body has no `delivery_detail_id`.** This was already true at completion: each cart item
+  carries its own `delivery_detail`, and `CheckoutSerializer` accepts only `cart_item_ids`,
+  `payment_method`, and `terms_accepted`. Sending an extra top-level key is ignored by DRF, so the
+  field is effectively optional. Documented in [`docs/api/examples.md`](../../api/examples.md).
+- **Order list summary carries money and quantity.** `OrderListTrackingSummarySerializer` already
+  returned `total_amount`; it now also returns `currency` and `quantity` (the sum of the order's item
+  quantities), so the My Orders table no longer needs hardcoded zeros. Covered by
+  `tests/test_order_serializers.py`.
+
+---
+
 ## Deferred product work
 
 Advertisements, premium users, and real-time chat are documented, with their current state and the

@@ -157,6 +157,10 @@ Registration cannot set a privileged role. Seller promotion happens through
   only in list responses. `reference` and slugs are display-only unless an endpoint explicitly
   accepts them.
 - **Dates.** ISO 8601. Date-only fields use `YYYY-MM-DD`; timestamps are UTC.
+- **Order list rows.** `GET /commerce/orders/my-orders/` and `/commerce/orders/store-orders/`
+  return a lightweight summary per order: `order_id`, `order_number`, `status`, `total_amount`,
+  `currency`, `quantity` (total units across the order's items), `listing_title`, `seller_name`,
+  `buyer_name`, `last_event`, `last_event_at`, `tracking_id`, and `delivery_carrier`.
 - **Money.** Decimal strings with two places, for example `"205000.00"`. See [Money](#money).
 
 ### Pagination

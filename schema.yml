@@ -12371,6 +12371,12 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        currency:
+          type: string
+          maxLength: 3
+        quantity:
+          type: integer
+          readOnly: true
         last_event:
           type: string
           nullable: true
@@ -12401,6 +12407,7 @@ components:
       - listing_title
       - order_id
       - order_number
+      - quantity
       - total_amount
     OrderMarkShippedError:
       type: object

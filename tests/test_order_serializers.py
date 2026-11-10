@@ -18,6 +18,20 @@ def test_my_orders_returns_integer_id_and_total(auth_client):
     assert isinstance(row["order_id"], int)
     assert row["order_number"] == order.order_number
     assert Decimal(str(row["total_amount"])) == Decimal("1234.00")
+    assert row["currency"] == order.currency
+    assert row["quantity"] == 1
+
+
+@pytest.mark.django_db
+def test_my_orders_sums_quantity_across_items(auth_client):
+    order = OrderFactory()
+    OrderItemFactory(order=order, quantity=2)
+    OrderItemFactory(order=order, quantity=3)
+    client = auth_client(order.buyer)
+
+    response = client.get("/commerce/orders/my-orders/")
+
+    assert response.data["results"][0]["quantity"] == 5
 
 
 @pytest.mark.django_db
@@ -53,3 +67,5 @@ def test_store_orders_returns_integer_id(auth_client):
 
     assert response.status_code == 200
     assert response.data["results"][0]["order_id"] == order.id
+    assert response.data["results"][0]["quantity"] == 1
+    assert response.data["results"][0]["currency"] == order.currency
