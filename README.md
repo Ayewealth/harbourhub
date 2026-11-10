@@ -312,7 +312,7 @@ prefix; the paths below are the ones Django serves.
 | `TERMII_API_KEY` | Termii API key | Empty (disabled) |
 | `TERMII_SENDER_ID` | Termii sender name | `HarbourHub` |
 | `VAPID_PUBLIC_KEY` | Web Push application server key | Empty (disabled) |
-| `VAPID_PRIVATE_KEY` | Web Push signing key | Empty (disabled) |
+| `VAPID_PRIVATE_KEY` | Path to the Web Push private PEM file | Empty (disabled) |
 | `VAPID_SUBJECT` | Web Push contact URI | `mailto:support@harbourhubglobal.com` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client id | Empty (disabled) |
 | `APPLE_CLIENT_ID` | Apple OAuth client id | Empty (disabled) |

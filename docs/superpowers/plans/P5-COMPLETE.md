@@ -98,6 +98,12 @@ These behaviours are covered by tests and do not need a live third-party account
 - The worker consumes the broker: dispatching `compute_and_cache_analytics` on the live host
   returned `ok` (task id `774391e7-a3c0-423b-a7e3-33191129a32b`). Task success is not written to
   the worker journal because production runs at `WARNING`, so this call is the direct evidence.
+- Web Push is configured: a VAPID key pair was generated, the public key is served by
+  `GET /notifications/push/public-key/` with `configured: true`, and the private PEM lives at
+  `/var/www/harbourhub/.vapid_private.pem` (mode `600`, owner `ubuntu`). A probe push signed with
+  that key reached the transport layer and failed only at DNS resolution for a placeholder
+  endpoint, so key loading, encryption, and JWT signing work. No real browser subscription has
+  received a push yet.
 
 ---
 

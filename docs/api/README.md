@@ -318,10 +318,10 @@ Every notification is written in-app and then fanned out to the recipient's pref
 | Channel | Adapter | Configured by | When unconfigured |
 |---|---|---|---|
 | In-app | `Notification` row | Always on | — |
-| Email | Django email backend / Celery task | `EMAIL_*` | Delivery is `skipped` |
-| SMS | Termii | `SMS_PROVIDER=termii` + `TERMII_API_KEY` | Delivery is `skipped` |
-| Web push | VAPID + `pywebpush` | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Delivery is `skipped` |
-| Staff webhook | JSON POST to operations | `OPS_WEBHOOK_URL` | Delivery is `skipped` |
+| Email | Django email backend / Celery task | `EMAIL_*` | Skipped when unset |
+| SMS | Termii | `SMS_PROVIDER=termii` + `TERMII_API_KEY` | Skipped when unset |
+| Web push | VAPID + `pywebpush` | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (PEM path) / `VAPID_SUBJECT` | Skipped when unset |
+| Staff webhook | JSON POST to operations | `OPS_WEBHOOK_URL` | Skipped when unset |
 
 `GET /notifications/preferences/` returns `transactional`, `messages`, and `marketing` in that
 order. `PATCH /notifications/preferences/{category}/` updates one category; transactional
