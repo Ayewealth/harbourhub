@@ -90,6 +90,14 @@ These behaviours are covered by tests and do not need a live third-party account
 - The Live Webhook URL is registered in the Paystack dashboard.
 - A signed self-test webhook was accepted and recorded as `WebhookEvent` `id 1` with status
   `ignored`; no payment or order was created or changed.
+- Celery Beat is scheduling: `django_celery_beat` `PeriodicTask.last_run_at` advanced to
+  `2026-11-10 12:20:00 UTC` for `compute-analytics-snapshot` and
+  `reconcile-pending-payments-every-five-minutes`, to `12:00:00 UTC` for the hourly listing,
+  earnings, and rental-advance tasks, to `08:00:00 UTC` for the rental reminders, and to
+  `01:00:00 UTC` for compliance statuses.
+- The worker consumes the broker: dispatching `compute_and_cache_analytics` on the live host
+  returned `ok` (task id `774391e7-a3c0-423b-a7e3-33191129a32b`). Task success is not written to
+  the worker journal because production runs at `WARNING`, so this call is the direct evidence.
 
 ---
 
@@ -104,7 +112,6 @@ The following need a real third-party event and could not be proven without one:
   `WebhookEvent` row.
 - Termii SMS delivery to a real handset.
 - Real browser web push delivery through a browser push service.
-- Celery Beat scheduling under the production worker and beat services.
 - Production-volume admin payment listing and export.
 - The P0 manual acceptance checklist on a deployed environment.
 
