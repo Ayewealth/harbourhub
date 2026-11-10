@@ -17,7 +17,7 @@
 | 5 — Web push, preferences, Termii-only SMS | `bd7ce5f` | 2026-11-09 | 232 passed | VAPID adapter, subscription deactivation, preference rules, SMS adapter |
 | 6 — Social login, admin coverage, real metrics | `31a0992` | 2026-11-09 | 278 passed | Google/Apple token validation, admin registrations, analytics export aggregates |
 | 7 — Canonical routes and response contracts | `4e26cff` | 2026-11-09 | 289 passed | `test_routes.py`, `test_sessions.py`, `test_order_contract.py`, `test_financial_contract.py` |
-| 8 — Configuration, CI/deploy, documentation | this commit | 2026-11-09 | 291 passed | `pytest tests/test_check_paystack_config.py` |
+| 8 — Configuration, CI/deploy, documentation | `f590e2e` | 2026-11-09 | 291 passed | `pytest tests/test_check_paystack_config.py` |
 
 The full-suite count is the repository-wide `pytest -q` result immediately after each task. Focused
 modules are the files added or extended by that task; they are part of the same full-suite run.
@@ -91,23 +91,39 @@ The following need a real deployment or third-party credentials and could not be
 
 ## Paystack cutover status (Task 9)
 
-**Pending.** No live `sk_live_…` or `pk_live_…` values have been supplied, and the Paystack dashboard
-webhook registration requires dashboard access. The canonical endpoint is deployed by this commit:
+**Blocked; not started.** A read-only inspection of the live host on 2026-11-10 found:
 
-```text
-https://api.harbourhubglobal.com/commerce/webhooks/paystack/
-```
+| Check | Result |
+|---|---|
+| Deployed commit | `0f6d8f9` (`origin/main`), **68 commits behind this branch** |
+| Services | `harbourhub-web`, `harbourhub-worker`, `harbourhub-beat`, `nginx` — all active |
+| Python | 3.12.3 |
+| Migrations pending on the deployed code | none (`migrate --plan`: no operations) |
+| New migrations in the undeployed branch | 22 |
+| `PAYSTACK_SECRET_KEY` | `sk_test_…` |
+| `PAYSTACK_PUBLIC_KEY` | `pk_test_…` |
+| `PAYSTACK_WEBHOOK_URL` | absent from the environment file |
+| `POST /commerce/webhooks/paystack/` | `404` (route not deployed) |
+| `POST /commerce/payment/webhook/` | `400` (legacy route exists) |
+| Platform flags | buy on, rent on, services off, vendor approval on, listing approval off |
 
-The cutover sequence is:
+The plan's precondition — Task 8 deployed to `api.harbourhubglobal.com` — is not met. Deployment is
+a production change: the 68 commits include 22 migrations and a new `health` app. It needs explicit
+approval before the branch is pushed and the deploy workflow runs.
 
-1. Deploy this commit so the canonical path exists.
+The cutover also needs live `sk_live_…` and `pk_live_…` values delivered through a secure channel,
+and the owner's Paystack dashboard access to register the live webhook URL.
+
+Once those are available, the sequence is:
+
+1. Push and deploy the branch so the canonical path exists; confirm migrations and service health.
 2. Set `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, and `PAYSTACK_WEBHOOK_URL` in the production
    environment.
-3. Register the webhook URL in the Paystack dashboard.
+3. Register `https://api.harbourhubglobal.com/commerce/webhooks/paystack/` in the Paystack dashboard.
 4. Run `python manage.py check_paystack_config --send-signed-event` from the production host and
    record the result here.
 
-Until those steps run, production remains on the existing keys and the legacy webhook path.
+Until then, production remains on test keys and the legacy webhook path.
 
 ---
 
