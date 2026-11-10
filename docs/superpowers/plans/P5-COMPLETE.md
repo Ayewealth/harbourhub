@@ -91,7 +91,9 @@ The following need a real deployment or third-party credentials and could not be
 
 ## Paystack cutover status (Task 9)
 
-**Blocked; not started.** A read-only inspection of the live host on 2026-11-10 found:
+**Deployed; cutover awaits the live keys and the dashboard handoff.**
+
+### Inspection before deployment (2026-11-10)
 
 | Check | Result |
 |---|---|
@@ -107,23 +109,34 @@ The following need a real deployment or third-party credentials and could not be
 | `POST /commerce/payment/webhook/` | `400` (legacy route exists) |
 | Platform flags | buy on, rent on, services off, vendor approval on, listing approval off |
 
-The plan's precondition — Task 8 deployed to `api.harbourhubglobal.com` — is not met. Deployment is
-a production change: the 68 commits include 22 migrations and a new `health` app. It needs explicit
-approval before the branch is pushed and the deploy workflow runs.
+The plan's precondition — Task 8 deployed to `api.harbourhubglobal.com` — was not met. Deployment
+was a production change, and the owner approved it.
 
-The cutover also needs live `sk_live_…` and `pk_live_…` values delivered through a secure channel,
-and the owner's Paystack dashboard access to register the live webhook URL.
+### Deployment (2026-11-10)
 
-Once those are available, the sequence is:
+- CI succeeded for `ac180ac`. The first deploy failed before touching the host because the new
+  `EC2_HOST`, `EC2_USER`, and `EC2_PATH` secrets were not configured. Commit `6235c36` keeps those
+  secrets as optional overrides with the known-working defaults.
+- CI and Deploy succeeded for `6235c36`.
+- Verified on the host: HEAD `6235c36`, all four services active, `migrate --plan` reports no
+  operations, and `/api/docs/`, `/platform-config/`, `/notifications/push/public-key/`, `/listings/`,
+  `/stores/`, and `/categories/` return `200`.
+- Both webhook paths now return `401` for an unsigned request, so the canonical route is live.
+- `check_paystack_config` correctly rejects the current test keys.
 
-1. Push and deploy the branch so the canonical path exists; confirm migrations and service health.
-2. Set `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, and `PAYSTACK_WEBHOOK_URL` in the production
-   environment.
-3. Register `https://api.harbourhubglobal.com/commerce/webhooks/paystack/` in the Paystack dashboard.
-4. Run `python manage.py check_paystack_config --send-signed-event` from the production host and
-   record the result here.
+### Remaining handoff (client-owned)
 
-Until then, production remains on test keys and the legacy webhook path.
+1. Back up `/var/www/harbourhub/.env` with a timestamp and `chmod 600`.
+2. Replace `PAYSTACK_SECRET_KEY` and `PAYSTACK_PUBLIC_KEY` with the live values and set
+   `PAYSTACK_WEBHOOK_URL=https://api.harbourhubglobal.com/commerce/webhooks/paystack/`.
+3. Restart `harbourhub-web`, `harbourhub-worker`, `harbourhub-beat`, and `nginx`.
+4. Set the **Live Webhook URL** in the Paystack dashboard to the same canonical URL.
+5. Run `python manage.py check_paystack_config --send-signed-event` from the production host; it
+   must pass and the signed self-test event must be recorded.
+6. After the first live charge, check the Paystack dashboard's delivered events and the local
+   `WebhookEvent` rows.
+
+Until steps 1–5 complete, production remains on test keys.
 
 ---
 
