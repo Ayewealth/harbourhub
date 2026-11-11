@@ -75,6 +75,13 @@ history. All other public operations ignore it.
 Social login is disabled with `503` until `GOOGLE_CLIENT_ID` / `APPLE_CLIENT_ID` is configured.
 Both providers require a verified email address owned by this application's client id.
 
+Google accepts either an OAuth **ID token** or an OAuth **access token**. The server validates it
+against Google's `tokeninfo` endpoint, then requires the token's audience (`aud`, or the legacy
+`audience`/`issued_to` field) and, when present, `azp` to equal `GOOGLE_CLIENT_ID`. The `iss` claim
+is checked only for ID tokens, because Google's access-token response does not include it. A token
+without an `email` claim and a verified email (`email_verified`, or the legacy `verified_email`) is
+rejected with `400`.
+
 ### Public platform configuration
 
 `GET /platform-config/` is unauthenticated and returns the switches that shape the public

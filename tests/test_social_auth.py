@@ -89,6 +89,125 @@ def test_google_rejects_an_unverified_email(client, settings, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_google_accepts_an_access_token_without_iss(
+    client, settings, monkeypatch
+):
+    settings.GOOGLE_CLIENT_ID = "google-client-id"
+    seen = {}
+
+    def _get(url, *args, **kwargs):
+        seen["url"] = url
+        return _Response({
+            "azp": "google-client-id",
+            "aud": "google-client-id",
+            "email": "access-google@example.com",
+            "email_verified": "true",
+            "scope": "openid email profile",
+            "expires_in": 3599,
+        })
+
+    monkeypatch.setattr(social_auth.requests, "get", _get)
+
+    response = client.post(
+        "/auth/social/google/", {"access_token": "ya29.x"}, format="json"
+    )
+
+    assert response.status_code == 200
+    assert response.data["user"]["email"] == "access-google@example.com"
+    assert "access_token=ya29.x" in seen["url"]
+    assert social_auth.User.objects.get(
+        email="access-google@example.com"
+    ).is_verified is True
+
+
+@pytest.mark.django_db
+def test_google_accepts_legacy_access_token_fields(
+    client, settings, monkeypatch
+):
+    settings.GOOGLE_CLIENT_ID = "google-client-id"
+    monkeypatch.setattr(
+        social_auth.requests, "get",
+        lambda *a, **k: _Response({
+            "audience": "google-client-id",
+            "email": "legacy-google@example.com",
+            "verified_email": True,
+        }),
+    )
+
+    response = client.post(
+        "/auth/social/google/", {"access_token": "ya29.legacy"}, format="json"
+    )
+
+    assert response.status_code == 200
+    assert response.data["user"]["email"] == "legacy-google@example.com"
+
+
+@pytest.mark.django_db
+def test_google_rejects_an_access_token_for_a_foreign_audience(
+    client, settings, monkeypatch
+):
+    settings.GOOGLE_CLIENT_ID = "google-client-id"
+    monkeypatch.setattr(
+        social_auth.requests, "get",
+        lambda *a, **k: _Response({
+            "aud": "someone-else",
+            "email": "x@example.com",
+            "email_verified": "true",
+        }),
+    )
+
+    response = client.post(
+        "/auth/social/google/", {"access_token": "ya29.x"}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert response.data["error"] == "Invalid Google token."
+
+
+@pytest.mark.django_db
+def test_google_rejects_an_access_token_for_a_foreign_azp(
+    client, settings, monkeypatch
+):
+    settings.GOOGLE_CLIENT_ID = "google-client-id"
+    monkeypatch.setattr(
+        social_auth.requests, "get",
+        lambda *a, **k: _Response({
+            "aud": "google-client-id",
+            "azp": "someone-else",
+            "email": "x@example.com",
+            "email_verified": "true",
+        }),
+    )
+
+    response = client.post(
+        "/auth/social/google/", {"access_token": "ya29.x"}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert response.data["error"] == "Invalid Google token."
+
+
+@pytest.mark.django_db
+def test_google_still_rejects_an_id_token_with_a_bad_issuer(
+    client, settings, monkeypatch
+):
+    settings.GOOGLE_CLIENT_ID = "google-client-id"
+    monkeypatch.setattr(
+        social_auth.requests, "get",
+        lambda *a, **k: _Response(
+            _google_payload(iss="https://evil.example.com")
+        ),
+    )
+
+    response = client.post(
+        "/auth/social/google/", {"id_token": "x"}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert response.data["error"] == "Invalid Google token."
+
+
+@pytest.mark.django_db
 def test_apple_is_unavailable_when_unconfigured(client, settings):
     settings.APPLE_CLIENT_ID = ""
 

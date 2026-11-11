@@ -27,11 +27,17 @@ def get_tokens_for_user(user):
     }
 
 def verify_google_token(id_token=None, access_token=None):
-    """Return ``{"payload": dict|None, "error": str|None}``."""
+    """Return ``{"payload": dict|None, "error": str|None}``.
+
+    Google's ID-token response carries ``iss``, while the access-token
+    response does not. Authenticity in both cases comes from Google's
+    ``tokeninfo`` endpoint; the audience check binds the token to our client.
+    """
     client_id = getattr(settings, "GOOGLE_CLIENT_ID", "")
     if not client_id:
         return {"payload": None, "error": "Google login is not configured."}
 
+    using_id_token = bool(id_token)
     if id_token:
         url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
     elif access_token:
@@ -55,13 +61,23 @@ def verify_google_token(id_token=None, access_token=None):
         return {"payload": None, "error": "Invalid Google token."}
 
     payload = response.json()
-    if payload.get("aud") != client_id:
+    audience = (
+        payload.get("aud")
+        or payload.get("audience")
+        or payload.get("issued_to")
+    )
+    if audience != client_id:
         return {"payload": None, "error": "Invalid Google token."}
-    if payload.get("iss") not in (
+    if payload.get("azp") and payload["azp"] != client_id:
+        return {"payload": None, "error": "Invalid Google token."}
+    if using_id_token and payload.get("iss") not in (
         "accounts.google.com", "https://accounts.google.com"
     ):
         return {"payload": None, "error": "Invalid Google token."}
-    if payload.get("email_verified") not in (True, "true"):
+    verified = payload.get("email_verified")
+    if verified is None:
+        verified = payload.get("verified_email")
+    if verified not in (True, "true"):
         return {
             "payload": None,
             "error": "Google email address is not verified.",

@@ -85,6 +85,8 @@ Implemented and hardened, not deferred:
 - Both require a verified email address owned by this application's client id.
 - `GOOGLE_CLIENT_ID` and `APPLE_CLIENT_ID` configure the providers; an unconfigured provider returns
   `503` with `Google login is not configured.` or `Apple login is not configured.`
+- Google is configured in production. Apple is intentionally left unconfigured for now, so
+  `/auth/social/apple/` still returns `503` until `APPLE_CLIENT_ID` is supplied.
 - Failures return the messages catalogued in [`../api/messages.md`](../api/messages.md#social-login).
 
 This section exists so the feature is not mistakenly re-scoped as missing.

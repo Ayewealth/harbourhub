@@ -104,6 +104,11 @@ These behaviours are covered by tests and do not need a live third-party account
   that key reached the transport layer and failed only at DNS resolution for a placeholder
   endpoint, so key loading, encryption, and JWT signing work. No real browser subscription has
   received a push yet.
+- Google social login is configured: `GOOGLE_CLIENT_ID` is set in production, and
+  `POST /auth/social/google/` now returns `400` (`Either id_token or access_token is required.`)
+  instead of `503`. Invalid tokens are rejected with `400 Invalid Google token.` A successful
+  exchange with a real Google-issued token has not been exercised. Apple remains intentionally
+  unconfigured and returns `503`.
 
 ---
 
@@ -198,6 +203,11 @@ verification, and ledger write are proven by the signed self-test.
   returned `total_amount`; it now also returns `currency` and `quantity` (the sum of the order's item
   quantities), so the My Orders table no longer needs hardcoded zeros. Covered by
   `tests/test_order_serializers.py`.
+- **Google access tokens are accepted.** The `access_token` branch already existed but rejected
+  Google's response because the access-token `tokeninfo` payload has no `iss` claim. The issuer
+  check now applies only to ID tokens, the audience check accepts `aud`, `audience`, or `issued_to`,
+  `azp` is checked when present, and the verified-email check accepts `email_verified` or the legacy
+  `verified_email`. Covered by `tests/test_social_auth.py`.
 
 ---
 
