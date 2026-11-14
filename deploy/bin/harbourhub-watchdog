@@ -1,0 +1,49 @@
+#!/bin/bash
+# Restart Harbour Hub services when they stop or stop answering.
+#
+# Installed at /usr/local/bin/harbourhub-watchdog and run every two minutes by
+# harbourhub-watchdog.timer. See docs/ops/service-availability.md.
+set -u
+LOG=/var/log/harbourhub-watchdog.log
+TS() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# The health probe goes through nginx, so it exercises nginx, the Unix socket,
+# and gunicorn. It deliberately targets a documentation URL that does not touch
+# the database: a database outage cannot be fixed by restarting the web tier,
+# and restarting it in that state would only add churn.
+health() {
+    curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+        --resolve api.harbourhubglobal.com:443:127.0.0.1 \
+        https://api.harbourhubglobal.com/api/docs/
+}
+
+if ! systemctl is-active --quiet nginx; then
+    echo "$(TS) nginx inactive; restarting" >> "$LOG"
+    systemctl restart nginx
+fi
+
+code=$(health)
+
+# One retry absorbs the few seconds a deploy spends restarting the web tier.
+# Without it, a deploy that happens to overlap this timer looks like an outage
+# and earns an unnecessary extra restart.
+if [ "$code" != "200" ]; then
+    sleep 5
+    code=$(health)
+fi
+
+if [ "$code" != "200" ]; then
+    echo "$(TS) health $code; restarting web and worker" >> "$LOG"
+    systemctl restart harbourhub-web harbourhub-worker
+    sleep 6
+    code=$(health)
+    if [ "$code" != "200" ]; then
+        echo "$(TS) health still $code; restarting nginx and beat" >> "$LOG"
+        systemctl restart nginx harbourhub-beat
+        sleep 4
+        code=$(health)
+    fi
+    echo "$(TS) health after recovery $code" >> "$LOG"
+fi
+
+exit 0

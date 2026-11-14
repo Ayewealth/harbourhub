@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Harbour Hub watchdog every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=harbourhub-watchdog.service
+
+[Install]
+WantedBy=timers.target

@@ -42,6 +42,12 @@ The four API documents are ordered deliberately. `api/README.md` explains the sh
 | [`data-model.md`](data-model.md) | Domain map, every entity with its key fields and relationships, 20 invariants, status machines, database constraints and indexes, a worked money example, and code references. |
 | [`sample-data.md`](sample-data.md) | `create_sample_data` gating, determinism, the entities and counts it creates, seeded accounts, money invariants, idempotency, verification queries, fixed test exchange rates, and safety notes. |
 
+### Operations
+
+| Document | Contents |
+|---|---|
+| [`ops/service-availability.md`](ops/service-availability.md) | How the API stays up: the nginx/S3 startup failure that caused the November outages, the three-layer fix, the verification performed, and the decision tree for when the site stops answering. Server-side files are versioned in [`../deploy/`](../deploy/). |
+
 ### Planning and delivery records
 
 | Document | Contents |
