@@ -396,9 +396,10 @@ Checkout takes no delivery address: each cart item carries its own `delivery_det
 | `200` | `message` | `Content report dismissed successfully` | Dismiss a report. |
 | `200` | `message` | `Verification approved successfully.` | Approve a verification. |
 | `200` | `message` | `Verification rejected successfully.` | Reject a verification. |
-| `200` | `message` | `Vendor approved successfully.` | Approve a vendor. |
+| `200` | `message` | `Vendor approved successfully.` | Approve a vendor. Sets `store.is_active`, `store.is_verified`, and `user.is_verified`, so it also reactivates a suspended store. |
 | `200` | `message` | `Vendor rejected.` | Reject a vendor. |
-| `200` | `message` | `Vendor suspended.` | Suspend a vendor. |
+| `200` | `message` | `Vendor suspended.` | Suspend a vendor. Sets `store.is_active = false`. |
+| `200` | `message` | `Vendor resumed successfully.` | Resume a vendor. Sets `store.is_active = true` without changing verification. |
 | `200` | `message` | `Listing approved successfully.` | Approve a listing. |
 | `200` | `message` | `Listing rejected.` | Reject a listing. |
 | `200` | `message` | `Listing deactivated.` | Deactivate a listing. |

@@ -347,7 +347,7 @@
 | GET | `/admin-panel/users/` | `admin_panel_users_list` | Admin view of all platform users (buyers, sellers, service providers). | Bearer JWT | — | 200 | — |
 | POST | `/admin-panel/users/{id}/{action}/` | `admin_panel_users_create` | Suspend or resume a platform user. | Bearer JWT | `AdminUserActionRequestRequest` | 200 | 400, 403 |
 | GET | `/admin-panel/vendors/` | `admin_panel_vendors_list` | Admin view of all vendors with metrics. | Bearer JWT | — | 200 | — |
-| POST | `/admin-panel/vendors/{id}/{action}/` | `admin_panel_vendors_create` | Approve, reject, or suspend a vendor. | Bearer JWT | `AdminVendorActionRequestRequest` | 200 | 400 |
+| POST | `/admin-panel/vendors/{id}/{action}/` | `admin_panel_vendors_create` | Approve, reject, suspend, or resume a vendor | Bearer JWT | `AdminVendorActionRequestRequest` | 200 | 400 |
 | GET | `/admin-panel/verifications/` | `admin_panel_verifications_list` | List verification requests | Bearer JWT | — | 200 | — |
 | POST | `/admin-panel/verifications/` | `admin_panel_verifications_create` | Admin moderation for verification requests. | Bearer JWT | `VerificationRequestRequest` | 201 | — |
 | GET | `/admin-panel/verifications/{id}/` | `admin_panel_verifications_retrieve` | Retrieve verification request detail | Bearer JWT | — | 200 | — |

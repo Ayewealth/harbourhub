@@ -220,7 +220,7 @@ only so it is not re-scoped as missing.
 |---|---|---|
 | Register or promote to seller | `POST /auth/register/` always creates a buyer; `POST /auth/become-seller/` promotes an existing buyer | Covered |
 | Three-step onboarding | `POST /auth/onboarding/step-1/` creates the `Store`, `step-2/` sets categories, `step-3/` submits `VerificationRequest`; `GET /auth/onboarding/status/` reports progress | Covered |
-| Verification review | Admin `GET /admin-panel/verifications/` and `POST /admin-panel/vendors/{id}/approve/`, `reject/`, or `suspend/` | Covered |
+| Verification review | Admin `GET /admin-panel/verifications/` and `POST /admin-panel/vendors/{id}/approve/`, `reject/`, `suspend/`, or `resume/`. `approve` also sets `store.is_active`, so it doubles as reactivation for a suspended store | Covered |
 | Automatic approval switch | `PlatformConfig.vendor_approval_required = false` auto-approves the request and the store | Covered |
 | Bulk document storage on a seller request | `VerificationRequest.document` accepts one file per request; no multi-document checklist per seller | Partial |
 

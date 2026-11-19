@@ -1358,7 +1358,11 @@ paths:
   /admin-panel/vendors/{id}/{action}/:
     post:
       operationId: admin_panel_vendors_create
-      description: Approve, reject, or suspend a vendor.
+      description: '`approve` sets `store.is_active`, `store.is_verified`, and `user.is_verified`,
+        so it also reactivates a suspended store. `reject` clears verification. `suspend`
+        sets `store.is_active` to false. `resume` sets `store.is_active` to true and
+        leaves verification unchanged.'
+      summary: Approve, reject, suspend, or resume a vendor
       parameters:
       - in: path
         name: action

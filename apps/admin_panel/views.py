@@ -298,12 +298,25 @@ class AdminVendorListView(generics.ListAPIView):
 
 
 class AdminVendorActionView(APIView):
-    """Approve, reject, or suspend a vendor."""
+    """Approve, reject, suspend, or resume a vendor.
+
+    Approving is also the reactivation path: it sets ``is_active`` on the store,
+    so an admin can bring a previously suspended vendor back with the same
+    action they use for a new one. ``resume`` does only the reactivation.
+    """
     permission_classes = [IsDashboardStaff, HasAdminModulePermission]
     admin_module = AdminModule.VENDORS_ONBOARDING
     admin_require_manage = True
 
     @extend_schema(
+        summary="Approve, reject, suspend, or resume a vendor",
+        description=(
+            "`approve` sets `store.is_active`, `store.is_verified`, and "
+            "`user.is_verified`, so it also reactivates a suspended store. "
+            "`reject` clears verification. `suspend` sets `store.is_active` to "
+            "false. `resume` sets `store.is_active` to true and leaves "
+            "verification unchanged."
+        ),
         request=inline_serializer(name='AdminVendorActionRequest', fields={'reason': serializers.CharField(required=False, allow_blank=True), 'notes': serializers.CharField(required=False, allow_blank=True), 'duration': serializers.CharField(required=False, allow_blank=True)}),
         responses={
             200: inline_serializer(name='AdminVendorActionResponse', fields={'message': serializers.CharField()}),
@@ -320,15 +333,23 @@ class AdminVendorActionView(APIView):
         duration = request.data.get('duration', 'indefinite')
 
         if action == 'approve':
+            # Approving accepts the vendor, so it must also make the store
+            # usable. Without the is_active write a suspended store stayed
+            # hidden no matter how many times it was approved.
+            store.is_verified = True
+            store.is_active = True
+            store.save(update_fields=['is_verified', 'is_active'])
+
+            if not store.user.is_verified:
+                store.user.is_verified = True
+                store.user.save(update_fields=['is_verified'])
+
             vr = VerificationRequest.objects.filter(
                 user=store.user
             ).first()
 
             if vr:
                 vr.approve(admin_user=request.user, notes=notes)
-            else:
-                store.is_verified = True
-                store.save(update_fields=['is_verified'])
 
             from apps.notifications.utils import notify_verification_approved
             notify_verification_approved(store.user)
@@ -385,6 +406,29 @@ class AdminVendorActionView(APIView):
                 ),
             )
             return Response({'message': 'Vendor suspended.'})
+
+        elif action == 'resume':
+            store.is_active = True
+            store.save(update_fields=['is_active'])
+
+            from apps.notifications.utils import create_notification
+            create_notification(
+                recipient=store.user,
+                notification_type='store_verified',
+                title='Store Reactivated',
+                message=(
+                    f"Your store has been reactivated. "
+                    f"Reason: {reason or 'Reviewed by support'}."
+                ),
+                priority='high',
+            )
+
+            AdminActionLog.log_action(
+                admin_user=request.user,
+                action_type=AdminActionLog.ActionType.USER_UNBANNED,
+                description=f"Resumed vendor: {store.name}.",
+            )
+            return Response({'message': 'Vendor resumed successfully.'})
 
         return Response(
             {'error': 'Invalid action.'},
