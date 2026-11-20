@@ -4,7 +4,7 @@
 >
 > Regenerate with `python manage.py spectacular --file schema.yml` then `python scripts/generate_api_reference.py`.
 
-**204 paths · 272 operations.**
+**205 paths · 273 operations.**
 
 `Auth` is `Public` when the operation needs no token; otherwise it names the required scheme (`Bearer JWT`). A token sent to a public read is only used where it changes the result (for example, a listing detail or search history).
 
@@ -27,7 +27,7 @@
 - [Support tickets](#support) (6 operations)
 - [Global search](#search) (4 operations)
 - [Public careers](#careers) (2 operations)
-- [Other endpoints](#other) (1 operations)
+- [Other endpoints](#other) (2 operations)
 
 ## auth
 
@@ -425,4 +425,5 @@
 
 | Method | Path | Operation ID | Summary | Auth | Request | Success | Errors |
 |---|---|---|---|---|---|---|---|
+| GET | `/currency/rates/` | `currency_rates_retrieve` | Current exchange rates | Public | — | 200 | 400 |
 | GET | `/platform-config/` | `platform_config_retrieve` | Public platform configuration | Public | — | 200 | — |

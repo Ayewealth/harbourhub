@@ -201,6 +201,11 @@ class Order(models.Model):
     delivery_contact_phone = models.CharField(max_length=30, blank=True)
     delivery_carrier = models.CharField(max_length=100, blank=True)
     tracking_id = models.CharField(max_length=100, blank=True)
+    expected_delivery_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date the seller expects the buyer to receive the item.",
+    )
 
     # Escrow
     escrow_fee = models.DecimalField(

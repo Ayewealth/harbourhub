@@ -656,6 +656,11 @@ PAYSTACK_WEBHOOK_URL = config(
     "PAYSTACK_WEBHOOK_URL",
     default="https://api.harbourhubglobal.com/commerce/webhooks/paystack/",
 )
+# Paystack's per-transaction ceiling. Raise this only after Paystack has
+# approved a higher limit for the business.
+PAYSTACK_MAX_TRANSACTION_NGN = config(
+    "PAYSTACK_MAX_TRANSACTION_NGN", default=10_000_000, cast=int
+)
 
 # =============================================================================
 # SOCIAL LOGIN

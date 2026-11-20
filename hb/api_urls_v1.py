@@ -2,6 +2,7 @@
 from django.urls import path, include
 from apps.commerce.views import BuyerSentQuotesView, SellerReceivedQuotesView
 from apps.admin_panel.views import PublicPlatformConfigView
+from apps.core.currency_views import CurrencyRatesView
 
 urlpatterns = [
     # Authentication
@@ -9,6 +10,9 @@ urlpatterns = [
 
     # Public platform switches
     path('platform-config/', PublicPlatformConfigView.as_view(), name='platform-config'),
+
+    # Public currency rates
+    path('currency/rates/', CurrencyRatesView.as_view(), name='currency-rates'),
 
     # Core functionality
     path('categories/', include('apps.categories.urls')),

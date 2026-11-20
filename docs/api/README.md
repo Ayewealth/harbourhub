@@ -251,7 +251,9 @@ Throttled responses return `429` with DRF's `{"detail": "Request was throttled..
 
 ## Money
 
-- All stored monetary columns are **Decimal NGN**. No float is used on a money path.
+- Money is stored in the currency of the record that owns it. A `Listing` carries its own
+  `currency` (default `NGN`); `Order`, `Payment`, `CheckoutSession`, and the financial ledgers store
+  NGN. No float is used on a money path.
 - The buyer pays `subtotal + delivery_fee`. There is no escrow fee, service fee, or platform fee
   on the buyer side.
 - The platform earns a **seller commission** on goods only:
@@ -262,7 +264,12 @@ Throttled responses return `429` with DRF's `{"detail": "Request was throttled..
   `original_currency`, `original_unit_price`, and `exchange_rate` (NGN per unit).
 - Display conversion is separate: send `hh_currency` as a cookie or `hh-currency` header, or set
   the user preference, and read `currency` / `currency_symbol` in list responses. Display
-  conversion never changes stored money.
+  conversion never changes stored money. `source_currency` reports what the stored number is
+  actually in; if a rate is missing, amounts stay in `source_currency` and `conversion_error`
+  explains why instead of relabelling them.
+- Read the rates the server uses from `GET /currency/rates/` instead of shipping a rate table.
+  The response includes `source`, `fetched_at`, `stale`, and an optional `from`/`to`/`amount`
+  conversion.
 
 Worked example (₦100,000 item × 2, ₦5,000 delivery, 5% commission):
 

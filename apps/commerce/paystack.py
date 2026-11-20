@@ -1,10 +1,52 @@
 import requests
 import logging
+from decimal import Decimal, InvalidOperation
+
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
 PAYSTACK_BASE_URL = "https://api.paystack.co"
+
+# Paystack's default per-transaction ceiling for a Nigerian business. A
+# merchant whose limit has been raised can set PAYSTACK_MAX_TRANSACTION_NGN.
+DEFAULT_MAX_TRANSACTION_NGN = 10_000_000
+
+
+class PaystackAmountLimitExceeded(ValueError):
+    """The amount is larger than Paystack will accept in one transaction."""
+
+    def __init__(self, amount_kobo: int, limit_kobo: int):
+        self.amount_kobo = amount_kobo
+        self.limit_kobo = limit_kobo
+        super().__init__(
+            "This amount of NGN "
+            f"{amount_kobo / 100:,.2f} exceeds Paystack's per-transaction "
+            f"limit of NGN {limit_kobo / 100:,.2f}. Split the purchase into "
+            "smaller payments or ask us to complete a bank transfer."
+        )
+
+
+def max_transaction_kobo() -> int:
+    """The configured Paystack per-transaction limit, in kobo."""
+    raw = getattr(
+        settings,
+        "PAYSTACK_MAX_TRANSACTION_NGN",
+        DEFAULT_MAX_TRANSACTION_NGN,
+    )
+    try:
+        naira = Decimal(str(raw))
+    except (InvalidOperation, TypeError, ValueError):
+        naira = Decimal(DEFAULT_MAX_TRANSACTION_NGN)
+    return int(naira * 100)
+
+
+def ensure_amount_within_limit(amount_kobo: int) -> None:
+    if amount_kobo <= 0:
+        raise ValueError("Payment amount must be greater than zero.")
+    limit = max_transaction_kobo()
+    if amount_kobo > limit:
+        raise PaystackAmountLimitExceeded(amount_kobo, limit)
 
 
 def _headers():
@@ -23,12 +65,7 @@ def initialize_transaction(email: str, amount_kobo: int,
     Returns data dict or None on failure.
     Docs: https://paystack.com/docs/api/transaction/#initialize
     """
-    if settings.DEBUG and amount_kobo > 1000000000:
-        logger.info("Amount %d kobo exceeds Paystack transaction limit (10,000,000 NGN) in debug mode; returning mock data.", amount_kobo)
-        return {
-            "authorization_url": "https://checkout.paystack.com/mock-high-amount",
-            "access_code": "mock_access_code_high_amount"
-        }
+    ensure_amount_within_limit(amount_kobo)
 
     payload = {
         "email": email,

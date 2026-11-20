@@ -20,7 +20,7 @@ partial, the gap is called out rather than hidden.
 | Request body | `Content-Type: application/json` unless the endpoint says multipart |
 | File upload | `multipart/form-data` |
 | Money | Decimal **strings** in responses, e.g. `"250000.00"` |
-| Currency | Stored NGN; `currency` is `"NGN"` |
+| Currency | Listings carry their own `currency` (default `NGN`); orders and payments are stored in NGN |
 | Display currency | The examples assume `preferred_currency: "NGN"` (see below) |
 | Timestamps | ISO 8601 UTC, e.g. `"2026-10-31T09:15:00Z"` |
 | Pagination | `{count, next, previous, results}` with a default page size of 20 |
@@ -34,16 +34,43 @@ different IDs and order numbers.
 
 ### Display currency
 
-Money is always **stored** in NGN. Serializers that inherit
-`CurrencyConverterMixin` (`Cart`, `CartItem`, `Order`, `OrderItem`,
+Money is stored in the currency of the record that owns it: listings carry their
+own `currency` (NGN by default), and orders/payments are stored in NGN. Serializers
+that inherit `CurrencyConverterMixin` (`Cart`, `CartItem`, `Order`, `OrderItem`,
 `OrderTrackingDetail`, `QuoteRequest`, `VendorEarning`, `VendorWallet`,
 `WalletTransaction`) convert monetary fields for **display** to the caller's
-preferred currency and append `currency` and `currency_symbol`.
+preferred currency and append `currency` and `currency_symbol`. The response also
+includes `source_currency`, the currency the stored number is actually in, so a
+client never has to guess.
 
 The priority is: user preference, then the `hh_currency` cookie, then the
 `hh-currency` header, then `USD`. A `UserPreference` row wins over a header, so
 an authenticated sample user with the default preference gets **USD** display
 amounts even if the request sends `hh-currency: NGN`.
+
+Clients should read rates from the API rather than shipping their own table:
+
+```http
+GET /currency/rates/?from=NGN&to=USD&amount=150000
+```
+
+```json
+{
+  "base": "USD",
+  "source": "open.er-api.com",
+  "fetched_at": "2026-11-19T10:00:00+00:00",
+  "stale": false,
+  "rates": { "USD": 1.0, "NGN": 1492.53, "EUR": 0.925, "GBP": 0.791 },
+  "supported": ["NGN", "USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CNY"],
+  "conversion": { "from": "NGN", "to": "USD", "amount": "150000", "result": "100.50" }
+}
+```
+
+The same snapshot is used for stored money, so a displayed price and a charged
+price cannot drift apart. If the provider is unreachable, `stale` is `true` and
+the built-in fallback rates are used; if a needed rate is missing entirely, the
+API labels the amounts with `source_currency` and adds `conversion_error` rather
+than relabelling an unconverted number.
 
 Every example below assumes both the buyer and the seller set NGN first:
 
@@ -756,6 +783,27 @@ HTTP/1.1 502 Bad Gateway
 }
 ```
 
+Amount above Paystack's per-transaction ceiling — checked **before** any order
+is created, so there is nothing to clean up:
+
+```http
+HTTP/1.1 400 Bad Request
+
+{
+  "error": "This payment of NGN 12,000,000.00 exceeds the payment gateway's per-transaction limit of NGN 10,000,000.00. Split the purchase into smaller payments or contact support to complete a bank transfer.",
+  "code": "payment_amount_exceeds_gateway_limit",
+  "amount": "12000000.00",
+  "limit": "10000000.00",
+  "currency": "NGN"
+}
+```
+
+The ceiling comes from `PAYSTACK_MAX_TRANSACTION_NGN` (default `10000000`). It is
+checked in checkout, retry, and rental-extension payment initialisation. A single
+line above the ceiling cannot be split by the API; either split the cart across
+smaller checkouts, complete a bank transfer, or raise the limit with Paystack and
+then raise the environment value to match.
+
 Retry with `POST /commerce/checkout/session/30/retry/`:
 
 ```json
@@ -1054,9 +1102,18 @@ refunded instead.
 ```json
 {
   "carrier": "DHL",
-  "tracking_id": "DHL-88910022"
+  "tracking_id": "DHL-88910022",
+  "expected_delivery_date": "2026-11-07",
+  "delivery_address": "14 Marina Road, Lagos",
+  "delivery_contact_name": "Ada Obi",
+  "delivery_contact_phone": "+2348012345678"
 }
 ```
+
+The last four fields are optional. The address and contact default to the
+buyer's chosen `delivery_detail` at checkout, but the seller may correct them
+here. `expected_delivery_date` is a date, and `estimated_delivery` in responses
+returns it when present (otherwise a seven-day estimate from the order date).
 
 ```json
 {
@@ -1101,7 +1158,11 @@ The response is the tracking detail serializer:
   "delivery_fee": "0.00",
   "escrow_fee": "0.00",
   "created_at": "2026-10-31T09:30:00Z",
-  "estimated_delivery": "2026-11-07T09:30:00Z",
+  "estimated_delivery": "2026-11-07",
+  "expected_delivery_date": "2026-11-07",
+  "delivery_address": "14 Marina Road, Lagos",
+  "delivery_contact_name": "Ada Obi",
+  "delivery_contact_phone": "+2348012345678",
   "dispute": null,
   "timeline": [
     {
@@ -1174,21 +1235,60 @@ HTTP/1.1 403 Forbidden
 { "detail": "Only the seller of this order can update the tracking status." }
 ```
 
-### 4.3 Buyer confirms receipt
+### 4.3 Seller edits tracking details
 
-`POST /commerce/orders/101/confirm-receipt/` — buyer only, order must be
-`delivered` (or `item_returned` for a rental).
+`PATCH /commerce/orders/101/tracking/` — seller only. The same path accepts an
+integer id or the order number. Every field is optional and only the supplied
+fields change:
 
 ```json
 {
-  "message": "Receipt confirmed",
-  "status": "fulfilled"
+  "tracking_id": "DHL-88910077",
+  "carrier": "DHL Express",
+  "expected_delivery_date": "2026-11-09",
+  "delivery_address": "22 Adeola Odeku Street, Victoria Island, Lagos",
+  "delivery_contact_name": "Ada Obi",
+  "delivery_contact_phone": "+2348012345678"
 }
 ```
 
-This is also the point where the remaining held funds are released. For a
-non-rental order confirmed before day 7, the vendor's whole net amount becomes
-available immediately.
+The response is the tracking detail shown above. A bad date is rejected without
+changing anything:
+
+```json
+{ "error": "expected_delivery_date must be YYYY-MM-DD." }
+```
+
+Buyers cannot edit tracking (`403`), and each successful change appends an
+`other` activity so the timeline shows who changed what.
+
+### 4.4 Buyer confirms receipt
+
+`POST /commerce/orders/101/confirm-receipt/` — buyer only. The buyer may confirm
+from `item_dispatched` or `in_transit`; they do not have to wait for the seller
+to mark `delivered` first. The call records delivery itself.
+
+```json
+{
+  "message": "Receipt confirmed. The order is complete.",
+  "status": "fulfilled",
+  "fulfilled": true
+}
+```
+
+A rental stops at `delivered`, because it still has to be returned:
+
+```json
+{
+  "message": "Receipt confirmed.",
+  "status": "delivered",
+  "fulfilled": false
+}
+```
+
+This is also the point where the remaining held funds are released for a buy
+order. For a non-rental order confirmed before day 7, the vendor's whole net
+amount becomes available immediately.
 
 Only the buyer:
 
@@ -1201,7 +1301,7 @@ HTTP/1.1 403 Forbidden
 Wrong state:
 
 ```json
-{ "error": "Cannot 'order_fulfilled' an order in status 'in_transit'." }
+{ "error": "Cannot confirm receipt of an order in status 'paid'." }
 ```
 
 ---
@@ -1367,23 +1467,50 @@ A draft listing:
 ```json
 {
   "adjustments": [
-    { "name": "Long-term discount", "amount": "500000.00", "type": "subtraction" }
+    {
+      "name": "Shipping",
+      "amount": "250000.00",
+      "type": "addition",
+      "currency": "NGN"
+    },
+    {
+      "name": "Long-term discount",
+      "amount": "500000.00",
+      "type": "subtraction",
+      "currency": "NGN"
+    }
   ],
   "vendor_notes": "Includes servicing and a spare mask."
 }
 ```
+
+`currency` may be sent once at the top level for the whole list, or per
+adjustment to override it. If it is omitted, the amount is treated as being in
+the currency the caller is shown (their preferred currency), because that is the
+figure the seller typed. The server converts each amount into the quote's
+currency (the listing currency) with the live rate and stores both:
 
 ```json
 {
   "adjustments": [
-    { "name": "Long-term discount", "amount": "500000.00", "type": "subtraction" }
-  ],
-  "vendor_notes": "Includes servicing and a spare mask."
+    {
+      "name": "Shipping",
+      "type": "addition",
+      "amount": "250000.00",
+      "entered_amount": "250000.00",
+      "entered_currency": "NGN",
+      "currency": "NGN"
+    }
+  ]
 }
 ```
 
-`total_quote_price` becomes `7,000,000.00`. Adjustment types are `addition` and
-`subtraction`; unknown types are ignored when computing the total.
+The example above is a USD listing viewed by an NGN seller: `250000 NGN` is
+stored as `166.67 USD`, and the response converts it back to `250000.00 NGN`
+for display. An unchanged round-trip of the whole list is recognised, so the
+stored figure is not converted a second time. `total_quote_price` becomes the
+sum in the quote currency. Adjustment types are `addition` and `subtraction`;
+unknown types are ignored when computing the total.
 
 ### 6.3 Vendor responds
 
@@ -1440,8 +1567,14 @@ Unknown action:
 `POST /commerce/quotes/71/move-to-cart/`
 
 ```json
-{ "quoted_price": "7000000.00" }
+{ "quoted_price": "7000000.00", "currency": "NGN" }
 ```
+
+`quoted_price` is optional; if omitted, the quote's `total_quote_price` is
+used. When supplied, `currency` says what it is in (default: the caller's
+preferred currency), and the server converts it into the listing currency
+before storing `locked_subtotal`. This prevents a NGN figure from being locked
+in as if it were USD.
 
 ```json
 {

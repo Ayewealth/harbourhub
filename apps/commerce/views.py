@@ -2,10 +2,10 @@ import uuid
 import logging
 
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.db.models import Avg, Count, Prefetch, Q
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, inline_serializer
 from drf_spectacular.types import OpenApiTypes
@@ -16,12 +16,23 @@ from rest_framework.generics import get_object_or_404
 from django.conf import settings
 from django.utils import timezone
 
-from apps.commerce.models import Order, OrderActivity
 from apps.listings.models import ListingImage
-from apps.commerce.paystack import initialize_transaction, verify_transaction
+from apps.commerce.paystack import (
+    PaystackAmountLimitExceeded,
+    initialize_transaction,
+    max_transaction_kobo,
+    verify_transaction,
+)
 from apps.admin_panel.auth import has_admin_module_permission, HasAdminModulePermission
 from apps.admin_panel.constants import AdminModule
-from apps.core.currency import CurrencyRateUnavailable, convert_to_ngn
+from apps.core.currency import (
+    CurrencyRateUnavailable,
+    SUPPORTED_CURRENCIES,
+    UnsupportedCurrency,
+    convert_money,
+    convert_to_ngn,
+    get_preferred_currency,
+)
 from apps.financials.services import money
 from apps.notifications.utils import notify_order_cancelled, notify_order_placed, notify_order_shipped, notify_quote_received, notify_quote_responded
 from apps.analytics.posthog_utils import (
@@ -59,7 +70,11 @@ from .serializers import (
     OrderTrackingDetailSerializer,
     OrderListTrackingSummarySerializer,
 )
-from .services.orders import InvalidTransition, transition
+from .services.orders import (
+    InvalidTransition,
+    buyer_confirm_receipt,
+    transition,
+)
 from .services.delivery import calculate_delivery_fee
 
 
@@ -71,6 +86,125 @@ PURCHASE_TYPE_MAP = {
 }
 
 logger = logging.getLogger(__name__)
+
+# Every field a seller may change after dispatch, mapped to its model field.
+TRACKING_FIELD_MAP = {
+    "tracking_id": "tracking_id",
+    "carrier": "delivery_carrier",
+    "delivery_carrier": "delivery_carrier",
+    "expected_delivery_date": "expected_delivery_date",
+    "delivery_address": "delivery_address",
+    "delivery_contact_name": "delivery_contact_name",
+    "delivery_contact_phone": "delivery_contact_phone",
+}
+
+# Character limits, so an overlong value is a 400 instead of a database error.
+TRACKING_FIELD_LIMITS = {
+    "tracking_id": (100, "tracking ID"),
+    "delivery_carrier": (100, "carrier"),
+    "delivery_contact_name": (100, "contact person"),
+    "delivery_contact_phone": (30, "contact phone"),
+}
+
+
+def _parse_expected_date(raw):
+    """Accept YYYY-MM-DD or a full ISO timestamp. Returns (date, error)."""
+    if raw in (None, ""):
+        return None, None
+    text = str(raw).strip()
+    parsed = parse_date(text)
+    if parsed is None:
+        timestamp = parse_datetime(text)
+        if timestamp is not None:
+            parsed = timestamp.date()
+    if parsed is None:
+        return None, "expected_delivery_date must be YYYY-MM-DD."
+    return parsed, None
+
+
+def validate_tracking_fields(data):
+    """Validate the seller-editable delivery fields without changing anything."""
+    if not hasattr(data, "keys"):
+        return None
+
+    for key, model_field in TRACKING_FIELD_MAP.items():
+        if key not in data:
+            continue
+        raw = data.get(key)
+
+        if model_field == "expected_delivery_date":
+            _, error = _parse_expected_date(raw)
+            if error:
+                return error
+            continue
+
+        value = "" if raw is None else str(raw).strip()
+        limit, label = TRACKING_FIELD_LIMITS.get(
+            model_field, (None, model_field)
+        )
+        if limit is not None and len(value) > limit:
+            return f"{label} must be {limit} characters or fewer."
+
+    return None
+
+
+def apply_tracking_fields(order, data):
+    """Apply the seller-editable delivery fields present in ``data``.
+
+    Returns ``(changed_fields, error)``. Nothing is written until the caller
+    saves, and an invalid payload changes nothing.
+    """
+    changed = []
+    if not hasattr(data, "keys"):
+        return changed, None
+
+    error = validate_tracking_fields(data)
+    if error:
+        return changed, error
+
+    for key, model_field in TRACKING_FIELD_MAP.items():
+        if key not in data:
+            continue
+        raw = data.get(key)
+
+        if model_field == "expected_delivery_date":
+            value, _ = _parse_expected_date(raw)
+        else:
+            value = "" if raw is None else str(raw).strip()
+
+        if getattr(order, model_field) != value:
+            setattr(order, model_field, value)
+            if model_field not in changed:
+                changed.append(model_field)
+
+    if "delivery_carrier" in changed:
+        if not isinstance(order.extra, dict):
+            order.extra = {}
+        if order.extra.get("carrier") != order.delivery_carrier:
+            order.extra["carrier"] = order.delivery_carrier
+            changed.append("extra")
+
+    return changed, None
+
+
+def paystack_limit_payload(amount_ngn, limit_kobo=None):
+    """A 400 body that explains a Paystack per-transaction limit refusal."""
+    limit_kobo = limit_kobo or max_transaction_kobo()
+    limit_ngn = (Decimal(limit_kobo) / Decimal("100")).quantize(
+        Decimal("0.01")
+    )
+    return {
+        "error": (
+            f"This payment of NGN {money(amount_ngn):,} exceeds the payment "
+            f"gateway's per-transaction limit of NGN {limit_ngn:,}. "
+            "Split the purchase into smaller payments or contact support to "
+            "complete a bank transfer."
+        ),
+        "code": "payment_amount_exceeds_gateway_limit",
+        "amount": str(money(amount_ngn)),
+        "limit": str(limit_ngn),
+        "currency": "NGN",
+    }
 
 
 def order_list_prefetches():
@@ -190,7 +324,7 @@ class QuoteRequestVendorUpdateView(APIView):
 
     @extend_schema(
         request=QuoteRequestVendorUpdateSerializer,
-        responses={200: QuoteRequestVendorUpdateSerializer}
+        responses={200: QuoteRequestSerializer}
     )
     def patch(self, request, pk):
         quote = get_object_or_404(
@@ -202,12 +336,17 @@ class QuoteRequestVendorUpdateView(APIView):
         serializer = QuoteRequestVendorUpdateSerializer(
             quote,
             data=request.data,
-            partial=True
+            partial=True,
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        return Response(serializer.data)
+        return Response(
+            QuoteRequestSerializer(
+                quote, context={"request": request}
+            ).data
+        )
 
 
 class QuoteRequestActionView(APIView):
@@ -311,8 +450,42 @@ class MoveQuoteToCartView(APIView):
 
         cart, _ = Cart.objects.get_or_create(buyer=request.user)
 
-        # vendor_price is the total agreed contract price for the entire quote
-        total_price = request.data.get('quoted_price') or quote.total_quote_price or quote.listing.price
+        # The locked contract price is stored in the listing's currency. A
+        # client may send it in the currency it displays, so convert explicitly
+        # instead of treating 100 NGN as 100 USD.
+        quote_currency = (quote.listing.currency or "NGN").upper().strip()
+        total_price = quote.total_quote_price or quote.listing.price or Decimal("0")
+        quoted_price = request.data.get('quoted_price')
+        if quoted_price not in (None, ""):
+            try:
+                value = Decimal(str(quoted_price))
+            except (InvalidOperation, TypeError, ValueError):
+                return Response(
+                    {'error': 'quoted_price must be a number.'}, status=400
+                )
+            if value <= 0:
+                return Response(
+                    {'error': 'quoted_price must be greater than zero.'},
+                    status=400
+                )
+            source_currency = (
+                request.data.get('currency')
+                or get_preferred_currency(request)
+                or quote_currency
+            ).upper().strip()
+            if source_currency not in SUPPORTED_CURRENCIES:
+                return Response(
+                    {'error': f'Unsupported currency: {source_currency}.'},
+                    status=400,
+                )
+            try:
+                total_price = convert_money(
+                    value, source_currency, quote_currency
+                )
+            except (UnsupportedCurrency, CurrencyRateUnavailable) as exc:
+                return Response({'error': str(exc)}, status=400)
+
+        total_price = money(total_price)
 
         CartItem.objects.update_or_create(
             cart=cart,
@@ -674,6 +847,13 @@ class OrderItemExtendRentalView(APIView):
             item.unit_price * item.quantity * additional_days
         )
 
+        limit_kobo = max_transaction_kobo()
+        if (Decimal(limit_kobo) / Decimal("100")) < amount:
+            return Response(
+                paystack_limit_payload(amount, limit_kobo),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         with transaction.atomic():
             extension = RentalExtension.objects.create(
                 order_item=item,
@@ -703,6 +883,15 @@ class OrderItemExtendRentalView(APIView):
             )
             if not data:
                 raise ValueError("Failed to initialize payment gateway")
+        except PaystackAmountLimitExceeded as exc:
+            payment.status = Payment.Status.FAILED
+            payment.save(update_fields=["status"])
+            extension.status = RentalExtension.Status.CANCELLED
+            extension.save(update_fields=["status"])
+            return Response(
+                paystack_limit_payload(amount, getattr(exc, "limit_kobo", None)),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as exc:
             logger.exception("Rental extension payment failed: %s", exc)
             payment.status = Payment.Status.FAILED
@@ -765,6 +954,10 @@ class OrderMarkShippedView(APIView):
             fields={
                 "carrier": serializers.CharField(required=True),
                 "tracking_id": serializers.CharField(required=True),
+                "expected_delivery_date": serializers.DateField(required=False),
+                "delivery_address": serializers.CharField(required=False),
+                "delivery_contact_name": serializers.CharField(required=False),
+                "delivery_contact_phone": serializers.CharField(required=False),
             },
         ),
         responses={
@@ -783,6 +976,12 @@ class OrderMarkShippedView(APIView):
                 status=400,
             )
 
+        # Validate every optional field before changing the status, so a bad
+        # value cannot leave the order half-updated.
+        error = validate_tracking_fields(request.data)
+        if error:
+            return Response({"error": error}, status=400)
+
         try:
             order = transition(
                 order,
@@ -796,6 +995,11 @@ class OrderMarkShippedView(APIView):
             )
         except InvalidTransition as exc:
             return Response({"error": str(exc)}, status=400)
+
+        # Persist the optional delivery fields alongside the dispatch.
+        changed, error = apply_tracking_fields(order, request.data)
+        if changed:
+            order.save(update_fields=changed)
 
         notify_order_shipped(order)
 
@@ -814,6 +1018,11 @@ class OrderConfirmReceiptView(APIView):
 
     @extend_schema(
         summary="Confirm receipt of an order",
+        description=(
+            "The buyer confirms the item arrived. Works from dispatched or "
+            "in-transit, records delivery, and completes a buy order. A rental "
+            "stops at delivered because it must still be returned."
+        ),
         request=None,
         responses={
             200: inline_serializer(
@@ -821,6 +1030,7 @@ class OrderConfirmReceiptView(APIView):
                 fields={
                     'message': serializers.CharField(),
                     'status': serializers.CharField(),
+                    'fulfilled': serializers.BooleanField(),
                 },
             ),
             400: inline_serializer(
@@ -837,15 +1047,26 @@ class OrderConfirmReceiptView(APIView):
             )
 
         try:
-            order = transition(order, "order_fulfilled", actor=request.user)
+            order = buyer_confirm_receipt(order, request.user)
         except InvalidTransition as exc:
             return Response({"error": str(exc)}, status=400)
 
         from apps.notifications.utils import dispatch_tracking_notification
-        dispatch_tracking_notification("order_fulfilled", order)
+        fulfilled = order.status == Order.Status.FULFILLED
+        dispatch_tracking_notification(
+            "order_fulfilled" if fulfilled else "delivered", order
+        )
 
         return Response(
-            {"message": "Receipt confirmed", "status": order.status}
+            {
+                "message": (
+                    "Receipt confirmed. The order is complete."
+                    if fulfilled
+                    else "Receipt confirmed."
+                ),
+                "status": order.status,
+                "fulfilled": fulfilled,
+            }
         )
 
 
@@ -1114,6 +1335,23 @@ class CheckoutView(APIView):
                 )
             )
 
+        if grand_total <= Decimal("0.00"):
+            return Response(
+                {"error": "The order total must be greater than zero."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Fail before creating any orders: Paystack rejects anything above the
+        # configured per-transaction ceiling, and the old flow surfaced that as
+        # a misleading "gateway unavailable" after orders already existed.
+        limit_kobo = max_transaction_kobo()
+        limit_ngn = (Decimal(limit_kobo) / Decimal("100"))
+        if grand_total > limit_ngn:
+            return Response(
+                paystack_limit_payload(grand_total, limit_kobo),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         from apps.commerce.models import CheckoutSession, OrderItem
 
         with transaction.atomic():
@@ -1233,6 +1471,16 @@ class CheckoutView(APIView):
             )
             if not paystack_data:
                 raise ValueError("Failed to initialize payment gateway")
+        except PaystackAmountLimitExceeded as exc:
+            logger.warning("Checkout amount over Paystack limit: %s", exc)
+            payment.status = Payment.Status.FAILED
+            payment.save(update_fields=["status"])
+            return Response(
+                paystack_limit_payload(
+                    grand_total, getattr(exc, "limit_kobo", None)
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as exc:
             logger.exception("Checkout payment initialisation failed: %s", exc)
             payment.status = Payment.Status.FAILED
@@ -1303,16 +1551,37 @@ class RetryPaymentView(APIView):
         if payment.status == Payment.Status.SUCCESS:
             return Response({"message": "Payment already successful"}, status=status.HTTP_400_BAD_REQUEST)
 
+        limit_kobo = max_transaction_kobo()
+        if (Decimal(limit_kobo) / Decimal("100")) < session.total_amount:
+            return Response(
+                paystack_limit_payload(session.total_amount, limit_kobo),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Generate new reference
         reference = f"PAY-{uuid.uuid4().hex[:16].upper()}"
         
-        paystack_data = initialize_transaction(
-            email=request.user.email,
-            amount_kobo=int(session.total_amount * 100),
-            reference=reference,
-            metadata={'checkout_session_id': session.id},
-            callback_url=settings.PAYSTACK_CALLBACK_URL,
-        )
+        try:
+            paystack_data = initialize_transaction(
+                email=request.user.email,
+                amount_kobo=int(session.total_amount * 100),
+                reference=reference,
+                metadata={'checkout_session_id': session.id},
+                callback_url=settings.PAYSTACK_CALLBACK_URL,
+            )
+        except PaystackAmountLimitExceeded as exc:
+            return Response(
+                paystack_limit_payload(
+                    session.total_amount, getattr(exc, "limit_kobo", None)
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            logger.exception("Retry payment initialisation failed: %s", exc)
+            return Response(
+                {"error": "Payment gateway unavailable. Try again shortly."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
         if not paystack_data:
             return Response({"error": "Failed to re-initialize payment gateway."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1619,18 +1888,32 @@ class OrderTrackingDetailView(generics.RetrieveUpdateAPIView):
         if not is_seller:
             raise exceptions.PermissionDenied("Only the seller of this order can update the tracking details.")
 
-        tracking_id = request.data.get("tracking_id")
-        carrier = request.data.get("carrier")
+        changed, error = apply_tracking_fields(order, request.data)
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
 
-        if tracking_id is not None:
-            order.tracking_id = tracking_id
-        if carrier is not None:
-            order.delivery_carrier = carrier
-            if not isinstance(order.extra, dict):
-                order.extra = {}
-            order.extra["carrier"] = carrier
-
-        order.save()
+        if changed:
+            order.save(update_fields=changed)
+            labels = {
+                "tracking_id": "tracking ID",
+                "delivery_carrier": "carrier",
+                "expected_delivery_date": "expected delivery date",
+                "delivery_address": "delivery address",
+                "delivery_contact_name": "contact person",
+                "delivery_contact_phone": "contact phone",
+            }
+            changed_labels = [
+                labels[field] for field in changed if field in labels
+            ]
+            OrderActivity.objects.create(
+                order=order,
+                event_type=OrderActivity.EventType.OTHER,
+                message=(
+                    "Seller updated "
+                    + ", ".join(changed_labels)
+                    + "."
+                ),
+            )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -1705,13 +1988,20 @@ class OrderTrackingUpdateView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        error = validate_tracking_fields(request.data)
+        if error:
+            return Response({"error": error}, status=400)
+
         try:
             order = transition(
                 order,
                 event,
                 actor=request.user,
                 message=note or None,
-                carrier=request.data.get("carrier"),
+                carrier=(
+                    request.data.get("carrier")
+                    or request.data.get("delivery_carrier")
+                ),
                 tracking_id=request.data.get("tracking_id"),
                 reason=request.data.get("reason"),
             )
@@ -1719,6 +2009,10 @@ class OrderTrackingUpdateView(generics.CreateAPIView):
             return Response(
                 {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
             )
+
+        changed, error = apply_tracking_fields(order, request.data)
+        if changed:
+            order.save(update_fields=changed)
 
         # Trigger notification
         from apps.notifications.utils import dispatch_tracking_notification

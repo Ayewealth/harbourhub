@@ -214,8 +214,8 @@ greater than or equal to 0.`, `“{value}” is not a valid choice.`
 | `200` | `message` | `Awaiting webhook confirmation.` | Verify when Paystack says success but the local payment is still `pending` |
 | `200` | `message` | `Payment not completed.` | Verify when Paystack says the charge did not complete |
 | `503` | `message` | `Gateway unavailable. Try again shortly.` | Verify when Paystack is unreachable |
-| `200` | `message` | `Order marked as shipped` | `POST /commerce/orders/{id}/ship/` |
-| `200` | `message` | `Receipt confirmed` | `POST /commerce/orders/{id}/confirm-receipt/` |
+| `200` | `message` | `Order marked as shipped` | `POST /commerce/orders/{id}/ship/` (also accepts optional `expected_delivery_date`, `delivery_address`, `delivery_contact_name`, `delivery_contact_phone`) |
+| `200` | `message` | `Receipt confirmed. The order is complete.` or `Receipt confirmed.` | `POST /commerce/orders/{id}/confirm-receipt/` by the buyer. A buy order completes (`fulfilled: true`); a rental stops at `delivered` (`fulfilled: false`) because it must still be returned. Response contains `status` and `fulfilled`. |
 | `200` | `message` | `Order cancelled successfully` | Cancel an unpaid order |
 | `202` | `message` | `Refund requested. The order will be cancelled once the gateway confirms.` | Cancel a paid order; response also contains `refund_id` and `refund_status` |
 | `201` | `message` | `Complete payment to extend the rental.` | `POST /commerce/orders/{id}/items/{item_id}/extend-rental/`; response contains the payment/authorization URL |
@@ -250,6 +250,10 @@ Checkout takes no delivery address: each cart item carries its own `delivery_det
 | `400` | `error` | `New end date must be after the current end date` | Extension does not move the date forward. |
 | `400` | `error` | `The new end date must be in the future` | Extension date in the past. |
 | `400` | `error` | `carrier and tracking_id are required` | Ship without both fields. |
+| `400` | `error` | `expected_delivery_date must be YYYY-MM-DD.` | Tracking update with an unparseable date. |
+| `400` | `error` | `{label} must be {limit} characters or fewer.` | Tracking update where the tracking ID, carrier, contact person, or contact phone is too long. |
+| `400` | `error` | `Cannot confirm receipt of an order in status '{status}'.` | Buyer confirms receipt before the seller has dispatched the item. |
+| `400` | `error` | `This payment of NGN {amount} exceeds the payment gateway's per-transaction limit of NGN {limit}. Split the purchase into smaller payments or contact support to complete a bank transfer.` | Checkout, retry, or rental extension above `PAYSTACK_MAX_TRANSACTION_NGN` (default 10,000,000). The response also contains `code: "payment_amount_exceeds_gateway_limit"`, `amount`, `limit`, and `currency`. No orders are created. |
 | `400` | `error` | `These listings have no store and cannot be checked out: {listing titles}.` | Checkout with a storeless listing. |
 | `400` | `error` | `Payment gateway unavailable.` | Rental-extension payment initialization failed. |
 | `400` | `error` | `Failed to re-initialize payment gateway.` | Retry initialization failed. |

@@ -3730,8 +3730,9 @@ paths:
   /commerce/orders/{id}/confirm-receipt/:
     post:
       operationId: commerce_orders_confirm_receipt_create
-      description: Buyer confirms delivery, completing the order and releasing held
-        funds.
+      description: The buyer confirms the item arrived. Works from dispatched or in-transit,
+        records delivery, and completes a buy order. A rental stops at delivered because
+        it must still be returned.
       summary: Confirm receipt of an order
       parameters:
       - in: path
@@ -4332,7 +4333,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/QuoteRequestVendorUpdate'
+                $ref: '#/components/schemas/QuoteRequest'
           description: ''
   /commerce/quotes/received/:
     get:
@@ -4667,6 +4668,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ComplianceSummaryResponse'
+          description: ''
+  /currency/rates/:
+    get:
+      operationId: currency_rates_retrieve
+      description: USD-based rates from the same snapshot the server uses for stored
+        money, with source and fetch time. Pass `from`, `to`, and `amount` to have
+        the server perform the conversion.
+      summary: Current exchange rates
+      parameters:
+      - in: query
+        name: amount
+        schema:
+          type: string
+        description: Amount to convert.
+      - in: query
+        name: from
+        schema:
+          type: string
+        description: Source currency, e.g. NGN.
+      - in: query
+        name: to
+        schema:
+          type: string
+        description: Target currency, e.g. USD.
+      tags:
+      - currency
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrencyRatesResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrencyRatesError'
           description: ''
   /financials/bank-accounts/:
     get:
@@ -8201,8 +8242,12 @@ components:
     AdminOrderTracking:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         order_id:
           type: integer
@@ -8246,9 +8291,22 @@ components:
           readOnly: true
         estimated_delivery:
           type: string
-          format: date-time
+          format: date
           nullable: true
           readOnly: true
+        expected_delivery_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date the seller expects the buyer to receive the item.
+        delivery_address:
+          type: string
+        delivery_contact_name:
+          type: string
+          maxLength: 100
+        delivery_contact_phone:
+          type: string
+          maxLength: 30
         dispute:
           allOf:
           - $ref: '#/components/schemas/OrderDispute'
@@ -8672,8 +8730,12 @@ components:
     Cart:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -8687,6 +8749,7 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
           readOnly: true
         item_count:
           type: integer
@@ -8711,8 +8774,12 @@ components:
     CartItem:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -9529,6 +9596,51 @@ components:
       required:
       - conversion_metrics
       - response_metrics
+    CurrencyRatesError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
+    CurrencyRatesResponse:
+      type: object
+      properties:
+        base:
+          type: string
+        source:
+          type: string
+        fetched_at:
+          type: string
+          nullable: true
+        stale:
+          type: boolean
+        rates:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+        symbols:
+          type: object
+          additionalProperties:
+            type: string
+        supported:
+          type: array
+          items:
+            type: string
+        conversion:
+          type: object
+          additionalProperties: {}
+          nullable: true
+      required:
+      - base
+      - conversion
+      - fetched_at
+      - rates
+      - source
+      - stale
+      - supported
+      - symbols
     CustomTokenObtainPairRequest:
       type: object
       description: Custom JWT token serializer with additional user data
@@ -9799,8 +9911,12 @@ components:
     EarningsSummary:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         total_revenue:
           type: string
@@ -10795,8 +10911,12 @@ components:
     ListingDetail:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -10974,8 +11094,12 @@ components:
     ListingDetailRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         title:
           type: string
@@ -11171,8 +11295,12 @@ components:
     ListingList:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -11617,8 +11745,12 @@ components:
     MyListing:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -11968,8 +12100,12 @@ components:
     Order:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -12042,6 +12178,11 @@ components:
         delivery_carrier:
           type: string
           maxLength: 100
+        expected_delivery_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date the seller expects the buyer to receive the item.
         carrier:
           type: string
           readOnly: true
@@ -12147,14 +12288,21 @@ components:
           type: string
         status:
           type: string
+        fulfilled:
+          type: boolean
       required:
+      - fulfilled
       - message
       - status
     OrderCreate:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         buyer:
           type: integer
@@ -12184,8 +12332,12 @@ components:
     OrderCreateRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         buyer:
           type: integer
@@ -12231,8 +12383,12 @@ components:
     OrderItem:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -12429,6 +12585,18 @@ components:
         tracking_id:
           type: string
           minLength: 1
+        expected_delivery_date:
+          type: string
+          format: date
+        delivery_address:
+          type: string
+          minLength: 1
+        delivery_contact_name:
+          type: string
+          minLength: 1
+        delivery_contact_phone:
+          type: string
+          minLength: 1
       required:
       - carrier
       - tracking_id
@@ -12489,8 +12657,12 @@ components:
     OrderTrackingDetail:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         order_id:
           type: integer
@@ -12534,9 +12706,22 @@ components:
           readOnly: true
         estimated_delivery:
           type: string
-          format: date-time
+          format: date
           nullable: true
           readOnly: true
+        expected_delivery_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date the seller expects the buyer to receive the item.
+        delivery_address:
+          type: string
+        delivery_contact_name:
+          type: string
+          maxLength: 100
+        delivery_contact_phone:
+          type: string
+          maxLength: 30
         dispute:
           allOf:
           - $ref: '#/components/schemas/OrderDispute'
@@ -12567,8 +12752,12 @@ components:
     OrderTrackingDetailRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         order_number:
           type: string
@@ -12593,6 +12782,19 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        expected_delivery_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date the seller expects the buyer to receive the item.
+        delivery_address:
+          type: string
+        delivery_contact_name:
+          type: string
+          maxLength: 100
+        delivery_contact_phone:
+          type: string
+          maxLength: 30
         tracking_id:
           type: string
           maxLength: 100
@@ -13813,8 +14015,12 @@ components:
     PatchedOrderTrackingDetailRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         order_number:
           type: string
@@ -13839,6 +14045,19 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        expected_delivery_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date the seller expects the buyer to receive the item.
+        delivery_address:
+          type: string
+        delivery_contact_name:
+          type: string
+          maxLength: 100
+        delivery_contact_phone:
+          type: string
+          maxLength: 30
         tracking_id:
           type: string
           maxLength: 100
@@ -13889,8 +14108,12 @@ components:
     PatchedQuoteRequestRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         listing:
           type: integer
@@ -13928,18 +14151,38 @@ components:
           description: Additional notes from the vendor to the buyer
     PatchedQuoteRequestVendorUpdateRequest:
       type: object
-      description: 'Vendor-only update: counter-offer price and notes.'
+      description: |-
+        Vendor-only update: counter-offer price and notes.
+
+        Adjustment amounts carry a currency. Send ``currency`` once for the whole
+        list, or ``currency`` on an individual adjustment to override it. The server
+        converts each amount into the quote's currency (the listing currency) and
+        keeps the number the vendor typed alongside it, so "100 Naira" can no longer
+        be stored as "100 Dollars".
+
+        If no currency is sent, amounts are treated as being in the currency the
+        caller is shown (their preferred currency), because that is the number the
+        seller typed. Older clients that never changed currency see the listing
+        currency and are unaffected.
       properties:
         adjustments:
           description: 'List of adjustments (name, amount, type: addition|subtraction)'
         vendor_notes:
           type: string
           description: Additional notes from the vendor to the buyer
+        currency:
+          type: string
+          writeOnly: true
+          minLength: 1
     PatchedShippingProfileRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         zone_name:
           type: string
@@ -14215,8 +14458,12 @@ components:
     Payout:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -14635,8 +14882,12 @@ components:
     QuoteRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -14819,8 +15070,12 @@ components:
     QuoteRequestRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         listing:
           type: integer
@@ -14871,15 +15126,6 @@ components:
         * `responded` - Responded
         * `cancelled` - Cancelled
         * `converted` - Converted to order
-    QuoteRequestVendorUpdate:
-      type: object
-      description: 'Vendor-only update: counter-offer price and notes.'
-      properties:
-        adjustments:
-          description: 'List of adjustments (name, amount, type: addition|subtraction)'
-        vendor_notes:
-          type: string
-          description: Additional notes from the vendor to the buyer
     QuoteSnippet:
       type: object
       description: Minimal quote data shown inside a quote message.
@@ -15399,8 +15645,12 @@ components:
     ShippingProfile:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -15444,8 +15694,12 @@ components:
     ShippingProfileRequest:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         zone_name:
           type: string
@@ -16030,8 +16284,12 @@ components:
     StoreListingMini:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -17131,8 +17389,12 @@ components:
     VendorEarning:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -17238,8 +17500,12 @@ components:
     VendorWallet:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer
@@ -17523,8 +17789,12 @@ components:
     WalletTransaction:
       type: object
       description: |-
-        Mixin for DRF Serializers to dynamically convert specified list of NGN monetary fields.
-        Appends root 'currency' and 'currency_symbol' context.
+        Convert declared monetary fields from their stored currency into the
+        caller's preferred currency.
+
+        The mixin never relabels an unconverted number. If a rate is unavailable,
+        every field is left in the stored currency and ``currency`` says so, with
+        ``conversion_error`` explaining why.
       properties:
         id:
           type: integer

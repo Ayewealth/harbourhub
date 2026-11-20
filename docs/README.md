@@ -116,8 +116,9 @@ python manage.py spectacular --file schema.yml --validate
 ## Conventions used in these documents
 
 - Money is written as a decimal string with two places, for example `"250000.00"`.
-- Amounts are stored in NGN. Display conversion is separate and never changes stored money; see
-  [`api/README.md`](api/README.md#money).
+- Amounts keep the currency of the record that owns them: listings carry `currency`, while orders
+  and payments are stored in NGN. Display conversion is separate and never changes stored money;
+  see [`api/README.md`](api/README.md#money).
 - Timestamps are ISO 8601 UTC.
 - `order_id` / `id` is the API key. `order_number` is display-only.
 - Identifiers in the examples come from the sample dataset or are illustrative; a real run

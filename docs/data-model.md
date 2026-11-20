@@ -107,7 +107,7 @@ listings. New stores default to `is_active=True`, `is_published=False`, `is_veri
 |---|---|---|
 | `QuoteRequest` | `listing`, `buyer`, `store`, `purchase_type`, `quantity`, `duration_days`, `adjustments`, `status` | Buyer asks for a price; vendor counters; buyer moves it to the cart. |
 | `CheckoutSession` | `buyer`, `total_amount`, `currency` | Groups every order created by one checkout and owns one payment. |
-| `Order` | `order_number` unique, `buyer`, `seller`, `store`, `checkout_session`, `subtotal`, `delivery_fee`, `commission_rate`, `commission_amount`, `total_amount`, `escrow_fee` (legacy), `status` | One vendor's order. One cart item produces one order. |
+| `Order` | `order_number` unique, `buyer`, `seller`, `store`, `checkout_session`, `subtotal`, `delivery_fee`, `commission_rate`, `commission_amount`, `total_amount`, `escrow_fee` (legacy), `status`, `tracking_id`, `delivery_carrier`, `expected_delivery_date`, `delivery_address`, `delivery_contact_name`, `delivery_contact_phone`, `delivered_at` | One vendor's order. One cart item produces one order. The seller may edit the delivery fields after dispatch. |
 | `OrderItem` | `order`, `listing`, `quote_request`, `purchase_type`, `unit_price`, `original_*`, `exchange_rate`, rental dates, `delivery_detail` | The priced line. |
 | `OrderActivity` | `order`, `event_type`, `message` | Append-only timeline shown to buyer, seller, and staff. |
 | `Cart` | `buyer` (1:1) | One active cart per buyer. |
@@ -261,6 +261,11 @@ For an order containing a hire/lease item, `order_fulfilled` is only allowed fro
 for a buy-only order, the hire states are removed from the table. All transitions go through
 `apps.commerce.services.orders.transition`, which raises `InvalidTransition` with
 `Cannot '{event}' an order in status '{status}'.` or `Unknown event '{event}'.`.
+
+`item_dispatched` and `in_transit` transition to `delivered` when the **buyer** confirms receipt,
+not only when the seller marks it. `buyer_confirm_receipt` records `delivered_at`, then runs
+`order_fulfilled` for a buy order. A rental stops at `delivered` because the return flow
+(`hire_started` → `hire_ended` → `item_returned` → `order_fulfilled`) still has to run.
 
 `order_cancelled` is only allowed from `draft`/`pending_payment`. A paid order is cancelled through
 the refund flow, which sets `cancelled` directly after the gateway confirms a full refund.

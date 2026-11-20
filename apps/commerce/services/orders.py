@@ -126,3 +126,50 @@ def _release_final_tranche(order):
     if remaining > Decimal("0.00"):
         release_earning(earning, remaining)
     return earning
+
+
+BUYER_RECEIPT_STATUSES = (
+    Order.Status.ITEM_DISPATCHED,
+    Order.Status.IN_TRANSIT,
+    Order.Status.DELIVERED,
+)
+
+
+@transaction.atomic
+def buyer_confirm_receipt(order, actor):
+    """The buyer confirms the item arrived.
+
+    A buyer could previously only confirm after the seller had separately
+    marked the order ``delivered``; from ``item_dispatched`` the call failed
+    with "Cannot 'order_fulfilled' an order in status 'item_dispatched'". The
+    buyer's confirmation now records delivery itself.
+
+    A buy order completes and releases the final tranche. A rental stops at
+    ``delivered`` because it still has to be returned before it can complete.
+    """
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if order.buyer_id != getattr(actor, "id", None):
+        raise InvalidTransition(
+            "Only the buyer can confirm receipt of this order."
+        )
+
+    if order.status not in BUYER_RECEIPT_STATUSES:
+        raise InvalidTransition(
+            "Cannot confirm receipt of an order in status "
+            f"'{order.status}'."
+        )
+
+    if order.status in (Order.Status.ITEM_DISPATCHED, Order.Status.IN_TRANSIT):
+        order.status = Order.Status.DELIVERED
+        order.delivered_at = timezone.now()
+        order.save(update_fields=["status", "delivered_at"])
+        OrderActivity.objects.create(
+            order=order,
+            event_type=OrderActivity.EventType.DELIVERED,
+            message="Buyer confirmed receipt of the item.",
+        )
+
+    if order.items.filter(purchase_type__in=RENTAL_TYPES).exists():
+        return order
+
+    return transition(order, "order_fulfilled", actor=actor)

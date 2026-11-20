@@ -1,10 +1,18 @@
 import uuid
+from decimal import Decimal, InvalidOperation
 
 from django.utils import timezone
 from rest_framework import serializers
 
 from drf_spectacular.utils import extend_schema_field, inline_serializer
-from apps.core.currency import CurrencyConverterMixin, convert_currency
+from apps.core.currency import (
+    CurrencyConverterMixin,
+    CurrencyRateUnavailable,
+    SUPPORTED_CURRENCIES,
+    UnsupportedCurrency,
+    convert_money,
+    get_preferred_currency,
+)
 from apps.listings.models import Listing
 
 from .models import Cart, CartItem, Order, OrderItem, OrderActivity, Payment, QuoteRequest
@@ -103,35 +111,177 @@ class QuoteRequestSerializer(CurrencyConverterMixin, serializers.ModelSerializer
 
     def to_representation(self, instance):
         ret = super().to_representation(instance)
-        
-        # Super handles monetary_fields and sets target currency
+
+        # ``super`` converted the headline amounts and set the display currency.
         target_curr = ret.get("currency", "USD")
-        
-        source_curr = "USD"
-        if hasattr(instance, "listing") and instance.listing:
-            source_curr = instance.listing.currency
-            
-        if "adjustments" in ret and ret["adjustments"]:
+        source_curr = (
+            (instance.listing.currency or "USD").upper()
+            if getattr(instance, "listing", None)
+            else "USD"
+        )
+
+        if ret.get("adjustments"):
             new_adjustments = []
             for adj in ret["adjustments"]:
-                if isinstance(adj, dict) and "amount" in adj:
-                    converted_amt, _ = convert_currency(adj["amount"], target_curr, source_currency=source_curr)
-                    adj_copy = dict(adj)
-                    adj_copy["amount"] = str(converted_amt)
-                    new_adjustments.append(adj_copy)
-                else:
+                if not isinstance(adj, dict) or "amount" not in adj:
                     new_adjustments.append(adj)
+                    continue
+                adj_copy = dict(adj)
+                try:
+                    adj_copy["amount"] = str(
+                        convert_money(adj["amount"], source_curr, target_curr)
+                    )
+                    adj_copy["currency"] = target_curr
+                except (
+                    CurrencyRateUnavailable,
+                    InvalidOperation,
+                    TypeError,
+                    ValueError,
+                ):
+                    # Keep the stored number and label it with its real
+                    # currency instead of mislabelling it.
+                    adj_copy["amount"] = str(adj["amount"])
+                    adj_copy["currency"] = source_curr
+                    ret["conversion_error"] = (
+                        "Exchange rates are unavailable; adjustments are "
+                        f"shown in {source_curr}."
+                    )
+                new_adjustments.append(adj_copy)
             ret["adjustments"] = new_adjustments
-            
+
         return ret
 
 
 class QuoteRequestVendorUpdateSerializer(serializers.ModelSerializer):
-    """Vendor-only update: counter-offer price and notes."""
+    """Vendor-only update: counter-offer price and notes.
+
+    Adjustment amounts carry a currency. Send ``currency`` once for the whole
+    list, or ``currency`` on an individual adjustment to override it. The server
+    converts each amount into the quote's currency (the listing currency) and
+    keeps the number the vendor typed alongside it, so "100 Naira" can no longer
+    be stored as "100 Dollars".
+
+    If no currency is sent, amounts are treated as being in the currency the
+    caller is shown (their preferred currency), because that is the number the
+    seller typed. Older clients that never changed currency see the listing
+    currency and are unaffected.
+    """
+
+    currency = serializers.CharField(
+        write_only=True, required=False, allow_blank=False
+    )
 
     class Meta:
         model = QuoteRequest
-        fields = ("adjustments", "vendor_notes")
+        fields = ("adjustments", "vendor_notes", "currency")
+
+    def validate(self, attrs):
+        adjustments = attrs.get("adjustments")
+        if adjustments is None:
+            return attrs
+
+        if not isinstance(adjustments, list):
+            raise serializers.ValidationError(
+                {"adjustments": "Expected a list of adjustments."}
+            )
+
+        quote_currency = (
+            (self.instance.listing.currency or "NGN").upper().strip()
+        )
+        request = self.context.get("request")
+        requested_currency = attrs.pop("currency", None)
+        typed_default_currency = (
+            requested_currency
+            or (get_preferred_currency(request) if request else None)
+            or quote_currency
+        ).upper().strip()
+        if typed_default_currency not in SUPPORTED_CURRENCIES:
+            raise serializers.ValidationError(
+                {"currency": f"Unsupported currency: {typed_default_currency}."}
+            )
+
+        # A client that round-trips the stored list unchanged sends stored
+        # amounts (already in the quote currency) without a currency field.
+        # Those must not be converted a second time.
+        stored_signatures = set()
+        for stored in self.instance.adjustments or []:
+            if isinstance(stored, dict):
+                stored_signatures.add(
+                    (
+                        stored.get("name"),
+                        stored.get("type"),
+                        str(stored.get("amount")),
+                    )
+                )
+
+        normalised = []
+        for index, adjustment in enumerate(adjustments):
+            if not isinstance(adjustment, dict):
+                raise serializers.ValidationError(
+                    {"adjustments": f"Adjustment {index} must be an object."}
+                )
+
+            raw_amount = adjustment.get("amount")
+            if raw_amount in (None, ""):
+                raise serializers.ValidationError(
+                    {"adjustments": f"Adjustment {index} has no amount."}
+                )
+            try:
+                amount = Decimal(str(raw_amount))
+            except (InvalidOperation, TypeError, ValueError):
+                raise serializers.ValidationError(
+                    {"adjustments": f"Adjustment {index} amount is not a number."}
+                )
+            if amount < 0:
+                raise serializers.ValidationError(
+                    {"adjustments": f"Adjustment {index} amount cannot be negative."}
+                )
+
+            explicit_currency = (
+                adjustment.get("currency") or requested_currency
+            )
+            if explicit_currency:
+                entry_currency = explicit_currency.upper().strip()
+            else:
+                signature = (
+                    adjustment.get("name"),
+                    adjustment.get("type"),
+                    str(raw_amount),
+                )
+                entry_currency = (
+                    quote_currency
+                    if signature in stored_signatures
+                    else typed_default_currency
+                )
+            if entry_currency not in SUPPORTED_CURRENCIES:
+                raise serializers.ValidationError(
+                    {"adjustments": f"Adjustment {index} has an unsupported currency."}
+                )
+
+            try:
+                # Keep more precision than cents: this value is converted again
+                # when the buyer checks out, so 2dp here would compound error.
+                converted = convert_money(
+                    amount, entry_currency, quote_currency, decimals=6
+                )
+            except (UnsupportedCurrency, CurrencyRateUnavailable) as exc:
+                raise serializers.ValidationError(
+                    {"adjustments": f"Adjustment {index}: {exc}"}
+                )
+
+            item = dict(adjustment)
+            item["amount"] = str(converted)
+            item.pop("currency", None)
+            if entry_currency != quote_currency:
+                item["entered_amount"] = str(amount)
+                item["entered_currency"] = entry_currency
+            else:
+                item.pop("entered_amount", None)
+                item.pop("entered_currency", None)
+            normalised.append(item)
+
+        attrs["adjustments"] = normalised
+        return attrs
 
 
 class OrderActivitySerializer(serializers.ModelSerializer):
@@ -236,6 +386,7 @@ class OrderSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
             "delivery_contact_name",
             "delivery_contact_phone",
             "delivery_carrier",
+            "expected_delivery_date",
             "carrier",
             "order_items",
             "activities",
@@ -390,16 +541,45 @@ class CartItemCreateSerializer(serializers.ModelSerializer):
 
 
 class CartSerializer(CurrencyConverterMixin, serializers.ModelSerializer):
-    monetary_fields = ["total"]
-
     items = CartItemSerializer(many=True, read_only=True)
-    total = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True)
+    total = serializers.SerializerMethodField()
     item_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Cart
         fields = ('id', 'items', 'total', 'item_count', 'updated_at')
+
+    @extend_schema_field(serializers.DecimalField(
+        max_digits=14, decimal_places=2, allow_null=True))
+    def get_total(self, obj):
+        """Sum the cart in one currency.
+
+        A cart can hold listings priced in different currencies; adding those
+        raw numbers would be meaningless. Each line is converted from its
+        listing currency into the caller's preferred currency.
+        """
+        request = self.context.get("request")
+        target = get_preferred_currency(request)
+        total = Decimal("0")
+        for item in obj.items.all():
+            source = (item.listing.currency or "USD").upper().strip()
+            try:
+                total += convert_money(item.subtotal, source, target)
+            except (CurrencyRateUnavailable, InvalidOperation, TypeError, ValueError):
+                return None
+        return total
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        # ``total`` is already summed in the display currency, so its own
+        # source currency is the same one it is displayed in.
+        ret["source_currency"] = ret.get("currency")
+        if ret.get("total") is None:
+            ret["conversion_error"] = (
+                "Exchange rates are unavailable; the cart total cannot be "
+                "shown in a single currency."
+            )
+        return ret
 
 
 class CheckoutSerializer(serializers.Serializer):
@@ -579,6 +759,10 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
             "escrow_fee",
             "created_at",
             "estimated_delivery",
+            "expected_delivery_date",
+            "delivery_address",
+            "delivery_contact_name",
+            "delivery_contact_phone",
             "dispute",
             "timeline",
             "tracking_id",
@@ -625,11 +809,14 @@ class OrderTrackingDetailSerializer(CurrencyConverterMixin, serializers.ModelSer
             activities[-1].is_current = True
         return OrderTrackingTimelineSerializer(activities, many=True).data
 
-    @extend_schema_field(serializers.DateTimeField(allow_null=True))
+    @extend_schema_field(serializers.DateField(allow_null=True))
     def get_estimated_delivery(self, obj):
+        """The seller's expected date when set, otherwise a 7-day estimate."""
         from datetime import timedelta
+        if obj.expected_delivery_date:
+            return obj.expected_delivery_date
         if obj.created_at:
-            return obj.created_at + timedelta(days=7)
+            return (obj.created_at + timedelta(days=7)).date()
         return None
 
 
