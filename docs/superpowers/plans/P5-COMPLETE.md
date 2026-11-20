@@ -112,6 +112,38 @@ These behaviours are covered by tests and do not need a live third-party account
 
 ---
 
+## Money and order-state fixes (2026-11-20)
+
+Deployed `d8b3a2b` with migration `commerce.0015_order_expected_delivery_date` applied. The four
+services restarted and stayed active. Verified live:
+
+- `GET /currency/rates/?from=NGN&to=USD&amount=150000` returns a fresh
+  `source: "open.er-api.com"`, `stale: false` snapshot and a `conversion` result, so the client and
+  the server now read the same numbers.
+- `/listings/`, `/platform-config/`, and `/commerce/quotes/` respond as before (`200`/`401`), and
+  the web and worker journals have no warnings since the restart.
+- All 321 tests pass locally, including the new money, tracking, receipt, and Paystack-limit
+  cases, and `manage.py check`, `makemigrations --check`, the flake8 F gate, and schema validation
+  are clean.
+
+Not yet exercised against real production data:
+
+- Buying an order through `confirm-receipt` from `item_dispatched`/`in_transit` (covered by tests;
+  no live order was changed).
+- A seller PATCH containing all four new delivery fields (covered by tests; no live order was
+  changed).
+- A checkout above `PAYSTACK_MAX_TRANSACTION_NGN` being refused by the live gateway path. The
+  guard is proven before order creation in tests; the live refusal was not provoked because it
+  would require a real high-value checkout.
+- Historical quotes are not rewritten. Some July/August test quotes were created when the same
+  listings were priced in NGN and later switched to USD, so their stored `standard_price` reflects
+  the old listing currency. They belong to the owner's test accounts and the `@yopmail.com` test
+  buyer. The one non-test buyer (`victoremeka788@gmail.com`) has a cancelled quote whose shipping
+  figure may have been typed in NGN, but nothing was charged from it; the other quote became an
+  order with zero shipping, so its amounts are unaffected.
+
+---
+
 ## Requires staging or a real customer transaction
 
 The following need a real third-party event and could not be proven without one:
