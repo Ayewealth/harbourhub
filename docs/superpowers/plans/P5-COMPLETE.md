@@ -240,6 +240,31 @@ verification, and ledger write are proven by the signed self-test.
   check now applies only to ID tokens, the audience check accepts `aud`, `audience`, or `issued_to`,
   `azp` is checked when present, and the verified-email check accepts `email_verified` or the legacy
   `verified_email`. Covered by `tests/test_social_auth.py`.
+- **Payout safety and the admin payout list (2026-11-21).** `a59d90f` deployed the payout fixes and
+  `0d93c2f` fixed null bank fields in the admin list. Migrations `notifications.0005` and
+  `admin_panel.0011` are applied.
+  - `POST /financials/payouts/` resolves the supplied bank account or the vendor's default and
+    returns `400` before writing any payout or wallet row when neither exists, or when the amount
+    exceeds `available_balance`.
+  - An immediate `process_payout_task` failure now calls `fail_payout` instead of only marking the
+    row failed. Transfers are not retried automatically (a timed-out request may already be
+    accepted). `fail_payout` is idempotent, and a reversal after `paid` unwinds
+    `total_withdrawn`/`paid_out_amount`; a late success after `failed` re-debits before settling.
+  - `GET /admin-panel/payments/payouts/` exposes vendor/store identity, bank details, amount,
+    currency, status, `failure_reason`, reference, receipt, and timestamps, with `status`, `vendor`,
+    `store`, `date_from`, `date_to`, and search filters. Admin in-app/email/push notifications fire
+    on payout request and failure.
+  - Live repair: failed payout #1 (`PO-807CDDDC6227`, OceanRig Energy Solutions Ltd, store 11) had
+    no bank account and the pre-fix task left it failed without a refund. Restored NGN 1,027.61 to
+    wallet 11 (`WalletTransaction` #4, `refund`), cleared its allocation, returned earning #1 to
+    `available`, and recorded `AdminActionLog` #29 (`payout_restored`). No other payout had an
+    unrefunded failure and no data was reset.
+  - Verified live after the restart: HEAD `0d93c2f`, all four services active, worker `ping` OK,
+    `nginx -t` OK, `/listings/`, `/platform-config/`, `/currency/rates/`, `/api/schema/`, and
+    `/api/docs/` return `200`; the admin payout list returns `200` with explicit `null` bank fields;
+    a no-bank payout request returns `400` with $0 balance change and no payout row.
+  - Not live-proven: a real `transfer.failed`/`transfer.reversed` webhook and admin email/push
+    delivery. Those paths are covered by tests only.
 
 ---
 
