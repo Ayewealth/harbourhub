@@ -155,7 +155,7 @@ class PayoutListCreateView(generics.ListCreateAPIView):
         from .services import allocate_payout
 
         user = self.request.user
-        amount = Decimal(str(self.request.data.get('amount', 0)))
+        amount = serializer.validated_data['amount']
         if amount <= 0:
             raise ValidationError(
                 {'amount': 'Amount must be greater than zero.'})
@@ -166,10 +166,13 @@ class PayoutListCreateView(generics.ListCreateAPIView):
                 raise ValidationError(
                     {'store': 'No store is associated with this account.'})
 
-            wallet = wallet_for_store(store, user=user, lock=True)
-            if wallet.available_balance < amount:
+            # Lock without creating: a missing wallet means zero balance.
+            wallet = VendorWallet.objects.select_for_update().filter(
+                store=store).first()
+            if wallet is None or wallet.available_balance < amount:
+                available = wallet.available_balance if wallet else Decimal('0.00')
                 raise ValidationError(
-                    {'amount': 'Insufficient available balance.'})
+                    f"Insufficient balance. Available: {available}")
 
             payout = serializer.save(
                 vendor=user,
@@ -177,7 +180,15 @@ class PayoutListCreateView(generics.ListCreateAPIView):
                 amount=amount,
                 reference=f"PO-{uuid.uuid4().hex[:12].upper()}",
             )
-            allocate_payout(payout)
+            try:
+                allocate_payout(payout)
+            except ValueError:
+                raise ValidationError({
+                    'amount': (
+                        'This payout cannot be covered by released earnings. '
+                        'Refresh the wallet and try again.'
+                    )
+                })
 
             VendorWallet.objects.filter(pk=wallet.pk).update(
                 available_balance=F('available_balance') - amount
@@ -191,6 +202,8 @@ class PayoutListCreateView(generics.ListCreateAPIView):
             )
 
         # Trigger async transfer
+        from apps.notifications.utils import notify_admin_payout_requested
+        notify_admin_payout_requested(payout)
         process_payout_task.delay(payout.id)
 
 

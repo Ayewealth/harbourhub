@@ -205,10 +205,14 @@ These are the rules a migration, serializer, view, or task must not break.
 12. **One wallet per store.** `VendorWallet.store` is `OneToOneField`; every write resolves the
     wallet by store. `pending_balance + available_balance` equals the unreversed net of the store's
     earnings (before payouts).
-13. **Payouts reserve, then settle or re-credit.** Creating a payout deducts
-    `available_balance` and FIFO-allocates released earnings through `PayoutAllocation`. A successful
-    transfer (`settle_payout`) adds to `total_withdrawn` and `paid_out_amount`. A failed transfer
-    (`fail_payout`) deletes the allocations and re-credits the wallet.
+13. **Payouts reserve, then settle or re-credit.** Creating a payout requires a resolved bank
+    account (supplied or the vendor's default) and `available_balance >= amount`; both checks run
+    before any wallet row is written. The request deducts `available_balance` and FIFO-allocates
+    released earnings through `PayoutAllocation`. A successful transfer (`settle_payout`) adds to
+    `total_withdrawn` and `paid_out_amount`. A failed transfer (`fail_payout`) is idempotent: it
+    deletes the allocations and re-credits the wallet exactly once, whether the failure came from the
+    task or from `transfer.failed`/`transfer.reversed`. Reversal after settlement also unwinds
+    `total_withdrawn` and `paid_out_amount`.
 14. **Refunds reverse earnings, never the platform fee only.** `finalize_refund` reverses the earning
     proportionally, marks the payment `refunded`/`partially_refunded`, and cancels the order only on a
     full refund. Wallet balances may go negative on purpose when money was already withdrawn.
@@ -344,10 +348,15 @@ any state ──refund reverses all net──► reversed
 ```
 requested ──process_payout_task accepts transfer──► processing ──transfer.success──► paid
 requested / processing ──transfer.failed / exception──► failed
+paid ──transfer.reversed──► failed (settlement unwound)
 requested / processing ──admin freeze──► frozen ──admin unfreeze──► requested
+failed ──late transfer.success──► paid (wallet re-debited first)
 ```
 
-`paid` and `failed` are terminal. `fail_payout` re-credits the wallet and removes allocations.
+`failed` is terminal for duplicate failure events: `fail_payout` returns without
+crediting again. A paid payout reversed by the gateway is unwound rather than
+left `paid`, because the vendor did not keep the money. `fail_payout` re-credits
+the wallet, removes allocations, and writes one `refund` wallet transaction.
 
 ### WebhookEvent
 

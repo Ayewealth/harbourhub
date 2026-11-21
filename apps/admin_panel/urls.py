@@ -9,6 +9,7 @@ from .views import (
     AdminListingListView,
     AdminListingActionView,
     AdminPaymentListView,
+    AdminPayoutListView,
     AdminMarkPayoutPaidView,
     AdminActivityViewSet,
     AdminOrderViewSet,
@@ -70,6 +71,7 @@ urlpatterns = router.urls + [
     # Payments
     path('payments/', AdminPaymentListView.as_view()),
     path('payments/stats/', AdminPaymentStatsView.as_view()),
+    path('payments/payouts/', AdminPayoutListView.as_view()),
     path('payments/payouts/<int:pk>/mark-paid/',
          AdminMarkPayoutPaidView.as_view()),
 

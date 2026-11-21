@@ -128,6 +128,45 @@ class AdminOrderListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class AdminPayoutSerializer(serializers.ModelSerializer):
+    """Payout row for the admin payments screen."""
+
+    vendor_id = serializers.IntegerField(read_only=True)
+    vendor_name = serializers.CharField(
+        source='vendor.full_name', read_only=True)
+    vendor_email = serializers.EmailField(
+        source='vendor.email', read_only=True)
+    store_id = serializers.IntegerField(read_only=True)
+    store_name = serializers.CharField(
+        source='store.name', read_only=True)
+    store_slug = serializers.CharField(
+        source='store.slug', read_only=True)
+    bank_account_name = serializers.CharField(
+        source='bank_account.account_name', read_only=True)
+    bank_account_number = serializers.CharField(
+        source='bank_account.account_number', read_only=True)
+    bank_name = serializers.CharField(
+        source='bank_account.bank_name', read_only=True)
+    bank_code = serializers.CharField(
+        source='bank_account.bank_code', read_only=True)
+    status_display = serializers.CharField(
+        source='get_status_display', read_only=True)
+
+    class Meta:
+        from apps.financials.models import Payout
+        model = Payout
+        fields = (
+            'id', 'vendor_id', 'vendor_name', 'vendor_email',
+            'store_id', 'store_name', 'store_slug',
+            'amount', 'currency', 'status', 'status_display',
+            'bank_account_name', 'bank_account_number',
+            'bank_name', 'bank_code', 'reference',
+            'failure_reason', 'receipt_url', 'processed_at',
+            'created_at', 'updated_at',
+        )
+        read_only_fields = fields
+
+
 class AdminActionLogSerializer(serializers.ModelSerializer):
     admin_user_email = serializers.EmailField(
         source='admin_user.email', read_only=True)

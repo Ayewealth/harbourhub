@@ -35,6 +35,10 @@ class Notification(models.Model):
         PAYMENT_FAILED = 'payment_failed', _('Payment Failed')
         PAYOUT_PROCESSED = 'payout_processed', _('Payout Processed')
         PAYOUT_FAILED = 'payout_failed', _('Payout Failed')
+        ADMIN_PAYOUT_REQUESTED = 'admin_payout_requested', _(
+            'Admin: Payout Requested')
+        ADMIN_PAYOUT_FAILED = 'admin_payout_failed', _(
+            'Admin: Payout Failed')
 
         # Store / Listings
         LISTING_APPROVED = 'listing_approved', _('Listing Approved')

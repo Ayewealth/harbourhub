@@ -1798,12 +1798,15 @@ The create serializer returns only those two fields. Fetch
 
 The request:
 
-1. Locks the store wallet.
-2. Checks `available_balance >= amount`.
+1. Resolves the destination: the supplied `bank_account` (ownership checked)
+   or the vendor's default bank account. No account or no default returns `400`
+   before any wallet row is touched.
+2. Locks the store wallet and re-checks `available_balance >= amount`.
 3. Creates a `requested` payout with reference `PO-…`.
 4. FIFO-allocates released earnings to it.
 5. Decrements `available_balance` and writes a `payout` wallet transaction.
 6. Queues `process_payout_task`, which creates a Paystack recipient and transfer.
+7. Notifies finance admins in-app, by email, and by push.
 
 Insufficient balance (checked by the serializer before the view runs):
 
@@ -1819,10 +1822,14 @@ Zero or negative:
 { "amount": ["Amount must be greater than zero."] }
 ```
 
-No wallet for the account:
+No bank account supplied and no default:
 
 ```json
-{ "non_field_errors": ["Wallet not found."] }
+{
+  "bank_account": [
+    "A bank account is required. Supply bank_account or set a default bank account."
+  ]
+}
 ```
 
 Another user's bank account:
@@ -1867,10 +1874,34 @@ Failure or reversal:
 ```
 
 The payout becomes `failed`, its allocations are removed, and the amount is
-re-credited to `available_balance`.
+re-credited to `available_balance` with a `refund` wallet transaction. The same
+happens when `process_payout_task` fails before or during the transfer; it does
+not retry automatically because a timed-out request may have been accepted.
+`fail_payout` is idempotent: a duplicate webhook or task run cannot credit twice.
+
+A `transfer.reversed` event after the payout was already `paid` is treated as a
+failure. The wallet is re-credited, `total_withdrawn`, `paid_out_amount`, and
+the earning status are unwound, so the vendor can request the funds again.
+
+If a `transfer.success` arrives after the payout was marked `failed` (a late
+gateway acceptance), the restored amount is debited again before settlement so
+the vendor cannot withdraw the same money twice.
 
 An unknown payout reference is ignored (recorded as `ignored`) and still
 returns `{"status": "ok"}`.
+
+### 8.4 Admin payout list
+
+`GET /admin-panel/payments/payouts/` requires the payments/finance dashboard
+module. Rows include vendor and store identity (id, name, email, slug), the
+destination bank details (account name, number, bank name, bank code), amount,
+currency, status, `failure_reason`, `reference`, `receipt_url`, `processed_at`,
+and timestamps.
+
+Filters: `status`, `vendor` (id), `store` (id), `date_from`, `date_to` on
+`created_at`, plus `search` across reference, vendor email/name, store
+name/slug, bank account name/number/bank name, and `failure_reason`. Ordering:
+`created_at`, `amount`, `status`, `processed_at`.
 
 ---
 

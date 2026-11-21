@@ -385,10 +385,11 @@ Checkout takes no delivery address: each cart item carries its own `delivery_det
 | `400` | `validation` | `Account number must be 10 digits.` | Wrong length. |
 | `400` | `validation` | `Bank account does not belong to you.` | Payout to another user's bank account. |
 | `400` | `validation` | `Amount must be greater than zero.` | Zero/negative payout. |
-| `400` | `validation` | `Wallet not found.` | User without a store wallet. |
+| `400` | `validation[bank_account]` | `A bank account is required. Supply bank_account or set a default bank account.` | No `bank_account` supplied and the vendor has no default. |
 | `400` | `validation[store]` | `No store is associated with this account.` | Payout without a store. |
 | `400` | `validation` | `Insufficient balance. Available: {available}` | Payout amount above the wallet balance (serializer guard). |
-| `400` | `validation[amount]` | `Insufficient available balance.` | Balance changed between validation and creation (race guard). |
+| `400` | `validation` | `Insufficient balance. Available: {available}` | Balance changed between validation and creation (locked re-check). |
+| `400` | `validation[amount]` | `This payout cannot be covered by released earnings. Refresh the wallet and try again.` | Released earnings no longer cover the reserved amount. |
 
 ---
 

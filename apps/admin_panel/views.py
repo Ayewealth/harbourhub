@@ -23,6 +23,7 @@ from .serializers import (
 from .permissions import IsDashboardStaff
 from .auth import has_admin_module_permission, HasAdminModulePermission
 from .constants import AdminModule
+from .filters import AdminPayoutFilter
 from .tasks import send_verification_decision_email
 
 from apps.accounts.models import VerificationRequest
@@ -581,6 +582,36 @@ class AdminPaymentListView(generics.ListAPIView):
     def list(self, request, *args, **kwargs):
         # The summary stats are now in a dedicated /stats/ endpoint.
         return super().list(request, *args, **kwargs)
+
+
+class AdminPayoutListView(generics.ListAPIView):
+    """Admin view of vendor payout requests and their outcomes."""
+
+    permission_classes = [IsDashboardStaff, HasAdminModulePermission]
+    admin_module = AdminModule.PAYMENTS_FINANCE
+    admin_require_manage = False
+    filter_backends = [
+        DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter
+    ]
+    search_fields = [
+        'reference', 'vendor__email', 'vendor__full_name',
+        'store__name', 'store__slug',
+        'bank_account__account_name', 'bank_account__account_number',
+        'bank_account__bank_name', 'failure_reason',
+    ]
+    ordering_fields = ['created_at', 'amount', 'status', 'processed_at']
+    ordering = ['-created_at']
+    filterset_class = AdminPayoutFilter
+
+    def get_serializer_class(self):
+        from .serializers import AdminPayoutSerializer
+        return AdminPayoutSerializer
+
+    def get_queryset(self):
+        from apps.financials.models import Payout
+        return Payout.objects.select_related(
+            'vendor', 'store', 'bank_account'
+        ).order_by('-created_at')
 
 
 class AdminPaymentStatsView(APIView):

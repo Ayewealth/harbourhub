@@ -4,7 +4,7 @@
 >
 > Regenerate with `python manage.py spectacular --file schema.yml` then `python scripts/generate_api_reference.py`.
 
-**205 paths · 273 operations.**
+**206 paths · 274 operations.**
 
 `Auth` is `Public` when the operation needs no token; otherwise it names the required scheme (`Bearer JWT`). A token sent to a public read is only used where it changes the result (for example, a listing detail or search history).
 
@@ -21,7 +21,7 @@
 - [Conversations and messages](#messages) (8 operations)
 - [Listing inquiries](#inquiries) (10 operations)
 - [Listing and store reviews](#reviews) (12 operations)
-- [Staff dashboard](#admin-panel) (50 operations)
+- [Staff dashboard](#admin-panel) (51 operations)
 - [Analytics and exports](#analytics) (8 operations)
 - [Compliance documents](#compliance) (7 operations)
 - [Support tickets](#support) (6 operations)
@@ -335,6 +335,7 @@
 | GET | `/admin-panel/orders/{id}/` | `admin_panel_orders_retrieve` | Admin view of all platform orders. | Bearer JWT | — | 200 | — |
 | GET | `/admin-panel/orders/{pk_or_num}/tracking/` | `admin_panel_orders_tracking_retrieve` | Admin-only order tracking detail view with escrow and dispute highlights. | Bearer JWT | — | 200 | — |
 | GET | `/admin-panel/payments/` | `admin_panel_payments_list` | Admin view of all payments/transactions. | Bearer JWT | — | 200 | — |
+| GET | `/admin-panel/payments/payouts/` | `admin_panel_payments_payouts_list` | Admin view of vendor payout requests and their outcomes. | Bearer JWT | — | 200 | — |
 | POST | `/admin-panel/payments/payouts/{id}/mark-paid/` | `admin_panel_payments_payouts_mark_paid_create` | Admin manually marks a payout as paid. | Bearer JWT | — | 200 | 400 |
 | GET | `/admin-panel/payments/stats/` | `admin_panel_payments_stats_retrieve` | Payment statistics for dashboard cards | Bearer JWT | — | 200 | — |
 | GET | `/admin-panel/reports/` | `admin_panel_reports_list` | List all reported content (admin only) | Bearer JWT | — | 200 | — |

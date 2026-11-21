@@ -171,6 +171,9 @@ class AdminActionLog(models.Model):
         VERIFICATION_REJECTED = 'verification_rejected', _(
             'Verification Rejected')
 
+        # Payments
+        PAYOUT_RESTORED = 'payout_restored', _('Payout Funds Restored')
+
     admin_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action_type = models.CharField(
         max_length=50, choices=ActionType.choices)

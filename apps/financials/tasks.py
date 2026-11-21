@@ -6,10 +6,17 @@ from apps.notifications.utils import notify_payout_failed, notify_payout_process
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
-def process_payout_task(self, payout_id):
-    """Initiate Paystack transfer for a payout request."""
+@shared_task
+def process_payout_task(payout_id):
+    """Initiate the Paystack transfer for a payout.
+
+    A transfer is never retried automatically: a timed-out request may still
+    have been accepted by the gateway, and retrying could pay twice. Any
+    failure marks the payout failed and restores the reserved wallet amount.
+    """
     from .models import Payout
+    from .services import fail_payout
+
     try:
         payout = Payout.objects.select_related(
             'bank_account', 'vendor'
@@ -17,7 +24,13 @@ def process_payout_task(self, payout_id):
     except Payout.DoesNotExist:
         return
 
-    if payout.status == Payout.Status.FROZEN:
+    if payout.status != Payout.Status.REQUESTED:
+        return
+
+    if payout.bank_account_id is None:
+        fail_payout(payout, 'No bank account is attached to this payout.')
+        payout.refresh_from_db()
+        notify_payout_failed(payout)
         return
 
     try:
@@ -64,21 +77,19 @@ def process_payout_task(self, payout_id):
         )
         transfer_data = transfer_response.json()
 
-        if transfer_data.get('status'):
-            payout.status = Payout.Status.PROCESSING
-            notify_payout_processed(payout)
-            payout.save(update_fields=['status'])
-        else:
+        if not transfer_data.get('status'):
             raise Exception(f"Transfer failed: {transfer_data}")
+
+        payout.status = Payout.Status.PROCESSING
+        payout.save(update_fields=['status'])
+        notify_payout_processed(payout)
 
     except Exception as exc:
         logger.exception("process_payout_task failed for payout %s: %s",
                          payout_id, exc)
-        payout.status = Payout.Status.FAILED
+        fail_payout(payout, str(exc))
+        payout.refresh_from_db()
         notify_payout_failed(payout)
-        payout.failure_reason = str(exc)
-        payout.save(update_fields=['status', 'failure_reason'])
-        raise self.retry(exc=exc, countdown=60)
 
 
 @shared_task

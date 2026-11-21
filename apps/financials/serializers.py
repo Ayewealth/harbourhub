@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from .models import BankAccount, VendorEarning, Payout, VendorWallet, WalletTransaction
@@ -107,13 +109,32 @@ class PayoutCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         user = self.context['request'].user
         store = getattr(user, 'store', None)
-        wallet = VendorWallet.objects.filter(user=user, store=store).first()
-        if wallet is None:
-            raise serializers.ValidationError("Wallet not found.")
-
-        if attrs['amount'] > wallet.available_balance:
+        if store is None:
             raise serializers.ValidationError(
-                f"Insufficient balance. Available: {wallet.available_balance}")
+                {'store': 'No store is associated with this account.'})
+
+        # Resolve the destination before any wallet movement. A caller may
+        # omit ``bank_account`` only when the vendor has a default account.
+        bank_account = attrs.get('bank_account')
+        if bank_account is None:
+            bank_account = BankAccount.objects.filter(
+                user=user, is_default=True
+            ).order_by('-created_at').first()
+        if bank_account is None:
+            raise serializers.ValidationError({
+                'bank_account': (
+                    'A bank account is required. Supply bank_account or set '
+                    'a default bank account.'
+                )
+            })
+        attrs['bank_account'] = bank_account
+
+        # Reads only; the view re-checks under a row lock before debiting.
+        wallet = VendorWallet.objects.filter(store=store).first()
+        available = wallet.available_balance if wallet else Decimal('0.00')
+        if attrs['amount'] > available:
+            raise serializers.ValidationError(
+                f"Insufficient balance. Available: {available}")
         return attrs
 
 

@@ -321,11 +321,40 @@ def allocate_payout(payout):
 @transaction.atomic
 def settle_payout(payout):
     """Mark a payout paid and settle only its allocations."""
-    from .models import Payout, VendorEarning
+    from .models import Payout, VendorEarning, VendorWallet, WalletTransaction
 
     payout = Payout.objects.select_for_update().get(pk=payout.pk)
     if payout.status == Payout.Status.PAID:
         return payout
+
+    if payout.status == Payout.Status.FAILED:
+        # A late ``transfer.success`` after we refunded means the money did
+        # leave. Re-debit the restored amount so the vendor cannot withdraw
+        # it twice, then re-reserve whatever released earnings are still free.
+        wallet = wallet_for_store(
+            payout.store, user=payout.vendor,
+            currency=payout.currency, lock=True)
+        VendorWallet.objects.filter(pk=wallet.pk).update(
+            available_balance=F('available_balance') - payout.amount)
+        WalletTransaction.objects.create(
+            wallet=wallet,
+            transaction_type=WalletTransaction.Type.PAYOUT,
+            amount=-payout.amount,
+            description=(
+                f'Late transfer success re-debit for payout '
+                f'{payout.reference}'
+            ),
+            reference_id=str(payout.pk),
+        )
+        try:
+            allocate_payout(payout)
+        except ValueError:
+            logger.error(
+                "Payout %s succeeded after failure but could not be "
+                "re-allocated; wallet was debited, manual review needed.",
+                payout.pk,
+            )
+        payout.refresh_from_db()
 
     for allocation in payout.allocations.select_related('earning'):
         earning = VendorEarning.objects.select_for_update().get(
@@ -355,29 +384,56 @@ def settle_payout(payout):
 
 @transaction.atomic
 def fail_payout(payout, reason: str):
-    """Reverse allocations and re-credit the reserved amount."""
+    """Mark a payout failed and restore exactly the amount it reserved.
+
+    Idempotent: a payout that is already failed is left untouched. A payout
+    that had already settled is unwound (``paid_out_amount`` and
+    ``total_withdrawn`` roll back) because a gateway reversal after success
+    means the vendor never actually received the money.
+    """
     from .models import Payout, VendorEarning, VendorWallet, WalletTransaction
 
     payout = Payout.objects.select_for_update().get(pk=payout.pk)
-    if payout.status in (Payout.Status.FAILED, Payout.Status.PAID):
+    if payout.status == Payout.Status.FAILED:
         return payout
+
+    was_paid = payout.status == Payout.Status.PAID
 
     wallet = wallet_for_store(
         payout.store, user=payout.vendor, currency=payout.currency, lock=True)
+    if wallet is None:
+        logger.warning(
+            "Cannot reverse payout %s: store has no wallet", payout.pk)
+        return payout
+
     VendorWallet.objects.filter(pk=wallet.pk).update(
         available_balance=F('available_balance') + payout.amount
     )
+    if was_paid:
+        # ``settle_payout`` counted this amount as withdrawn; it was returned.
+        VendorWallet.objects.filter(pk=wallet.pk).update(
+            total_withdrawn=F('total_withdrawn') - payout.amount
+        )
 
     for allocation in payout.allocations.select_related('earning'):
         earning = VendorEarning.objects.select_for_update().get(
             pk=allocation.earning_id)
-        if earning.status == VendorEarning.Status.PROCESSING:
-            earning.status = (
-                VendorEarning.Status.AVAILABLE
-                if earning.released_amount >= earning.net_amount
-                else VendorEarning.Status.PARTIALLY_RELEASED
-            )
-            earning.save(update_fields=['status'])
+        if was_paid:
+            earning.paid_out_amount = max(
+                money(earning.paid_out_amount - allocation.amount), ZERO)
+        if earning.status in (
+            VendorEarning.Status.PROCESSING,
+            VendorEarning.Status.PAID_OUT,
+        ) or was_paid:
+            if earning.paid_out_amount >= earning.net_amount:
+                earning.status = VendorEarning.Status.PAID_OUT
+            elif earning.released_amount >= earning.net_amount:
+                earning.status = VendorEarning.Status.AVAILABLE
+            elif earning.released_amount > ZERO:
+                earning.status = VendorEarning.Status.PARTIALLY_RELEASED
+            else:
+                earning.status = VendorEarning.Status.PENDING
+            earning.save(update_fields=['paid_out_amount', 'status'])
 
     payout.allocations.all().delete()
     payout.status = Payout.Status.FAILED
@@ -388,7 +444,13 @@ def fail_payout(payout, reason: str):
         wallet=wallet,
         transaction_type=WalletTransaction.Type.REFUND,
         amount=payout.amount,
-        description=f'Re-credited failed payout {payout.reference}',
+        description=(
+            f'Re-credited {"reversed " if was_paid else ""}failed payout '
+            f'{payout.reference}: {reason}'
+        ),
         reference_id=str(payout.pk),
     )
+
+    from apps.notifications.utils import notify_admin_payout_failed
+    notify_admin_payout_failed(payout)
     return payout

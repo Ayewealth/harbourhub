@@ -23,6 +23,8 @@ CHANNELS_BY_EVENT = {
     "rental_extended": {"in_app", "email", "push"},
     "payout_processed": {"in_app", "email", "sms", "push"},
     "payout_failed": {"in_app", "email", "sms", "push", "staff_webhook"},
+    "admin_payout_requested": {"in_app", "email", "push"},
+    "admin_payout_failed": {"in_app", "email", "push"},
     "verification_approved": {"in_app", "email", "sms", "push"},
     "verification_rejected": {"in_app", "email", "sms", "push"},
     "new_review": {"in_app", "email", "push"},

@@ -275,6 +275,58 @@ def notify_payout_failed(payout):
     )
 
 
+def notify_admin_payout_requested(payout):
+    """Alert finance staff that a vendor has requested a payout."""
+    for admin in _admin_recipients():
+        create_notification(
+            recipient=admin,
+            notification_type='admin_payout_requested',
+            title='Payout requested',
+            message=(
+                f"{payout.vendor.email} requested "
+                f"{payout.currency} {payout.amount:,.2f} from "
+                f"{payout.store.name} (reference {payout.reference})."
+            ),
+            priority='medium',
+            action_url='/admin/payments',
+            action_label='Review Payouts',
+            related_object_type='payout',
+            related_object_id=payout.id,
+        )
+
+
+def notify_admin_payout_failed(payout):
+    """Alert finance staff that a payout did not complete."""
+    for admin in _admin_recipients():
+        create_notification(
+            recipient=admin,
+            notification_type='admin_payout_failed',
+            title='Payout failed',
+            message=(
+                f"{payout.vendor.email} payout of "
+                f"{payout.currency} {payout.amount:,.2f} for "
+                f"{payout.store.name} failed: "
+                f"{payout.failure_reason or 'Unknown error'}."
+            ),
+            priority='high',
+            action_url='/admin/payments',
+            action_label='Review Payouts',
+            related_object_type='payout',
+            related_object_id=payout.id,
+        )
+
+
+def _admin_recipients():
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    User = get_user_model()
+    return User.objects.filter(
+        Q(is_staff=True) | Q(role__in=['admin', 'super_admin']),
+        is_active=True,
+    ).distinct()
+
+
 def notify_verification_approved(user):
     create_notification(
         recipient=user,

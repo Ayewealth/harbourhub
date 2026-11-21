@@ -43,6 +43,7 @@ paths:
           - listing_featured
           - listing_published
           - listing_removed
+          - payout_restored
           - report_submitted
           - roles_matrix_updated
           - user_banned
@@ -71,6 +72,7 @@ paths:
           * `roles_matrix_updated` - Roles Matrix Updated
           * `verification_approved` - Verification Approved
           * `verification_rejected` - Verification Rejected
+          * `payout_restored` - Payout Funds Restored
       - in: query
         name: admin_user
         schema:
@@ -965,6 +967,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedPaymentList'
+          description: ''
+  /admin-panel/payments/payouts/:
+    get:
+      operationId: admin_panel_payments_payouts_list
+      description: Admin view of vendor payout requests and their outcomes.
+      parameters:
+      - in: query
+        name: date_from
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: date_to
+        schema:
+          type: string
+          format: date
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - failed
+          - frozen
+          - paid
+          - processing
+          - requested
+        description: |-
+          * `requested` - Requested
+          * `processing` - Processing
+          * `paid` - Paid
+          * `failed` - Failed
+          * `frozen` - Frozen
+      - in: query
+        name: store
+        schema:
+          type: number
+      - in: query
+        name: vendor
+        schema:
+          type: number
+      tags:
+      - admin-panel
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAdminPayoutList'
           description: ''
   /admin-panel/payments/payouts/{id}/mark-paid/:
     post:
@@ -6436,6 +6506,8 @@ paths:
         schema:
           type: string
           enum:
+          - admin_payout_failed
+          - admin_payout_requested
           - inquiry_replied
           - listing_approved
           - listing_rejected
@@ -6482,6 +6554,8 @@ paths:
           * `payment_failed` - Payment Failed
           * `payout_processed` - Payout Processed
           * `payout_failed` - Payout Failed
+          * `admin_payout_requested` - Admin: Payout Requested
+          * `admin_payout_failed` - Admin: Payout Failed
           * `listing_approved` - Listing Approved
           * `listing_rejected` - Listing Rejected
           * `store_verified` - Store Verified
@@ -8014,6 +8088,7 @@ components:
       - roles_matrix_updated
       - verification_approved
       - verification_rejected
+      - payout_restored
       type: string
       description: |-
         * `content_reviewed` - Content Reviewed
@@ -8035,6 +8110,7 @@ components:
         * `roles_matrix_updated` - Roles Matrix Updated
         * `verification_approved` - Verification Approved
         * `verification_rejected` - Verification Rejected
+        * `payout_restored` - Payout Funds Restored
     AdminActionLog:
       type: object
       properties:
@@ -8374,6 +8450,105 @@ components:
       - platform_revenue
       - total_volume
       - vendor_payouts
+    AdminPayout:
+      type: object
+      description: Payout row for the admin payments screen.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        vendor_id:
+          type: integer
+          readOnly: true
+        vendor_name:
+          type: string
+          readOnly: true
+        vendor_email:
+          type: string
+          format: email
+          readOnly: true
+        store_id:
+          type: integer
+          readOnly: true
+        store_name:
+          type: string
+          readOnly: true
+        store_slug:
+          type: string
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PayoutStatusEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        bank_account_name:
+          type: string
+          readOnly: true
+        bank_account_number:
+          type: string
+          readOnly: true
+        bank_name:
+          type: string
+          readOnly: true
+        bank_code:
+          type: string
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+          description: Paystack transfer reference
+        failure_reason:
+          type: string
+          readOnly: true
+        receipt_url:
+          type: string
+          format: uri
+          readOnly: true
+        processed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - amount
+      - bank_account_name
+      - bank_account_number
+      - bank_code
+      - bank_name
+      - created_at
+      - currency
+      - failure_reason
+      - id
+      - processed_at
+      - receipt_url
+      - reference
+      - status
+      - status_display
+      - store_id
+      - store_name
+      - store_slug
+      - updated_at
+      - vendor_email
+      - vendor_id
+      - vendor_name
     AdminReportStatsResponse:
       type: object
       properties:
@@ -11988,6 +12163,8 @@ components:
       - payment_failed
       - payout_processed
       - payout_failed
+      - admin_payout_requested
+      - admin_payout_failed
       - listing_approved
       - listing_rejected
       - store_verified
@@ -12016,6 +12193,8 @@ components:
         * `payment_failed` - Payment Failed
         * `payout_processed` - Payout Processed
         * `payout_failed` - Payout Failed
+        * `admin_payout_requested` - Admin: Payout Requested
+        * `admin_payout_failed` - Admin: Payout Failed
         * `listing_approved` - Listing Approved
         * `listing_rejected` - Listing Rejected
         * `store_verified` - Store Verified
@@ -12926,6 +13105,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminOrderList'
+    PaginatedAdminPayoutList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPayout'
     PaginatedAdminUserListList:
       type: object
       required:
