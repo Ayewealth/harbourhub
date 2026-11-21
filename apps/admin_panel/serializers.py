@@ -142,13 +142,13 @@ class AdminPayoutSerializer(serializers.ModelSerializer):
     store_slug = serializers.CharField(
         source='store.slug', read_only=True)
     bank_account_name = serializers.CharField(
-        source='bank_account.account_name', read_only=True)
+        source='bank_account.account_name', read_only=True, allow_null=True)
     bank_account_number = serializers.CharField(
-        source='bank_account.account_number', read_only=True)
+        source='bank_account.account_number', read_only=True, allow_null=True)
     bank_name = serializers.CharField(
-        source='bank_account.bank_name', read_only=True)
+        source='bank_account.bank_name', read_only=True, allow_null=True)
     bank_code = serializers.CharField(
-        source='bank_account.bank_code', read_only=True)
+        source='bank_account.bank_code', read_only=True, allow_null=True)
     status_display = serializers.CharField(
         source='get_status_display', read_only=True)
 

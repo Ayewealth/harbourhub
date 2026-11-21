@@ -421,6 +421,12 @@ def test_admin_payout_list_exposes_vendor_bank_and_filters(auth_client):
         status=Payout.Status.PAID,
         reference="PO-OTHER",
     )
+    PayoutFactory(
+        store=StoreFactory(),
+        amount=Decimal("50.00"),
+        status=Payout.Status.REQUESTED,
+        reference="PO-NOBANK",
+    )
     admin = UserFactory(
         role="admin", is_staff=True, is_superuser=True, is_active=True
     )
@@ -459,6 +465,19 @@ def test_admin_payout_list_exposes_vendor_bank_and_filters(auth_client):
         if "results" in searched.data else searched.data
     )
     assert [r["reference"] for r in searched_rows] == ["PO-OTHER"]
+
+    no_bank = client.get(
+        "/admin-panel/payments/payouts/", {"search": "PO-NOBANK"}
+    )
+    no_bank_rows = (
+        no_bank.data["results"]
+        if "results" in no_bank.data else no_bank.data
+    )
+    assert len(no_bank_rows) == 1
+    assert no_bank_rows[0]["bank_account_name"] is None
+    assert no_bank_rows[0]["bank_account_number"] is None
+    assert no_bank_rows[0]["bank_name"] is None
+    assert no_bank_rows[0]["bank_code"] is None
 
     by_date = client.get(
         "/admin-panel/payments/payouts/",

@@ -8494,15 +8494,19 @@ components:
         bank_account_name:
           type: string
           readOnly: true
+          nullable: true
         bank_account_number:
           type: string
           readOnly: true
+          nullable: true
         bank_name:
           type: string
           readOnly: true
+          nullable: true
         bank_code:
           type: string
           readOnly: true
+          nullable: true
         reference:
           type: string
           readOnly: true
