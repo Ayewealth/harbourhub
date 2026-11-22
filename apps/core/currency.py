@@ -250,6 +250,14 @@ def resolve_source_currency(instance, data: dict | None = None) -> str:
         if value:
             return str(value).upper().strip()
 
+    # Wallet transactions carry no currency of their own; the balance they
+    # moved is denominated in the wallet's currency.
+    wallet = getattr(instance, "wallet", None)
+    if wallet is not None:
+        value = getattr(wallet, "currency", None)
+        if value:
+            return str(value).upper().strip()
+
     return "USD"
 
 

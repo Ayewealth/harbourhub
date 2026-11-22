@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 from django.db.models import F
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.financials.models import (
@@ -349,6 +350,81 @@ def test_immediate_transfer_failure_refunds_exactly_once(
 
 
 @pytest.mark.django_db
+def test_paystack_insufficient_balance_refunds_and_stores_a_clean_reason(
+    auth_client, monkeypatch
+):
+    """The live Paystack error object used to overflow the refund log."""
+    from apps.financials.tasks import process_payout_task
+
+    _stub_payout_dispatch(monkeypatch)
+    store = StoreFactory()
+    _earning, wallet = _released_wallet(store)
+    bank = _bank(store)
+
+    response = auth_client(store.user).post(
+        "/financials/payouts/",
+        {"amount": "200.00", "bank_account": bank.id},
+        format="json",
+    )
+    assert response.status_code == 201
+    payout = Payout.objects.get(vendor=store.user)
+
+    class _InsufficientBalance:
+        def json(self):
+            return {
+                "status": False,
+                "message": "Your balance is not enough to fulfil this request",
+                "meta": {
+                    "nextStep": "Topup your Paystack Balance and try again."
+                },
+                "type": "api_error",
+                "code": "insufficient_balance",
+            }
+
+    monkeypatch.setattr(
+        "requests.post", lambda *a, **k: _InsufficientBalance()
+    )
+
+    process_payout_task(payout.id)
+
+    payout.refresh_from_db()
+    wallet.refresh_from_db()
+    assert payout.status == Payout.Status.FAILED
+    assert "insufficient_balance" in payout.failure_reason
+    assert wallet.available_balance == Decimal("1000.00")
+
+    refund = WalletTransaction.objects.get(
+        wallet=wallet,
+        transaction_type=WalletTransaction.Type.REFUND,
+        reference_id=str(payout.id),
+    )
+    assert refund.amount == Decimal("200.00")
+    assert len(refund.description) <= 255
+
+
+@pytest.mark.django_db
+def test_fail_payout_truncates_a_long_reason():
+    store = VendorEarningFactory().store
+    _released_earning(store)
+    _wallet(store)
+    payout = PayoutFactory(
+        store=store, vendor=store.user, amount=Decimal("200.00")
+    )
+    allocate_payout(payout)
+
+    fail_payout(payout, "gateway error: " + "x" * 400)
+
+    payout.refresh_from_db()
+    refund = WalletTransaction.objects.get(
+        wallet__store=store,
+        transaction_type=WalletTransaction.Type.REFUND,
+        reference_id=str(payout.id),
+    )
+    assert payout.status == Payout.Status.FAILED
+    assert len(refund.description) == 255
+
+
+@pytest.mark.django_db
 def test_failed_payout_is_idempotent():
     store = VendorEarningFactory().store
     _released_earning(store)
@@ -498,3 +574,33 @@ def test_buyer_cannot_read_the_admin_payout_list(auth_client):
         "/admin-panel/payments/payouts/"
     )
     assert response.status_code in (401, 403)
+
+
+@pytest.mark.django_db
+def test_wallet_transaction_uses_the_wallet_currency(api_client):
+    """An NGN wallet movement must not be treated as USD and multiplied."""
+    store = StoreFactory()
+    wallet = VendorWallet.objects.get(store=store)
+    wallet.currency = "NGN"
+    wallet.save(update_fields=["currency"])
+    WalletTransaction.objects.create(
+        wallet=wallet,
+        transaction_type=WalletTransaction.Type.PAYOUT,
+        amount=Decimal("1027.61"),
+        description="Payout request PO-TEST-NGN",
+    )
+
+    api_client.force_authenticate(user=store.user)
+    api_client.cookies["hh_currency"] = "NGN"
+    response = api_client.get(reverse("wallet-transactions"))
+
+    assert response.status_code == 200
+    rows = (
+        response.data["results"]
+        if "results" in response.data else response.data
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert Decimal(str(row["amount"])) == Decimal("1027.61")
+    assert row["currency"] == "NGN"
+    assert row["source_currency"] == "NGN"

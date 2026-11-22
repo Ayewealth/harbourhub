@@ -447,7 +447,7 @@ def fail_payout(payout, reason: str):
         description=(
             f'Re-credited {"reversed " if was_paid else ""}failed payout '
             f'{payout.reference}: {reason}'
-        ),
+        )[:255],
         reference_id=str(payout.pk),
     )
 

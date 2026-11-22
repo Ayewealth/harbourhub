@@ -6,6 +6,20 @@ from apps.notifications.utils import notify_payout_failed, notify_payout_process
 logger = logging.getLogger(__name__)
 
 
+def _gateway_error(payload, action):
+    """A short, human-readable Paystack failure instead of a whole dict.
+
+    Paystack error objects also land in ``WalletTransaction.description``
+    (max 255 chars), so keeping this concise prevents a truncation error from
+    blocking the refund path.
+    """
+    payload = payload if isinstance(payload, dict) else {}
+    message = payload.get("message") or "Paystack rejected the request."
+    code = payload.get("code")
+    suffix = f" ({code})" if code else ""
+    return f"{action} failed: {message}{suffix}"
+
+
 @shared_task
 def process_payout_task(payout_id):
     """Initiate the Paystack transfer for a payout.
@@ -58,7 +72,8 @@ def process_payout_task(payout_id):
         recipient_data = recipient_response.json()
 
         if not recipient_data.get('status'):
-            raise Exception(f"Recipient creation failed: {recipient_data}")
+            raise Exception(_gateway_error(
+                recipient_data, "Recipient creation"))
 
         recipient_code = recipient_data['data']['recipient_code']
 
@@ -78,7 +93,7 @@ def process_payout_task(payout_id):
         transfer_data = transfer_response.json()
 
         if not transfer_data.get('status'):
-            raise Exception(f"Transfer failed: {transfer_data}")
+            raise Exception(_gateway_error(transfer_data, "Transfer"))
 
         payout.status = Payout.Status.PROCESSING
         payout.save(update_fields=['status'])

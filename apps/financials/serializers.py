@@ -160,12 +160,16 @@ class WalletTransactionSerializer(CurrencyConverterMixin, serializers.ModelSeria
 
     transaction_type_display = serializers.CharField(
         source='get_transaction_type_display', read_only=True)
+    # Declared so the stored denomination reaches the mixin (and the schema)
+    # before it rewrites ``currency`` to the caller's display currency.
+    currency = serializers.CharField(
+        source='wallet.currency', read_only=True)
 
     class Meta:
         model = WalletTransaction
         fields = (
             'id', 'transaction_type', 'transaction_type_display',
-            'amount', 'description', 'reference_id', 'created_at'
+            'amount', 'currency', 'description', 'reference_id', 'created_at'
         )
 
 

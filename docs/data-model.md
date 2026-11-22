@@ -124,7 +124,7 @@ listings. New stores default to `is_active=True`, `is_published=False`, `is_veri
 |---|---|---|
 | `VendorEarning` | `order` (1:1), `vendor`, `store`, `gross_amount`, `commission_amount`, `net_amount`, `release_policy`, `released_amount`, `paid_out_amount`, `is_disputed` | Exactly one earning per paid order. |
 | `VendorWallet` | `store` (1:1), `user` (1:1), `pending_balance`, `available_balance`, `total_withdrawn` | One wallet per store. |
-| `WalletTransaction` | `wallet`, `transaction_type`, `amount`, `reference_id` | Append-only wallet audit log. |
+| `WalletTransaction` | `wallet`, `transaction_type`, `amount`, `reference_id` | Append-only wallet audit log. Amounts are denominated in `wallet.currency`; there is no per-row currency column. |
 | `BankAccount` | `user`, `store`, account fields, `is_default`, `is_verified` | Payout destination. |
 | `Payout` | `vendor`, `store`, `bank_account`, `amount`, `reference` unique, `status` | Vendor withdrawal request. |
 | `PayoutAllocation` | `payout`, `earning`, `amount` | FIFO link between a payout and the earnings it consumes. Unique on `(payout, earning)`. |

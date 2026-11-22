@@ -41,7 +41,9 @@ that inherit `CurrencyConverterMixin` (`Cart`, `CartItem`, `Order`, `OrderItem`,
 `WalletTransaction`) convert monetary fields for **display** to the caller's
 preferred currency and append `currency` and `currency_symbol`. The response also
 includes `source_currency`, the currency the stored number is actually in, so a
-client never has to guess.
+client never has to guess. `WalletTransaction` has no currency column of its own:
+its stored amount is denominated in `wallet.currency`, which is what
+`source_currency` reports.
 
 The priority is: user preference, then the `hh_currency` cookie, then the
 `hh-currency` header, then `USD`. A `UserPreference` row wins over a header, so
@@ -1877,7 +1879,10 @@ The payout becomes `failed`, its allocations are removed, and the amount is
 re-credited to `available_balance` with a `refund` wallet transaction. The same
 happens when `process_payout_task` fails before or during the transfer; it does
 not retry automatically because a timed-out request may have been accepted.
-`fail_payout` is idempotent: a duplicate webhook or task run cannot credit twice.
+Gateway failures are reduced to a short `message (code)` string, and the refund
+transaction description is capped at 255 characters, so a verbose gateway error
+cannot block the refund. `fail_payout` is idempotent: a duplicate webhook or task
+run cannot credit twice.
 
 A `transfer.reversed` event after the payout was already `paid` is treated as a
 failure. The wallet is re-credited, `total_withdrawn`, `paid_out_amount`, and
