@@ -265,6 +265,32 @@ verification, and ledger write are proven by the signed self-test.
     a no-bank payout request returns `400` with $0 balance change and no payout row.
   - Not live-proven: a real `transfer.failed`/`transfer.reversed` webhook and admin email/push
     delivery. Those paths are covered by tests only.
+- **Wallet transaction currency and payout failure recovery (2026-11-23).** `0e75d95` fixes two
+  production-money bugs found while investigating payout #2; 333 tests pass.
+  - `WalletTransaction` has no currency column, so `resolve_source_currency` now falls back to
+    `wallet.currency`, and `WalletTransactionSerializer` declares `currency`. A wallet movement
+    stored as NGN is no longer treated as USD and multiplied by the USD→NGN rate.
+  - `process_payout_task` now reduces Paystack errors to `message (code)` instead of storing the
+    whole response, and `fail_payout` caps the refund transaction description at 255 characters.
+    A verbose gateway error can no longer roll back the status change and refund.
+  - Paystack can hold a transfer for OTP (`data.status == "otp"`). That response is now failed and
+    refunded with a clear reason instead of being reported to the vendor as processing. If the held
+    transfer is finalized later, the existing `transfer.success` re-debit prevents a double payout.
+  - Root cause of payout #2 (`PO-A9DF440ABF5A`, OceanRig): the worker ran the task, Paystack created
+    recipient `RCP_bs0r2tikhe1cs84`, then rejected the transfer with `insufficient_balance` because
+    the live Paystack balance is NGN 0. The full error dict overflowed `WalletTransaction.description`,
+    so the atomic failure path rolled back and the payout stayed `requested`.
+  - Live repair: payout #2 is `failed` with the real reason, allocations are cleared, wallet 11 is
+    back to NGN 1,027.61, `WalletTransaction` #6 is a single `refund`, and vendor/admin failure
+    notifications exist. A second `fail_payout` left the balance and refund count unchanged.
+  - Verified live at HEAD `0e75d95`: all four services active, worker `ping` OK,
+    `/financials/wallet/` returns `1027.61 NGN` (`source_currency` NGN), and
+    `/financials/wallet/transactions/` returns the refund and payout rows as NGN amounts. Public
+    `/listings/`, `/platform-config/`, `/currency/rates/`, `/api/schema/`, and `/api/docs/` return
+    `200` on `api.harbourhubglobal.com`.
+  - Not live-proven: a funded Paystack transfer, transfer OTP finalization, and the live webhook
+    outcome. Paystack balance must be funded (amount plus transfer fee) and Transfers OTP disabled
+    for automated payouts before a payout can complete.
 
 ---
 
