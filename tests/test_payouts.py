@@ -403,6 +403,59 @@ def test_paystack_insufficient_balance_refunds_and_stores_a_clean_reason(
 
 
 @pytest.mark.django_db
+def test_paystack_otp_requirement_fails_instead_of_claiming_processing(
+    auth_client, monkeypatch
+):
+    """An OTP-held transfer must not be reported to the vendor as sent."""
+    from apps.financials.tasks import process_payout_task
+
+    _stub_payout_dispatch(monkeypatch)
+    store = StoreFactory()
+    _earning, wallet = _released_wallet(store)
+    bank = _bank(store)
+
+    response = auth_client(store.user).post(
+        "/financials/payouts/",
+        {"amount": "200.00", "bank_account": bank.id},
+        format="json",
+    )
+    assert response.status_code == 201
+    payout = Payout.objects.get(vendor=store.user)
+
+    class _Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    responses = iter([
+        {"status": True, "data": {"recipient_code": "RCP_TEST"}},
+        {
+            "status": True,
+            "message": "Transfer has been queued",
+            "data": {"status": "otp", "transfer_code": "TRF_TEST"},
+        },
+    ])
+    monkeypatch.setattr(
+        "requests.post", lambda *a, **k: _Response(next(responses))
+    )
+
+    process_payout_task(payout.id)
+
+    payout.refresh_from_db()
+    wallet.refresh_from_db()
+    assert payout.status == Payout.Status.FAILED
+    assert "OTP" in payout.failure_reason
+    assert wallet.available_balance == Decimal("1000.00")
+    assert WalletTransaction.objects.filter(
+        wallet=wallet,
+        transaction_type=WalletTransaction.Type.REFUND,
+        reference_id=str(payout.id),
+    ).count() == 1
+
+
+@pytest.mark.django_db
 def test_fail_payout_truncates_a_long_reason():
     store = VendorEarningFactory().store
     _released_earning(store)

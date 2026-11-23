@@ -95,6 +95,19 @@ def process_payout_task(payout_id):
         if not transfer_data.get('status'):
             raise Exception(_gateway_error(transfer_data, "Transfer"))
 
+        # Paystack returns ``data.status == "otp"`` when Transfers OTP is
+        # enabled. Such a transfer is not queued until it is finalized with a
+        # code sent to the business phone, so treating it as processing would
+        # tell the vendor money was sent when it was not.
+        transfer = transfer_data.get('data') or {}
+        if transfer.get('status') == 'otp':
+            raise Exception(
+                "Transfer requires a Paystack OTP. Disable Transfers OTP for "
+                "API payouts before retrying; if this transfer is finalized "
+                "later, the transfer.success webhook re-debits the refunded "
+                "amount."
+            )
+
         payout.status = Payout.Status.PROCESSING
         payout.save(update_fields=['status'])
         notify_payout_processed(payout)

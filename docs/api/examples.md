@@ -1881,8 +1881,13 @@ happens when `process_payout_task` fails before or during the transfer; it does
 not retry automatically because a timed-out request may have been accepted.
 Gateway failures are reduced to a short `message (code)` string, and the refund
 transaction description is capped at 255 characters, so a verbose gateway error
-cannot block the refund. `fail_payout` is idempotent: a duplicate webhook or task
-run cannot credit twice.
+cannot block the refund. If Paystack answers with `data.status: "otp"`, Transfers
+OTP is enabled on the account: the transfer is held until a code sent to the
+business phone is submitted, so the payout is failed and refunded rather than
+reported as processing. Disable Transfers OTP for API payouts before retrying. If
+the held transfer is finalized later, the `transfer.success` handler re-debits
+the refunded amount. `fail_payout` is idempotent: a duplicate webhook or task run
+cannot credit twice.
 
 A `transfer.reversed` event after the payout was already `paid` is treated as a
 failure. The wallet is re-credited, `total_withdrawn`, `paid_out_amount`, and
